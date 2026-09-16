@@ -1,0 +1,268 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cairo", ui-monospace, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  /* NOKHBA brand tokens */
+  --color-navy: var(--brand-navy);
+  --color-navy-light: var(--brand-navy-light);
+  --color-gold: var(--brand-gold);
+  --color-cyan: var(--brand-cyan);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+/* ═══════════════════════════════════════════════════
+   NOKHBA V1 — Design System (Light theme default)
+   Brand: Navy (#001f43) + Gold (#FFD700) + Cyan accent
+   ═══════════════════════════════════════════════════ */
+:root {
+  --radius: 1rem;
+  --brand-navy: #001f43;
+  --brand-navy-light: #1f3a60;
+  --brand-gold: #c8920a;
+  --brand-gold-bright: #e0a813;
+  --brand-cyan: #0891b2;
+
+  --background: #f6f7fb;
+  --foreground: #0b1b33;
+  --card: #ffffff;
+  --card-foreground: #0b1b33;
+  --popover: #ffffff;
+  --popover-foreground: #0b1b33;
+  --primary: #001f43;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f9;
+  --secondary-foreground: #0b1b33;
+  --muted: #eef2f9;
+  --muted-foreground: #5b6678;
+  --accent: #fff7e0;
+  --accent-foreground: #6b4f00;
+  --destructive: #d92d20;
+  --border: #e3e8f1;
+  --input: #e3e8f1;
+  --ring: #c8920a;
+  --chart-1: #001f43;
+  --chart-2: #c8920a;
+  --chart-3: #0891b2;
+  --chart-4: #16a34a;
+  --chart-5: #d92d20;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1b33;
+  --sidebar-primary: #001f43;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff7e0;
+  --sidebar-accent-foreground: #6b4f00;
+  --sidebar-border: #e3e8f1;
+  --sidebar-ring: #c8920a;
+}
+
+/* Dark theme — deep navy surface */
+.dark {
+  --brand-navy: #001f43;
+  --brand-navy-light: #1f3a60;
+  --brand-gold: #e0a813;
+  --brand-gold-bright: #f5c542;
+  --brand-cyan: #22d3ee;
+
+  --background: #06101f;
+  --foreground: #e7edf7;
+  --card: #0c1a30;
+  --card-foreground: #e7edf7;
+  --popover: #0c1a30;
+  --popover-foreground: #e7edf7;
+  --primary: #e0a813;
+  --primary-foreground: #0b1b33;
+  --secondary: #122340;
+  --secondary-foreground: #e7edf7;
+  --muted: #122340;
+  --muted-foreground: #9aa8c0;
+  --accent: #2a2110;
+  --accent-foreground: #f5c542;
+  --destructive: #f87171;
+  --border: #1c2c4d;
+  --input: #1c2c4d;
+  --ring: #e0a813;
+  --chart-1: #e0a813;
+  --chart-2: #22d3ee;
+  --chart-3: #60a5fa;
+  --chart-4: #34d399;
+  --chart-5: #f87171;
+  --sidebar: #0c1a30;
+  --sidebar-foreground: #e7edf7;
+  --sidebar-primary: #e0a813;
+  --sidebar-primary-foreground: #0b1b33;
+  --sidebar-accent: #2a2110;
+  --sidebar-accent-foreground: #f5c542;
+  --sidebar-border: #1c2c4d;
+  --sidebar-ring: #e0a813;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "kern";
+  }
+  /* Arabic numerals stay LTR inside RTL context */
+  .ltr-nums {
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+}
+
+/* ─── Mobile-first app shell ─── */
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.app-main {
+  flex: 1;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ─── Large tap tiles ─── */
+.tile-touch {
+  min-height: 96px;
+  touch-action: manipulation;
+}
+@media (min-width: 480px) {
+  .tile-touch { min-height: 112px; }
+}
+
+/* ─── Bottom navigation (mobile-first, fixed) ─── */
+.bottom-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -4px 24px -12px rgba(0, 31, 67, 0.18);
+}
+.bottom-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  max-width: 640px;
+  margin: 0 auto;
+  height: 64px;
+}
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+.bottom-nav-item.active {
+  color: var(--primary);
+}
+.dark .bottom-nav-item.active {
+  color: var(--brand-gold);
+}
+
+/* ─── Custom scrollbar ─── */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.scroll-area::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-area::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+/* ─── Brand gradient header ─── */
+.brand-gradient {
+  background: linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-navy-light) 100%);
+}
+.brand-gold-text {
+  color: var(--brand-gold);
+}
+.dark .brand-gold-text {
+  color: var(--brand-gold-bright);
+}
+
+/* ─── Animations ─── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+
+/* ─── Hide scrollbar utility (horizontal scrollers) ─── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Status chips ─── */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+}

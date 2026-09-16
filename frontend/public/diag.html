@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تشخيص النخبة</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
+      background: #f4f7fb; color: #0f172a; direction: rtl; padding: 18px 14px 40px;
+      line-height: 1.7;
+    }
+    .wrap { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 19px; font-weight: 900; color: #0f3d38; text-align: center; margin-bottom: 4px; }
+    .sub { font-size: 12.5px; color: #64748b; text-align: center; margin-bottom: 18px; }
+    .card {
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+      padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 6px 18px rgba(15,23,42,.05);
+    }
+    .row { display: flex; align-items: flex-start; gap: 10px; }
+    .badge {
+      flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px; text-align: center;
+      font-weight: 900; font-size: 14px; line-height: 26px; margin-top: 2px;
+    }
+    .b-ok { background: #dcfce7; color: #15803d; }
+    .b-bad { background: #fee2e2; color: #b91c1c; }
+    .b-warn { background: #fef9c3; color: #a16207; }
+    .b-run { background: #e0e7ff; color: #4338ca; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { opacity: .5 } to { opacity: 1 } }
+    .txt { flex: 1 1 auto; font-size: 13.5px; }
+    .txt b { display: block; font-size: 14px; font-weight: 800; }
+    .det { font-size: 11.5px; color: #64748b; word-break: break-all; direction: ltr; text-align: left; margin-top: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .verdict {
+      border-radius: 14px; padding: 16px; text-align: center; font-size: 14.5px; font-weight: 800;
+      margin-bottom: 12px; border: 1px solid;
+    }
+    .v-ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+    .v-bad { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    .v-warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+    textarea {
+      width: 100%; height: 190px; border: 1px solid #cbd5e1; border-radius: 10px;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; direction: ltr;
+      padding: 10px; background: #f8fafc; color: #334155; resize: vertical;
+    }
+    button {
+      width: 100%; padding: 13px; border: 0; border-radius: 12px; background: #0f766e;
+      color: #fff; font-size: 14.5px; font-weight: 800; cursor: pointer; font-family: inherit;
+      margin-top: 10px;
+    }
+    button.sec { background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; }
+    .foot { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 18px; }
+    .note { font-size: 11.5px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>فحص تشخيصي — منصة النخبة</h1>
+    <p class="sub">الصفحة دي بتشتغل حتى لو المنصة نفسها مش بتفتح — افتحها على التليفون اللي فيه المشكلة وابعت النتيجة للمدرس</p>
+
+    <div class="note">
+      مكتوب النتيجة تحت بتفاصيل الجهاز والاتصال. لو ظهر أي سطر أحمر انسخ النتيجة كلها
+      (زر «نسخ النتيجة») وابعتها للمدرس في واتساب.
+    </div>
+
+    <div id="checks"></div>
+
+    <div id="verdict" class="verdict" style="display:none"></div>
+
+    <textarea id="report" readonly>جاري الفحص…</textarea>
+    <button id="copy" type="button">نسخ النتيجة</button>
+    <button class="sec" id="rerun" type="button">إعادة الفحص</button>
+
+    <p class="foot">النخبة — أداة تشخيص مستقلة (لا تعتمد على ملفات التطبيق)</p>
+  </div>
+
+  <script>
+    /* Round 13 diagnostic page — deliberately ES5-only so it runs on ANY
+       phone, even ones that cannot parse the app bundle at all. */
+    (function () {
+      var results = []
+      var lines = []
+      var bad = 0
+      var warn = 0
+
+      function add(kind, title, detail, line) {
+        results.push({ kind: kind, title: title, detail: detail || '' })
+        if (kind === 'bad') bad++
+        if (kind === 'warn') warn++
+        lines.push(line || (title + (detail ? ' | ' + detail : '')))
+        render()
+      }
+
+      function badge(kind) {
+        if (kind === 'ok') return '<div class="badge b-ok">✓</div>'
+        if (kind === 'bad') return '<div class="badge b-bad">✗</div>'
+        if (kind === 'warn') return '<div class="badge b-warn">!</div>'
+        return '<div class="badge b-run">…</div>'
+      }
+
+      function render() {
+        var host = document.getElementById('checks')
+        var html = ''
+        for (var i = 0; i < results.length; i++) {
+          var r = results[i]
+          html += '<div class="card"><div class="row">' + badge(r.kind) +
+            '<div class="txt"><b>' + r.title + '</b>' +
+            (r.detail ? '<div class="det">' + escapeHtml(r.detail) + '</div>' : '') +
+            '</div></div></div>'
+        }
+        host.innerHTML = html
+        document.getElementById('report').value =
+          'تشخيص النخبة — ' + new Date().toISOString() + '\n' + lines.join('\n')
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      }
+
+      function finish() {
+        var v = document.getElementById('verdict')
+        v.style.display = 'block'
+        if (bad === 0 && warn === 0) {
+          v.className = 'verdict v-ok'
+          v.innerHTML = 'كل الفحوصات سليمة ✓<br>الجهاز ده يقدر يفتح المنصة عادي — لو المشكلة مستمرة فيه، انسخ النتيجة وابعتهاللمدرس'
+        } else if (bad === 0) {
+          v.className = 'verdict v-warn'
+          v.innerHTML = 'فيه تحذيرات بس مفيش أعطال واضحة (في الغالب شبكة بطيئة)<br>افتح رابط المنصة من جديد وجرب تاني — ولو استمرت انسخ النتيجة'
+        } else {
+          v.className = 'verdict v-bad'
+          v.innerHTML = 'تم رصد عطل واضح على الجهاز ده ✗<br>انسخ النتيجة (الزر تحت) وابعتهاللمدرس في واتساب'
+        }
+      }
+
+      /* ── device info ─────────────────────────────────────────── */
+      var ua = navigator.userAgent || ''
+      var m = ua.match(/OS (\d+)[._](\d+)/)
+      var osName = /iPhone|iPad|iPod/i.test(ua) ? 'iOS' : (/Android/i.test(ua) ? 'Android' : 'غير معروف')
+      var osVer = m ? (osName === 'iOS' ? m[1] + '.' + m[2] : m[1] + '.' + m[2]) : 'غير معروف'
+      var conn = (navigator.connection && (navigator.connection.effectiveType || navigator.connection.type)) || 'غير معروف'
+      var isPWA = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches
+      add('ok',
+        'معلومات الجهاز',
+        osName + ' ' + osVer + ' | ' + (navigator.onLine ? 'متصل' : 'غير متصل') + ' | شبكة: ' + conn + ' | شاشة: ' + window.screen.width + '×' + window.screen.height + (isPWA ? ' | وضع التطبيق (أيقونة الشاشة الرئيسية)' : ' | متصفح عادي'),
+        'الجهاز: ' + osName + ' ' + osVer + ' | ' + (navigator.onLine ? 'online' : 'offline') + ' | net:' + conn + ' | ' + window.screen.width + 'x' + window.screen.height + (isPWA ? ' | PWA-standalone' : '') + ' | UA=' + ua)
+
+      /* ── syntax floor probes ─────────────────────────────────── */
+      var probes = [
+        ['arrow', 'return ((a) => a)(1)', 'ES6 دوال السهم'],
+        ['nullish', 'var o = null; return o ?? 1', 'عامل ??'],
+        ['optchain', 'var o = null; return o?.x', 'عامل ?.'],
+        ['logicassign', 'var o = null; o ??= 5; return o', 'عامل ??='],
+        ['classfield', 'return class A { x = 1 }', 'خصائص الكلاس'],
+        ['staticblock', 'return class A { static {} }', 'بلوكات static'],
+      ]
+      var syntaxLine = []
+      var minBad = false
+      for (var p = 0; p < probes.length; p++) {
+        var ok = false
+        try { new Function(probes[p][1]); ok = true } catch (e) { ok = false }
+        syntaxLine.push(probes[p][0] + '=' + (ok ? 'OK' : 'FAIL'))
+        if (!ok) minBad = true
+      }
+      add(minBad ? 'warn' : 'ok', 'قدرة المتصفح على تشغيل أكواد حديثة', syntaxLine.join(' · '), 'قواعد اللغة: ' + syntaxLine.join(', '))
+
+      /* ── storage probe ───────────────────────────────────────── */
+      var storageOk = true
+      var storageDetail = 'localStorage + sessionStorage شغالين'
+      try {
+        localStorage.setItem('__nb_diag__', '1')
+        if (localStorage.getItem('__nb_diag__') !== '1') throw new Error('read-back failed')
+        localStorage.removeItem('__nb_diag__')
+      } catch (e) {
+        storageOk = false
+        storageDetail = 'التخزين المحلي مقفول (وضع خاص/خاصية تقييد): ' + (e && e.name ? e.name : 'خطأ')
+      }
+      add(storageOk ? 'ok' : 'warn', 'الذاكرة المحلية للتخزين', storageDetail, 'التخزين: ' + (storageOk ? 'يعمل' : 'مقفول — ' + storageDetail))
+
+      /* ── service worker / caches ─────────────────────────────── */
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          var det = regs.length ? (regs.length + ' مسجل(s)، scope: ' + regs[0].scope) : 'لا يوجد'
+          add('ok', 'خدمة الإشعارات (Service Worker)', det, 'SW: ' + det)
+          if ('caches' in window) {
+            caches.keys().then(function (names) {
+              add(names.length ? 'warn' : 'ok', 'ملفات مؤقتة مخزنة عند المتصفح (Cache Storage)', names.length ? names.join(' , ') : 'لا يوجد', 'caches: ' + (names.join(', ') || 'none'))
+              runNetworkTests()
+            }).catch(function () { runNetworkTests() })
+          } else { runNetworkTests() }
+        }).catch(function () { add('warn', 'خدمة الإشعارات', 'تعذر الفحص', 'SW: error'); runNetworkTests() })
+      } else {
+        add('warn', 'خدمة الإشعارات', 'المتصفح لا يدعمها (إشعارات الويب مش هتشتغل — بس الصفحة نفسها طبيعية)', 'SW: unsupported')
+        runNetworkTests()
+      }
+
+      /* ── network tests ───────────────────────────────────────── */
+      var netDone = false
+      function runNetworkTests() {
+        if (netDone) return
+        netDone = true
+        var t0 = Date.now()
+        fetch('/', { cache: 'no-store' }).then(function (res) {
+          var ms = Date.now() - t0
+          return res.text().then(function (html) {
+            var mm = html.match(/assets\/[A-Za-z0-9._-]+\.js/)
+            var bundle = mm ? mm[0] : ''
+            add(res.ok ? 'ok' : 'bad', 'تحميل صفحة المنصة الرئيسية',
+              'HTTP ' + res.status + ' · ' + ms + 'ms' + (bundle ? ' · ملف التطبيق الحالي: ' + bundle : ' · لم يُعثر على ملف التطبيق في الصفحة!'),
+              'الصفحة الرئيسية: HTTP ' + res.status + ' في ' + ms + 'ms' + (bundle ? ' → ' + bundle : ' → NO-BUNDLE-REF'))
+            testBundle(bundle, ms)
+          })
+        }).catch(function (e) {
+          add('bad', 'تحميل صفحة المنصة الرئيسية', 'فشل الاتصال: ' + (e && e.message ? e.message : e), 'الصفحة الرئيسية: FAIL ' + (e && e.message ? e.message : e))
+          finish()
+        })
+      }
+
+      function testBundle(bundleName, pageMs) {
+        if (!bundleName) { finish(); return }
+        var t1 = Date.now()
+        fetch('/' + bundleName, { headers: { Range: 'bytes=0-65535' }, cache: 'no-store' })
+          .then(function (res) {
+            var ms = Date.now() - t1
+            var ctype = res.headers.get('content-type') || 'غير معروف'
+            return res.text().then(function (chunk) {
+              var verdicts = []
+              if (ctype.indexOf('javascript') === -1) {
+                add('bad', 'ملف التطبيق الرئيسي (الجافاسكريبت)',
+                  'السيرفر رجّع ' + ctype + ' بدل جافاسكريبت! (HTTP ' + res.status + ') — ده معناه إن النسخة اللي على جهازك بتطلب ملف قديم مش موجود',
+                  'الملف: HTTP ' + res.status + ' type=' + ctype + ' ← HTML-بدل-JS (ملف قديم!) ' + ms + 'ms')
+                verdicts.push('html-instead-of-js')
+              } else {
+                var hasStatic = chunk.indexOf('static{') !== -1
+                var hasLogic = chunk.indexOf('??=') !== -1 || chunk.indexOf('||=') !== -1
+                var looksHtml = chunk.charAt(0) === '<' || chunk.indexOf('<!doctype') !== -1
+                if (looksHtml) {
+                  add('bad', 'ملف التطبيق الرئيسي (الجافاسكريبت)', 'المحتوى HTML مش جافاسكريبت — نسخة قديمة عالقة', 'الملف: محتوى HTML (نسخة قديمة) ' + ms + 'ms')
+                } else if (hasStatic || hasLogic) {
+                  add('bad', 'ملف التطبيق الرئيسي (الجافاسكريبت)',
+                    'الملف اللي وصل جهازك نسخة قديمة فيها أكواد المتصفح ده مش بيفهمها',
+                    'الملف: ES2022 قديم! static=' + hasStatic + ' logic=' + hasLogic + ' ' + ms + 'ms')
+                } else {
+                  add('ok', 'ملف التطبيق الرئيسي (الجافاسكريبت)', 'نزّل سليم · ' + ms + 'ms · أول 64KB', 'الملف: سليم ' + res.status + ' ' + ms + 'ms')
+                }
+              }
+              finish()
+            })
+          })
+          .catch(function (e) {
+            add('bad', 'ملف التطبيق الرئيسي (الجافاسكريبت)', 'فشل التحميل: ' + (e && e.message ? e.message : e), 'الملف: FAIL ' + (e && e.message ? e.message : e))
+            finish()
+          })
+      }
+
+      /* copy + rerun */
+      document.getElementById('copy').onclick = function () {
+        var ta = document.getElementById('report')
+        ta.focus(); ta.select()
+        var ok = false
+        try { ok = document.execCommand('copy') } catch (e) { ok = false }
+        if (!ok && navigator.clipboard) {
+          navigator.clipboard.writeText(ta.value).then(function () { done() }, function () {})
+        } else if (ok) { done() }
+        function done() {
+          var b = document.getElementById('copy')
+          var old = b.textContent
+          b.textContent = 'تم النسخ ✓ — الصقها في واتساب وابعتهاللمدرس'
+          window.setTimeout(function () { b.textContent = old }, 2500)
+        }
+      }
+      document.getElementById('rerun').onclick = function () { window.location.reload() }
+    })()
+  </script>
+</body>
+</html>

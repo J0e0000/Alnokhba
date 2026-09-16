@@ -1,0 +1,3 @@
+module.exports=[93695,(a,b,c)=>{b.exports=a.x("next/dist/shared/lib/no-fallback-error.external.js",()=>require("next/dist/shared/lib/no-fallback-error.external.js"))},81111,(a,b,c)=>{b.exports=a.x("node:stream",()=>require("node:stream"))},36155,a=>{"use strict";let b=Error("Cannot find module '@supabase/supabase-js'");throw b.code="MODULE_NOT_FOUND",b}];
+
+//# sourceMappingURL=%5Broot-of-the-server%5D__1gdm9_q._.js.map

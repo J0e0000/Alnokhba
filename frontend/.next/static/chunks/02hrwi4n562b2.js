@@ -1,0 +1,5 @@
+__turbopack_load_page_chunks__("/ParentPortal", [
+  "static/chunks/2g2h9nasqnz-e.js",
+  "static/chunks/0qvewgh9l8_by.js",
+  "static/chunks/turbopack-0i5muz3vs51c4.js"
+])
