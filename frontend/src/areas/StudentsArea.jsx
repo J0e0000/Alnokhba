@@ -50,7 +50,7 @@ export default function StudentsArea() {
 
   const sendWhatsApp = (student, message) => {
     const phone = normalizeEgyptianPhone(student.phone)
-    if (!phone) { ws.showToast ? null : null; return }
+    if (!phone) { ws.showToast?.('لا يوجد رقم هاتف صحيح', 'error'); return }
     const url = buildWhatsAppUrl(phone, message)
     openWhatsAppUrl(url)
   }

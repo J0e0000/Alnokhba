@@ -49,8 +49,6 @@ export default function AppShell({ onOpenAdmin }) {
   }, [])
 
   const dateLabel = useMemo(() => (isArabic ? AR_DATE : EN_DATE).format(new Date()), [isArabic])
-  const brandName = ws.settings ? null : null
-  void brandName
 
   const activeNav = ui.area === 'session' ? 'home' : ui.area
 
