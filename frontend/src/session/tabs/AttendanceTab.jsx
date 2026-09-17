@@ -72,8 +72,8 @@ export default function AttendanceTab({ groupId, lessonOpen }) {
     <div>
       <div className="nk-notice mb-4">
         {isArabic
-          ? 'الحضور مستقل لكل حصة — حصة الأحد وحصة الأربعاء حدثان منفصلان. الغائبون لا يظهرون في مرحلة الدرجات ولا يحصلون على صفر تلقائيًا.'
-          : 'Attendance is session-specific — Sunday and Wednesday are independent events. Absent students are excluded from grading and never auto-zeroed.'}
+          ? 'الحضور مستقل لكل حصة — حصة الأحد وحصة الأربعاء حدثان منفصلان. الغائبون لا يظهرون في مرحلة الدرجات ولا يحصلون على صفر تلقائيًا. رصد كل طالب ليس إلزاميًا: عدم رصد طالب لا يمنع التقدم.'
+          : 'Attendance is session-specific — Sunday and Wednesday are independent events. Absent students are excluded from grading and never auto-zeroed. Marking every student is not required: unrecorded students never block progress.'}
       </div>
 
       {/* Toolbar: search + filters + bulk + QR */}

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { todayLocalISO } from '../lib/dateUtils'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UIContext — pure UI state of the new shell (rule 35: UI state ≠ server state).
@@ -11,10 +12,18 @@ const UIContext = createContext(null)
 const QUEUE_KEY = (tid) => `nokhba_message_queue_${tid}`
 
 export function UIProvider({ teacherId, children }) {
-  // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings'
+  // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings' | 'help'
   const [area, setArea] = useState('home')
   const [sessionParams, setSessionParams] = useState(null)
   const [confirmState, setConfirmState] = useState(null)
+  // Day timeline: the selected day persists across navigation so returning from
+  // a session keeps the teacher's context (brief §2 "preserve current route").
+  const [selectedDay, setSelectedDay] = useState(todayLocalISO)
+  // Global search (Ctrl/⌘+K) — modal state here so any surface can open it.
+  const [searchOpen, setSearchOpen] = useState(false)
+  // Cross-area focus targets (search/FAQ deep links).
+  const [focusStudentId, setFocusStudentId] = useState(null)
+  const [helpTopicId, setHelpTopicId] = useState(null)
   const [queue, setQueue] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(QUEUE_KEY(teacherId)) || 'null') || { open: false, items: [], index: 0 } } catch { return { open: false, items: [], index: 0 } }
   })
@@ -54,10 +63,20 @@ export function UIProvider({ teacherId, children }) {
 
   const closeQueue = useCallback(() => setQueue((prev) => ({ ...prev, open: false })), [])
 
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const openHelp = useCallback((topicId = null) => { setHelpTopicId(topicId); setArea('help') }, [])
+  const goToStudent = useCallback((id) => { setFocusStudentId(id); setArea('students') }, [])
+
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
     queue, startQueue, advanceQueue, closeQueue,
-  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue])
+    selectedDay, setSelectedDay,
+    searchOpen, openSearch, closeSearch,
+    focusStudentId, setFocusStudentId, goToStudent,
+    helpTopicId, setHelpTopicId, openHelp,
+  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue,
+    selectedDay, searchOpen, openSearch, closeSearch, focusStudentId, goToStudent, helpTopicId, openHelp])
 
   return (
     <UIContext.Provider value={value}>

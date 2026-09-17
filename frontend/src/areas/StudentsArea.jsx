@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
@@ -26,6 +26,15 @@ export default function StudentsArea() {
   const [studentModal, setStudentModal] = useState({ open: false, student: null })
   const [bulkAddOpen, setBulkAddOpen] = useState(false)
   const [qrBusy, setQrBusy] = useState(null)
+
+  // Deep link from global search: pre-filter to the focused student (brief §16).
+  useEffect(() => {
+    if (ui.focusStudentId) {
+      const s = ws.students.find((x) => x.id === ui.focusStudentId)
+      if (s) setSearch(s.name)
+      ui.setFocusStudentId(null)
+    }
+  }, [ui, ws.students])
 
   const filtered = useMemo(() => {
     const q = normalizeArabicSearch(search)

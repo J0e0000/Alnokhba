@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useEffect } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
+import FirstHint from '../components/FirstHint'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, getStudentRankPosition, normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, checkAcademicWarning } from '../lib/helpers'
 
@@ -48,6 +49,14 @@ export default function HistoryArea() {
   if (!student) {
     return (
       <div>
+        <FirstHint
+          id="history-search"
+          isArabic={isArabic}
+          title={isArabic ? 'ابحث عن طالب لعرض سجله' : 'Search a student to view their record'}
+          body={isArabic
+            ? 'اكتب الاسم أو الكود أو الهاتف — السجل يعرض الحضور والدرجات والنقاط، مع أزرار تواصل مباشرة.'
+            : 'Type a name, code or phone — the record shows attendance, grades and points, with direct contact buttons.'}
+        />
         <h1 className="text-lg font-black mb-1">{isArabic ? 'سجل الطالب' : 'Student history'}</h1>
         <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'ابحث بالاسم أو الكود أو الهاتف لعرض السجل السريع.' : 'Search by name, code, or phone for a quick history view.'}</p>
         <input
@@ -84,6 +93,14 @@ export default function HistoryArea() {
 
   return (
     <div>
+      <FirstHint
+        id="history-surface"
+        isArabic={isArabic}
+        title={isArabic ? 'سجل الطالب — للمراجعة والتواصل فقط' : 'Student History — review & contact only'}
+        body={isArabic
+          ? 'هنا تراجع تاريخ الطالب وتتواصل مع ولي أمره. تعديل بيانات الحصة (حضور، واجب، درجات) يتم من داخل مساحة الحصة فقط.'
+          : 'Review a student\'s history and contact their parent here. Session data (attendance, homework, grades) is edited inside the Session Workspace only.'}
+      />
       <button className="btn-ghost rounded-xl px-4 py-2 text-[.75rem] font-extrabold mb-4" onClick={() => { setSelectedId(null); setSearch('') }}>
         → {isArabic ? 'بحث آخر' : 'New search'}
       </button>

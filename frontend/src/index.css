@@ -1,5 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -381,7 +380,6 @@ html.dark .btn-glow { background: #223055; }
   border: 1px solid transparent;
 }
 .nk-pill-live  { color: var(--ok-strong); background: var(--ok-bg); border-color: var(--ok-border); }
-.nk-pull-pending { color: var(--warn-strong); background: var(--warn-bg); border-color: var(--warn-border); }
 .nk-pill-pending { color: var(--warn-strong); background: var(--warn-bg); border-color: var(--warn-border); }
 .nk-pill-done    { color: var(--info-strong); background: var(--info-bg); border-color: var(--info-border); }
 .nk-pill-danger  { color: var(--danger-strong); background: var(--danger-bg); border-color: var(--danger-border); }
@@ -602,6 +600,169 @@ html.dark .nk-sidebar { background: linear-gradient(135deg, #0a1122, #101a30); }
 .nk-bar { height: 7px; border-radius: 999px; background: var(--surface-container-high); overflow: hidden; }
 .nk-bar > span { display: block; height: 100%; border-radius: 999px; background: var(--brand-gold); transition: width .3s ease; }
 .nk-bar--ok > span { background: var(--ok); }
+
+/* ── Production update: day timeline · sticky progress · gating · help ── */
+
+/* Skip-to-content (brief §17) */
+.nk-skip-link {
+  position: fixed; top: -100px; inset-inline-start: 1rem; z-index: 200;
+  background: var(--brand-navy); color: #fff; font-weight: 800; font-size: .8rem;
+  padding: .7rem 1.1rem; border-radius: 12px; transition: top .15s ease;
+}
+.nk-skip-link:focus { top: .75rem; }
+
+/* Day timeline (brief §2) */
+.nk-dayline { display: flex; align-items: center; gap: .5rem; }
+.nk-dayline__nav {
+  width: 2.2rem; height: 2.6rem; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid var(--surface-border); background: var(--surface-container);
+  color: var(--fg-muted); font-size: 1.2rem; font-weight: 900; cursor: pointer;
+}
+.nk-dayline__nav:hover { color: var(--fg); border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent); }
+.nk-dayline__nav:active { transform: scale(.96); }
+.nk-dayline__strip { display: flex; gap: .4rem; overflow-x: auto; padding: 2px; flex: 1; scrollbar-width: none; }
+.nk-dayline__strip::-webkit-scrollbar { display: none; }
+.nk-dayline__day {
+  position: relative; flex: 0 0 auto; min-width: 3.6rem;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: .45rem .5rem; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--surface-border); background: var(--surface-container); color: var(--fg-muted);
+  transition: transform .15s ease, border-color .15s ease;
+}
+.nk-dayline__day small { font-size: .6rem; font-weight: 800; }
+.nk-dayline__day b { font-size: .92rem; font-weight: 900; color: var(--fg); }
+.nk-dayline__day:hover { border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent); transform: translateY(-1px); }
+.nk-dayline__day:active { transform: scale(.97); }
+.nk-dayline__day--sel { background: var(--brand-navy); border-color: var(--brand-navy); }
+.nk-dayline__day--sel small { color: color-mix(in srgb, #fff 82%, transparent); }
+.nk-dayline__day--sel b { color: #fff; }
+.nk-dayline__day--today::after {
+  content: ''; position: absolute; top: 6px; inset-inline-end: 6px;
+  width: 7px; height: 7px; border-radius: 999px; background: var(--brand-gold);
+}
+.nk-dayline__today-btn {
+  flex-shrink: 0; border: 1px dashed color-mix(in srgb, var(--brand-gold) 60%, transparent);
+  color: var(--brand-gold); background: var(--brand-gold-surface);
+  font-size: .68rem; font-weight: 900; padding: .5rem .7rem; border-radius: 12px; cursor: pointer;
+}
+
+/* Sticky workspace progress strip (brief §6/§10) */
+.nk-ws-sticky {
+  position: sticky; top: 3.75rem; z-index: 30;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem .8rem; border-radius: 14px;
+  border: 1px solid var(--surface-border); background: var(--surface);
+  box-shadow: 0 6px 18px rgba(2,8,20,.08);
+}
+.nk-ws-sticky__name { font-weight: 900; font-size: .8rem; max-width: 9rem; }
+.nk-ws-sticky__bar { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-container-high); overflow: hidden; min-width: 3rem; }
+.nk-ws-sticky__bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--ok), var(--brand-gold)); border-radius: 999px; transition: width .3s ease; }
+.nk-ws-sticky__pct { font-size: .78rem; font-weight: 900; color: var(--brand-gold); }
+.nk-ws-sticky__chips { display: none; gap: .35rem; }
+@media (min-width: 640px) { .nk-ws-sticky__chips { display: flex; } }
+.nk-chip {
+  font-size: .62rem; font-weight: 800; padding: .18rem .5rem; border-radius: 999px;
+  background: var(--surface-container-high); color: var(--fg-muted); border: 1px solid var(--surface-border); white-space: nowrap;
+}
+.nk-chip--ok { color: var(--ok-strong); background: var(--ok-bg); border-color: var(--ok-border); }
+.nk-chip--warn { color: var(--warn-strong); background: var(--warn-bg); border-color: var(--warn-border); }
+
+/* Tab badge (real per-stage fractions) */
+.nk-step__badge { font-size: .58rem; font-weight: 900; padding: .05rem .35rem; border-radius: 999px; background: var(--surface-container-high); color: var(--fg-muted); }
+
+/* Blocking validation panel (brief §5/§30) */
+.nk-block {
+  border: 1px solid var(--warn-border); background: var(--warn-bg); color: var(--warn-strong);
+  border-radius: 14px; padding: .8rem 1rem; font-size: .78rem; font-weight: 700;
+  display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+}
+.nk-block__list { margin: .25rem 0 0; padding: 0; list-style: none; width: 100%; display: grid; gap: .2rem; font-size: .74rem; }
+.nk-advance { display: flex; flex-direction: column; gap: .5rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--surface-border); align-items: flex-start; }
+.nk-advance__note { color: var(--fg-muted); font-size: .7rem; font-weight: 700; }
+
+/* One-time contextual hint (brief §20) */
+.nk-hint {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem;
+  border: 1px solid color-mix(in srgb, var(--brand-gold) 45%, transparent);
+  background: var(--brand-gold-surface); color: var(--fg);
+  border-radius: 14px; padding: .8rem 1rem; margin-bottom: 1rem; font-size: .78rem;
+}
+.nk-hint__ok {
+  border: 0; background: var(--brand-navy); color: #fff; font-weight: 900;
+  font-size: .68rem; padding: .45rem .8rem; border-radius: 10px; cursor: pointer; flex-shrink: 0;
+}
+.nk-hint__ok:hover { filter: brightness(1.12); }
+.nk-hint__ok:active { transform: scale(.97); }
+
+/* FAQ / Help center (brief §22–§23) */
+.nk-faq { border: 1px solid var(--surface-border); border-radius: 14px; background: var(--surface-container); overflow: hidden; }
+.nk-faq--open { border-color: color-mix(in srgb, var(--brand-gold) 50%, transparent); }
+.nk-faq__q {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem; width: 100%;
+  text-align: start; border: 0; background: transparent; color: var(--fg);
+  font-weight: 800; font-size: .82rem; padding: .85rem 1rem; cursor: pointer;
+}
+.nk-faq__q:hover { background: var(--surface-container-high); }
+.nk-faq__chev { font-weight: 900; color: var(--brand-gold); flex-shrink: 0; }
+.nk-faq__a { padding: 0 1rem .9rem; font-size: .78rem; line-height: 1.9; color: var(--fg-muted); }
+.nk-faq-cat {
+  border: 1px solid var(--surface-border); background: var(--surface-container); color: var(--fg-muted);
+  font-size: .68rem; font-weight: 800; padding: .4rem .7rem; border-radius: 999px; cursor: pointer;
+}
+.nk-faq-cat:hover { border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent); color: var(--fg); }
+.nk-faq-cat--on { background: var(--brand-navy); border-color: var(--brand-navy); color: #fff; }
+
+/* Global search rows (brief §16) */
+.nk-search-row {
+  display: flex; align-items: center; gap: .6rem; width: 100%; text-align: start;
+  border: 0; background: transparent; color: var(--fg);
+  padding: .55rem .7rem; border-radius: 12px; cursor: pointer;
+}
+.nk-search-row:hover, .nk-search-row--on { background: var(--surface-container-high); }
+
+/* Floating actions (brief §27/§28): help + back-to-top, stacked, never
+   covering the bottom nav (mobile) or toasts. */
+.nk-fab {
+  position: fixed; inset-inline-start: 1rem; width: 3rem; height: 3rem; border-radius: 999px;
+  border: 1px solid var(--surface-border); background: var(--surface); color: var(--brand-gold);
+  font-size: 1.15rem; font-weight: 900; display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 8px 22px rgba(2,8,20,.18); z-index: 50;
+  transition: transform .15s ease, opacity .2s ease, border-color .15s ease;
+}
+.nk-fab:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand-gold) 60%, transparent); }
+.nk-fab:active { transform: scale(.95); }
+.nk-fab--help { bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
+.nk-fab--top { bottom: calc(8.25rem + env(safe-area-inset-bottom, 0px)); opacity: 0; pointer-events: none; background: var(--brand-navy); color: #fff; }
+@media (min-width: 1024px) {
+  .nk-fab--help { bottom: 1.5rem; }
+  .nk-fab--top { bottom: 5rem; }
+}
+
+/* Scroll progress (brief §13) — zero-rerender, rAF-driven */
+.nk-scroll-progress {
+  position: fixed; top: 0; inset-inline-start: 0; height: 3px; width: 0;
+  background: linear-gradient(90deg, var(--brand-gold), var(--ok));
+  z-index: 60; opacity: 0; transition: opacity .3s ease; pointer-events: none;
+}
+
+/* Mobile more sheet (brief §11) */
+.nk-more-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface);
+  border-radius: 20px 20px 0 0; padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  display: grid; gap: .4rem; box-shadow: 0 -10px 30px rgba(2,8,20,.25); animation: nkSheetUp .2s ease;
+}
+@keyframes nkSheetUp { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.nk-more-sheet__item {
+  display: flex; align-items: center; gap: .7rem; border: 0;
+  background: var(--surface-container); color: var(--fg);
+  font-weight: 800; font-size: .84rem; padding: .85rem 1rem; border-radius: 12px; cursor: pointer;
+}
+.nk-more-sheet__item:hover { background: var(--surface-container-high); }
+.nk-more-sheet__item.active { background: var(--brand-gold-surface); color: var(--brand-gold); }
+
+/* Tour progress dots */
+.nk-tour__dot { width: .45rem; height: .45rem; border-radius: 999px; background: var(--surface-container-high); display: inline-block; }
+.nk-tour__dot--on { background: var(--brand-gold); width: 1.2rem; }
 
 
 }

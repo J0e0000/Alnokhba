@@ -32,8 +32,10 @@ export function ToastProvider({ children }) {
       {children}
       {/* pointer-events-none on the wrapper: an EMPTY toast stack must never
           intercept clicks on content underneath (blocker bug). Individual
-          toasts re-enable pointer events. */}
-      <div className="fixed bottom-4 left-4 z-[100] space-y-2 max-w-xs w-full pointer-events-none" dir="rtl">
+          toasts re-enable pointer events. Positioned above the floating
+          action stack (left) so they never cover the help / back-to-top
+          buttons on mobile or desktop. */}
+      <div className="fixed bottom-[11.75rem] lg:bottom-[8.5rem] left-4 z-[100] space-y-2 max-w-xs w-full pointer-events-none" dir="rtl">
         {toasts.map((t) => (
           <div key={t.id} onClick={() => dismiss(t.id)}
             className={`pointer-events-auto border rounded-xl shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2 cursor-pointer animate-[fadeIn_0.2s_ease] ${styles[t.type]}`}>

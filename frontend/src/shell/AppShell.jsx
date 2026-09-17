@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
@@ -8,14 +8,26 @@ import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
 import HistoryModal from '../components/HistoryModal'
 import MessageQueueModal from '../components/MessageQueueModal'
+import GlobalSearch from '../components/GlobalSearch'
+import Tutorial, { TOUR_DONE, markTourDone } from '../components/Tutorial'
+import { BackToTop } from '../components/ScrollFloat'
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
 import HomePage from '../home/HomePage'
-import SessionWorkspace from '../session/SessionWorkspace'
-import StudentsArea from '../areas/StudentsArea'
-import HistoryArea from '../areas/HistoryArea'
-import ReportsArea from '../areas/ReportsArea'
-import AnalyticsArea from '../areas/AnalyticsArea'
-import SettingsArea from '../areas/SettingsArea'
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APP SHELL — top bar + sidebar/bottom nav + area switch.
+// Performance: secondary areas are code-split (React.lazy) so the initial
+// bundle carries only Home + the shell; the workspace chunk loads on demand.
+// A11y (brief §17/§35): skip-to-content link, main landmark, focus-visible.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SessionWorkspace = lazy(() => import('../session/SessionWorkspace'))
+const StudentsArea = lazy(() => import('../areas/StudentsArea'))
+const HistoryArea = lazy(() => import('../areas/HistoryArea'))
+const ReportsArea = lazy(() => import('../areas/ReportsArea'))
+const AnalyticsArea = lazy(() => import('../areas/AnalyticsArea'))
+const SettingsArea = lazy(() => import('../areas/SettingsArea'))
+const HelpArea = lazy(() => import('../areas/HelpArea'))
 
 const IS_DEMO = Boolean(typeof window !== 'undefined' && window.__NOKHBA_DEMO__)
 
@@ -28,9 +40,18 @@ const NAV = [
   { key: 'history', label: 'سجل الطالب', labelEn: 'Student History', icon: '◷' },
   { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
   { key: 'analytics', label: 'التحليلات', labelEn: 'Analytics', icon: '⌁' },
+  { key: 'help', label: 'المساعدة', labelEn: 'Help', icon: '؟' },
   { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
 ]
-const MOBILE_NAV = NAV.filter((n) => n.key !== 'analytics')
+const MOBILE_NAV = NAV.filter((n) => ['home', 'students', 'history'].includes(n.key))
+const MORE_NAV = NAV.filter((n) => ['reports', 'analytics', 'settings'].includes(n.key))
+
+const AreaFallback = () => (
+  <div className="pt-2">
+    <div className="nk-skeleton h-20 w-full mb-4" />
+    <div className="nk-skeleton h-40 w-full" />
+  </div>
+)
 
 export default function AppShell({ onOpenAdmin }) {
   const { profile, signOut, isAssistant, ownerProfile } = useAuth()
@@ -41,12 +62,45 @@ export default function AppShell({ onOpenAdmin }) {
 
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyCount, setHistoryCount] = useState(getHistoryCount())
+  const [tourOpen, setTourOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   useEffect(() => {
     const refresh = () => setHistoryCount(getHistoryCount())
     const timer = window.setInterval(refresh, 4000)
     return () => window.clearInterval(timer)
   }, [])
+
+  // Guided tour: auto-runs once per device on first entry, restartable via
+  // the Help Center / floating help button (brief §19–§21, §27).
+  useEffect(() => {
+    const start = () => setTourOpen(true)
+    window.addEventListener('nk:start-tour', start)
+    if (!TOUR_DONE()) {
+      const t = window.setTimeout(start, 900)
+      return () => { window.clearTimeout(t); window.removeEventListener('nk:start-tour', start) }
+    }
+    return () => window.removeEventListener('nk:start-tour', start)
+  }, [])
+
+  const closeTour = () => { markTourDone(); setTourOpen(false) }
+
+  // Global search: Ctrl/⌘+K (brief §16).
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
+        e.preventDefault()
+        if (ui.searchOpen) ui.closeSearch()
+        else ui.openSearch()
+      }
+      if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) {
+        e.preventDefault()
+        ui.openSearch()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [ui])
 
   const dateLabel = useMemo(() => (isArabic ? AR_DATE : EN_DATE).format(new Date()), [isArabic])
 
@@ -77,6 +131,11 @@ export default function AppShell({ onOpenAdmin }) {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--app-bg)' }}>
+      {/* Skip-to-content (brief §17): first focusable element, jumps to <main> */}
+      <a href="#main-content" className="nk-skip-link">
+        {isArabic ? 'تخطَّ إلى المحتوى الرئيسي' : 'Skip to content'}
+      </a>
+
       {/* ── Top bar ─────────────────────────────────────────────── */}
       <header
         className="sticky top-0 z-40 border-b border-subtle"
@@ -104,6 +163,14 @@ export default function AppShell({ onOpenAdmin }) {
           )}
 
           <div className="flex items-center gap-1.5 ms-auto">
+            <button
+              className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+              onClick={ui.openSearch}
+              title={isArabic ? 'البحث الشامل (Ctrl+K)' : 'Search (Ctrl+K)'}
+              aria-label={isArabic ? 'البحث الشامل' : 'Global search'}
+            >
+              ⌕
+            </button>
             <OfflineBanner isOnline={ws.isOnline} pending={0} syncing={false} onManualSync={ws.syncPendingSaves} />
             <button
               className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
@@ -148,36 +215,101 @@ export default function AppShell({ onOpenAdmin }) {
           </button>
         </aside>
 
-        <main className="flex-1 min-w-0">
-          {ui.area === 'home' && <HomePage />}
-          {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
-          {ui.area === 'students' && <StudentsArea />}
-          {ui.area === 'history' && <HistoryArea />}
-          {ui.area === 'reports' && <ReportsArea />}
-          {ui.area === 'analytics' && <AnalyticsArea />}
-          {ui.area === 'settings' && <SettingsArea />}
+        <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
+          <Suspense fallback={<AreaFallback />}>
+            {ui.area === 'home' && <HomePage />}
+            {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
+            {ui.area === 'students' && <StudentsArea />}
+            {ui.area === 'history' && <HistoryArea />}
+            {ui.area === 'reports' && <ReportsArea />}
+            {ui.area === 'analytics' && <AnalyticsArea />}
+            {ui.area === 'settings' && <SettingsArea />}
+            {ui.area === 'help' && <HelpArea />}
+          </Suspense>
         </main>
       </div>
 
-      {/* ── Mobile bottom nav ───────────────────────────────────── */}
+      {/* ── Mobile bottom nav (brief §11): primary tabs + a More sheet for
+          the rest — a real mobile menu, not a shrunken sidebar. ── */}
       <nav className="nk-bottom-nav lg:hidden" aria-label="التنقل">
         {MOBILE_NAV.map((item) => (
           <button
             key={item.key}
             className={activeNav === item.key ? 'active' : ''}
-            onClick={() => ui.setArea(item.key)}
+            onClick={() => { setMoreOpen(false); ui.setArea(item.key) }}
           >
             <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>{item.icon}</span>
             <span>{isArabic ? item.label : item.labelEn}</span>
           </button>
         ))}
+        <button
+          className={MORE_NAV.some((n) => n.key === activeNav) ? 'active' : ''}
+          onClick={() => setMoreOpen(true)}
+          aria-expanded={moreOpen}
+          aria-haspopup="dialog"
+        >
+          <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>⋯</span>
+          <span>{isArabic ? 'المزيد' : 'More'}</span>
+        </button>
         <button onClick={async () => { await signOut() }}>
           <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>⎋</span>
           <span>{isArabic ? 'خروج' : 'Exit'}</span>
         </button>
       </nav>
 
+      {moreOpen && (
+        <div
+          className="fixed inset-0 z-[92] lg:hidden"
+          style={{ background: 'rgba(4,10,22,.45)' }}
+          onClick={() => setMoreOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isArabic ? 'المزيد من الأقسام' : 'More sections'}
+        >
+          <div
+            className="nk-more-sheet"
+            onClick={(e) => e.stopPropagation()}
+            role="menu"
+          >
+            {MORE_NAV.map((item) => (
+              <button
+                key={item.key}
+                role="menuitem"
+                className={`nk-more-sheet__item ${activeNav === item.key ? 'active' : ''}`}
+                onClick={() => { setMoreOpen(false); ui.setArea(item.key) }}
+              >
+                <span aria-hidden="true">{item.icon}</span>
+                <span>{isArabic ? item.label : item.labelEn}</span>
+              </button>
+            ))}
+            <button
+              role="menuitem"
+              className="nk-more-sheet__item"
+              style={{ color: 'var(--danger-strong)' }}
+              onClick={async () => { setMoreOpen(false); await signOut() }}
+            >
+              <span aria-hidden="true">⎋</span>
+              <span>{isArabic ? 'خروج' : 'Sign out'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Floating actions (brief §27/§28): help + back-to-top only ── */}
+      <button
+        type="button"
+        className="nk-fab nk-fab--help"
+        onClick={() => ui.openHelp()}
+        aria-label={isArabic ? 'المساعدة' : 'Help'}
+        title={isArabic ? 'المساعدة والأسئلة الشائعة' : 'Help & FAQ'}
+      >
+        ؟
+      </button>
+      <BackToTop />
+
       {/* ── Overlays ────────────────────────────────────────────── */}
+      <GlobalSearch />
+      <Tutorial open={tourOpen} onClose={closeTour} />
       <HistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

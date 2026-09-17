@@ -13,25 +13,54 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // - 'completed' homework must persist as مكتمل — the mirror field and the
 //   lesson row are written together, exactly like production.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function InteractionHomeworkTab({ groupId, lessonOpen }) {
+export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFocus, onClearFocus }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('present') // present | all | absent
+  const [intFilter, setIntFilter] = useState('all') // all | done | missing  (interaction completeness)
+  const [hwFilter, setHwFilter] = useState('all') // all | done | partial | missing (homework completeness)
 
   const attendanceMap = ws.lessonAttendanceByStudent
   const groupStudents = ws.sessionStudentsFor(groupId)
 
+  // Per-student completeness flags — same rules as the workspace gating:
+  // interaction = positive interaction log (present students only);
+  // homework = explicit homework state (applicable = non-absent students).
+  const flag = (s) => {
+    const status = attendanceMap[s.id]?.status || (lessonOpen ? 'لم يرصد' : s.attendance_status)
+    const hw = attendanceMap[s.id]?.homework_status || (lessonOpen ? 'لم يرصد' : s.hw_status)
+    const isPresent = status === 'حاضر'
+    const isAbsent = status === 'غائب'
+    const hasInteraction = isPresent && (ws.todayLogsByStudent[s.id] || []).some((l) => l.points_delta > 0 && /تفاعل|ذهبية|مساعدة|نقاط/.test(l.note || ''))
+    const hwDone = hw === 'مكتمل' || hw === 'تم'
+    const hwPartial = hw === 'ناقص'
+    const hwMissing = !isAbsent && (hw === 'لم يرصد' || !hw)
+    return { status, hw, isPresent, isAbsent, hasInteraction, hwDone, hwPartial, hwMissing }
+  }
+
   const rows = useMemo(() => {
     const q = normalizeArabicSearch(search)
     return groupStudents.filter((s) => {
-      const status = attendanceMap[s.id]?.status || (lessonOpen ? 'لم يرصد' : s.attendance_status)
-      if (filter === 'present' && status !== 'حاضر') return false
-      if (filter === 'absent' && status !== 'غائب') return false
+      const f = flag(s)
+      // Shortcut from the advance bar: ONLY students who still need handling.
+      if (missingFocus) {
+        const needsAttention = (f.isPresent && !f.hasInteraction) || f.hwMissing
+        if (!needsAttention) return false
+      } else {
+        if (filter === 'present' && !f.isPresent) return false
+        if (filter === 'absent' && !f.isAbsent) return false
+        if (intFilter === 'done' && !f.hasInteraction) return false
+        if (intFilter === 'missing' && (f.isAbsent || f.hasInteraction)) return false
+        if (hwFilter === 'done' && !f.hwDone) return false
+        if (hwFilter === 'partial' && !f.hwPartial) return false
+        if (hwFilter === 'missing' && !f.hwMissing) return false
+      }
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
-  }, [groupStudents, search, filter, attendanceMap, lessonOpen])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupStudents, search, filter, intFilter, hwFilter, attendanceMap, lessonOpen, missingFocus, ws.todayLogsByStudent])
 
   const interactionButtons = [
     { label: '🌟 ' + (isArabic ? 'تفاعل' : 'Interact'), amount: ws.settings?.points_interact ?? 3, reason: isArabic ? 'إجابة وتفاعل' : 'Interaction' },
@@ -56,7 +85,18 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen }) {
           : 'Interaction & homework apply to present students — absentees are excluded automatically. Completed homework persists with each save.'}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      {missingFocus && (
+        <div className="nk-block mb-3" role="status">
+          <b>{isArabic ? 'يُعرض الطلاب الناقصون فقط — أكملهم ليصبح التقدم متاحًا.' : 'Showing only missing students — complete them to unlock progress.'}</b>
+          {onClearFocus && (
+            <button className="btn-ghost rounded-xl px-3 py-1.5 text-[.7rem] font-extrabold" onClick={onClearFocus}>
+              {isArabic ? 'إلغاء التصفية' : 'Clear filter'}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <input
           className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[180px]"
           placeholder={isArabic ? '🔍 بحث بالاسم أو الكود...' : 'Search name / code...'}
@@ -83,6 +123,50 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen }) {
           ))}
         </div>
         <span className="nk-pill nk-pill-gold">{isArabic ? 'الواجب' : 'Homework'}: {counts.hwDone} / {counts.hwApplicable}</span>
+      </div>
+
+      {/* Stage completeness filters (brief §7): Interaction All/Done/Missing ·
+          Homework All/Done/Partial/Missing — same segmented UX as everywhere. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-[.68rem] font-extrabold text-fg-muted">{isArabic ? 'التفاعل:' : 'Interaction:'}</span>
+        <div className="flex rounded-xl overflow-hidden border border-subtle">
+          {[
+            ['all', isArabic ? 'الكل' : 'All'],
+            ['done', isArabic ? 'تم' : 'Done'],
+            ['missing', isArabic ? 'ناقص' : 'Missing'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setIntFilter(key)}
+              className="px-3 py-1.5 text-[.68rem] font-extrabold"
+              style={intFilter === key
+                ? { background: 'var(--brand-navy)', color: '#fff' }
+                : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[.68rem] font-extrabold text-fg-muted ms-2">{isArabic ? 'الواجب:' : 'Homework:'}</span>
+        <div className="flex rounded-xl overflow-hidden border border-subtle">
+          {[
+            ['all', isArabic ? 'الكل' : 'All'],
+            ['done', isArabic ? 'مكتمل' : 'Done'],
+            ['partial', isArabic ? 'ناقص' : 'Partial'],
+            ['missing', isArabic ? 'لم يُرصد' : 'Missing'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setHwFilter(key)}
+              className="px-3 py-1.5 text-[.68rem] font-extrabold"
+              style={hwFilter === key
+                ? { background: 'var(--brand-navy)', color: '#fff' }
+                : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-2.5">

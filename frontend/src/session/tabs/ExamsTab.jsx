@@ -11,7 +11,7 @@ import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
 // never graded, never penalized — same server rule as production.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function ExamsTab({ groupId, lessonId, lessonOpen }) {
+export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [view, setView] = useState('list') // list | setup | grade
@@ -60,7 +60,7 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen }) {
         </p>
       ) : (
         <div className="grid gap-3">
-          {sessionExams.map((exam) => <ExamCard key={exam.id} exam={exam} groupId={groupId} />)}
+          {sessionExams.map((exam) => <ExamCard key={exam.id} exam={exam} groupId={groupId} autoFilter={missingFocus ? 'ungraded' : null} />)}
         </div>
       )}
     </div>
@@ -137,7 +137,7 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('present') // present | absent | all — default PRESENT (rule 12)
+  const [filter, setFilter] = useState('present') // present | absent | all | ungraded
   const [rows, setRows] = useState({}) // studentId → {sectionScores, total}
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -152,11 +152,12 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
       const st = statusOf(s)
       if (filter === 'present' && st !== 'حاضر') return false
       if (filter === 'absent' && st !== 'غائب') return false
+      if (filter === 'ungraded' && (st !== 'حاضر' || (rows[s.id] && Object.values(rows[s.id].sectionScores).some((v) => v !== '' && v != null)))) return false
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupStudents, search, filter, attendanceMap, lessonId])
+  }, [groupStudents, search, filter, attendanceMap, lessonId, rows])
 
   const setScore = (studentId, section, value) => {
     const max = Number(setup.max)
@@ -205,7 +206,7 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[160px]" placeholder={isArabic ? '🔍 بحث...' : 'Search...'} value={search} onChange={(e) => setSearch(e.target.value)} />
         <div className="flex rounded-xl overflow-hidden border border-subtle">
-          {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
+          {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['ungraded', isArabic ? 'غير المرصدون' : 'Ungraded'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
             <button key={key} onClick={() => setFilter(key)} className="px-3 py-2 text-[.72rem] font-extrabold"
               style={filter === key ? { background: 'var(--brand-navy)', color: '#fff' } : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}>
               {label}
@@ -257,12 +258,12 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
 }
 
 // ── Existing exam card: A) max-score editor  B) per-student score editor ────
-function ExamCard({ exam, groupId }) {
+function ExamCard({ exam, groupId, autoFilter }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('present')
+  const [filter, setFilter] = useState(autoFilter === 'ungraded' ? 'ungraded' : 'present')
   const [maxDraft, setMaxDraft] = useState(null)
   const [scoreDrafts, setScoreDrafts] = useState({}) // scoreId → value
   const [busy, setBusy] = useState(false)
@@ -291,6 +292,7 @@ function ExamCard({ exam, groupId }) {
       if (filter === 'present' && st !== 'حاضر') return false
       if (filter === 'absent' && st !== 'غائب') return false
       if (filter === 'graded' && !scoreByStudent[s.id]) return false
+      if (filter === 'ungraded' && (scoreByStudent[s.id] || st !== 'حاضر')) return false
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
@@ -372,7 +374,7 @@ function ExamCard({ exam, groupId }) {
             <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--accent-blue)' }}>ب · {isArabic ? 'تعديل درجة طالب' : 'B · Student scores'}</span>
             <input className="glass-input rounded-xl px-3 py-2 text-sm flex-1 min-w-[150px]" placeholder={isArabic ? '🔍 بحث...' : 'Search...'} value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['graded', isArabic ? 'المرصدون' : 'Graded']].map(([key, label]) => (
+              {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['graded', isArabic ? 'المرصدون' : 'Graded'], ['ungraded', isArabic ? 'غير المرصدون' : 'Ungraded'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
                 <button key={key} onClick={() => setFilter(key)} className="px-2.5 py-2 text-[.68rem] font-extrabold"
                   style={filter === key ? { background: 'var(--brand-navy)', color: '#fff' } : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}>
                   {label}

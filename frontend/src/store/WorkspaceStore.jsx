@@ -583,6 +583,23 @@ export function WorkspaceProvider({ children }) {
     return data
   }, [effectiveTeacherId, lessonSessions, groupMeta, isArabic, showToast])
 
+  // Open a session for a SPECIFIC date (day timeline). Purely client-side:
+  // lessonSessions already holds every teacher session — no new fetch needed.
+  // Reuses an open lesson first, else any lesson for that group+date. Creates
+  // NOTHING (only openLessonForGroup / forceNew creates sessions).
+  const openLessonForDate = useCallback(async (groupName, dateISO, { silent = false } = {}) => {
+    if (!groupName || !effectiveTeacherId || !dateISO) return null
+    const list = lessonSessions.filter((l) => l.group_name === groupName && l.session_date === dateISO)
+    const target = list.find((l) => l.status === 'open') || list[0]
+    if (target) {
+      setActiveLessonId(target.id)
+      if (!silent && target.status === 'completed') showToast(isArabic ? 'حصة محفوظة ومنتهية — البيانات للعرض والمراجعة.' : 'A saved, completed session — data is view-only.', 'info')
+      return target
+    }
+    if (!silent) showToast(isArabic ? 'لا توجد حصة مسجّلة لهذه المجموعة في هذا اليوم.' : 'No session recorded for this group on that day.', 'info')
+    return null
+  }, [effectiveTeacherId, lessonSessions, isArabic, showToast])
+
   const saveSessionContent = async (lessonId, draft) => {
     if (!lessonId) return false
     const lesson = lessonSessions.find((l) => l.id === lessonId)
@@ -1036,7 +1053,7 @@ export function WorkspaceProvider({ children }) {
     // actions
     loadAll, refreshTodayGroups, refreshSettings, setActiveLessonId,
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
-    openLessonForGroup, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
+    openLessonForGroup, openLessonForDate, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
     saveExam, addGroup, updateGroup, deleteGroup,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,

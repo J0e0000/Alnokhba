@@ -26,6 +26,20 @@ export default defineConfig({
     // Downlevel CSS alongside the JS so older WebKit doesn't hit syntax it
     // can't parse while minifying (Round 10).
     cssTarget: ['safari13', 'ios13', 'chrome87', 'firefox78'],
+    // Vendor splitting: framework + supabase client are stable between
+    // deploys → long-term cached chunks. Area code lives in lazy chunks via
+    // React.lazy in AppShell (brief §8/§34: smaller initial bundle).
+    // NOTE: Vite 8 / Rolldown requires manualChunks as a FUNCTION.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@supabase')) return 'supabase'
+          if (id.includes('react-dom') || /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react'
+          return undefined
+        },
+      },
+    },
   },
   // ── Why NOT @vitejs/plugin-legacy (Round 10 decision) ──────────────────────
   // plugin-legacy exists for browsers WITHOUT ES-module support (iOS Safari
