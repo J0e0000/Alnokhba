@@ -286,3 +286,31 @@ export function closeReusableWhatsAppWindow() {
   try { whatsappWindowHandle?.close?.() } catch { /* already closed */ }
   whatsappWindowHandle = null
 }
+
+/**
+ * Copy text to the clipboard with a legacy fallback (non-secure contexts /
+ * older WebViews where navigator.clipboard is missing or rejected).
+ * Returns true when the text is (very likely) on the clipboard.
+ */
+export async function copyToClipboard(text) {
+  const value = String(text || '')
+  if (!value) return false
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+  } catch { /* fall through to the legacy path */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = value
+    ta.setAttribute('readonly', '')
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;'
+    document.body.appendChild(ta)
+    ta.select()
+    ta.setSelectionRange(0, value.length)
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch { return false }
+}

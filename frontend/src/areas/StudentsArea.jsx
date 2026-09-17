@@ -3,8 +3,9 @@ import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
+import StudentProfileModal from '../components/StudentProfileModal'
 import { SkeletonTableRows } from '../components/Skeleton'
-import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl } from '../lib/helpers'
+import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, copyToClipboard } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink } from '../lib/qrPdfWhatsApp'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -24,8 +25,10 @@ export default function StudentsArea() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [selected, setSelected] = useState(new Set())
   const [studentModal, setStudentModal] = useState({ open: false, student: null })
+  const [profileModal, setProfileModal] = useState({ open: false, student: null })
   const [bulkAddOpen, setBulkAddOpen] = useState(false)
   const [qrBusy, setQrBusy] = useState(null)
+  const [copyBusy, setCopyBusy] = useState(null)
 
   // Deep link from global search: pre-filter to the focused student (brief §16).
   useEffect(() => {
@@ -78,6 +81,21 @@ export default function StudentsArea() {
       if (!phone) { ws.showToast?.('لا يوجد رقم هاتف صحيح', 'error'); return }
       openWhatsAppUrl(buildWhatsAppUrl(phone, message))
     } finally { setQrBusy(null) }
+  }
+
+  // Copy the student's portal link straight to the clipboard — no WhatsApp,
+  // no modal, the raw https://.../qr/<token> ready to paste anywhere.
+  const copyStudentLink = async (student) => {
+    setCopyBusy(student.id)
+    try {
+      const token = await getOrCreateStudentToken(student.id)
+      if (!token) { ws.showToast?.('تعذر إنشاء رابط الطالب', 'error'); return }
+      const ok = await copyToClipboard(buildStudentQRLink(token))
+      ws.showToast?.(
+        ok ? '✅ تم نسخ رابط البوابة — الصقه في أي مكان' : 'تعذر النسخ — جرّب من ملف الطالب',
+        ok ? 'success' : 'error',
+      )
+    } finally { setCopyBusy(null) }
   }
 
   const bulkMessage = () => {
@@ -134,18 +152,33 @@ export default function StudentsArea() {
         </div>
       )}
 
-      {/* Student cards/rows */}
+      {/* Student cards/rows — clicking the NAME opens the profile,
+          clicking anywhere else on the row toggles selection. */}
       <div className="grid gap-2">
         {filtered.map((s) => {
           const rank = getStudentRank(s.points || 0, ws.ranks)
           const isSel = selected.has(s.id)
           const isSavingRow = ws.savingIds.has(s.id)
           return (
-            <div key={s.id} className="nk-row !flex-wrap" style={isSel ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}>
-              <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+            <div
+              key={s.id}
+              className="nk-row !flex-wrap"
+              style={isSel ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)', cursor: 'pointer' } : { cursor: 'pointer' }}
+              onClick={() => toggleSelect(s.id)}
+            >
+              <label
+                className="flex items-center gap-2 min-w-0 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <input type="checkbox" className="w-4 h-4 accent-[var(--brand-gold)]" checked={isSel} onChange={() => toggleSelect(s.id)} aria-label={`تحديد ${s.name}`} />
                 <span className="min-w-0">
-                  <b className="truncate">{s.name} {isSavingRow ? '…' : ''}</b>
+                  <button
+                    type="button"
+                    className="font-black truncate bg-transparent border-0 p-0 text-fg cursor-pointer hover:underline"
+                    style={{ fontSize: 'inherit' }}
+                    title={isArabic ? 'فتح ملف الطالب' : 'Open profile'}
+                    onClick={(e) => { e.stopPropagation(); setProfileModal({ open: true, student: s }) }}
+                  >{s.name}{isSavingRow ? '…' : ''}</button>
                   <small>{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.stage ? ` · ${s.stage}` : ''}</small>
                 </span>
               </label>
@@ -156,7 +189,7 @@ export default function StudentsArea() {
                 <span className="nk-pill nk-pill-gold">{rank} · {s.points || 0}</span>
                 {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
               </span>
-              <span className="flex flex-wrap items-center gap-1.5 ms-auto">
+              <span className="flex flex-wrap items-center gap-1.5 ms-auto" onClick={(e) => e.stopPropagation()}>
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
@@ -166,9 +199,16 @@ export default function StudentsArea() {
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
+                  onClick={() => copyStudentLink(s)}
+                  disabled={copyBusy === s.id}
+                  title={isArabic ? 'نسخ رابط البوابة' : 'Copy portal link'}
+                >{copyBusy === s.id ? '…' : '📋'}</button>
+                <button
+                  className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                  style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
                   onClick={() => sendQRToStudent(s)}
                   disabled={qrBusy === s.id}
-                  title={isArabic ? 'إرسال رابط البوابة' : 'Send portal link'}
+                  title={isArabic ? 'إرسال رابط البوابة واتساب' : 'Send portal link via WhatsApp'}
                 >{qrBusy === s.id ? '…' : 'QR'}</button>
                 <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
                 <button
@@ -198,6 +238,16 @@ export default function StudentsArea() {
           if (result?.ok) setStudentModal({ open: false, student: null })
         }}
         isSaving={ws.isSaving}
+      />
+
+      <StudentProfileModal
+        open={profileModal.open}
+        student={profileModal.student}
+        onClose={() => setProfileModal({ open: false, student: null })}
+        onEdit={(student) => setStudentModal({ open: true, student })}
+        showToast={ws.showToast}
+        isArabic={isArabic}
+        ranks={ws.ranks}
       />
 
       {bulkAddOpen && <BulkAddModal onClose={() => setBulkAddOpen(false)} />}
