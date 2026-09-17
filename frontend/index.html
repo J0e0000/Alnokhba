@@ -10,7 +10,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="النخبة" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f4f7fb" />
     <meta name="description" content="النخبة منصة عربية لإدارة الحصص والطلاب والحضور والامتحانات والنتائج وتقارير أولياء الأمور ببساطة." />
     <meta property="og:title" content="النخبة — كل شغل المدرس في مكان واحد" />
@@ -18,8 +18,408 @@
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/logo-512.png" />
     <title>النخبة — كل شغل المدرس في مكان واحد</title>
+    <style>
+      /* Boot splash (ES5-safe, no external font so it paints instantly) */
+      #nokhba-boot {
+        position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+        background: #f4f7fb; z-index: 2147483647;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        font-family: -apple-system, 'Segoe UI', Tahoma, Arial, sans-serif;
+        direction: rtl;
+      }
+      #nokhba-boot .nb-logo {
+        width: 64px; height: 64px; border-radius: 18px; margin-bottom: 18px;
+        background: #172033; color: #FFD700; font-weight: 900; font-size: 30px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      #nokhba-boot .nb-ring {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 4px solid rgba(23,32,51,0.15); border-top-color: #172033;
+        animation: nb-spin 0.8s linear infinite;
+      }
+      #nokhba-boot .nb-txt { margin-top: 14px; font-size: 14px; color: #64748b; }
+      @keyframes nb-spin { to { transform: rotate(360deg); } }
+      #nokhba-boot .nb-watchdog {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px;
+        padding: 22px 20px; max-width: 320px; text-align: center;
+        box-shadow: 0 10px 30px rgba(15,23,42,0.08);
+      }
+      #nokhba-boot .nb-watchdog h1 { font-size: 17px; font-weight: 900; color: #172033; margin: 0 0 8px; }
+      #nokhba-boot .nb-watchdog p { font-size: 13px; color: #64748b; line-height: 1.7; margin: 0 0 14px; }
+      #nokhba-boot .nb-watchdog button {
+        background: #172033; color: #ffffff; border: 0; border-radius: 12px;
+        padding: 10px 22px; font-size: 13px; font-weight: 800; cursor: pointer;
+        font-family: inherit;
+      }
+    </style>
+    <script>
+      /* ══════════════════════════════════════════════════════════════════
+         NOKHBA BOOT LAYER (Round 9–14) — strict ES5, runs BEFORE modules.
+         1. paintLoader: instant splash so the phone never shows a white page
+            while the 2.6MB bundle downloads.
+         2. isFatalResource + autoBustOnce: if a CORE app asset fails to load
+            (stale cache / bad deploy), reload ONCE with a cache-busting query
+            — guarded by sessionStorage('nb-bust-once') so it can never loop.
+            Cross-origin failures (fonts/analytics) are NOT fatal.
+         3. 15s boot watchdog: if the app never signals
+            window.__NOKHBA_BOOTED__ / window.__nokhbaBooted, show an Arabic
+            fallback with a safe retry button instead of a silent white page.
+         4. __NOKHBA_HARD_RESET__: "clear temp files" escape hatch used by the
+            production error boundary (caches + service worker only — never
+            user data, which lives server-side).
+         ══════════════════════════════════════════════════════════════════ */
+      (function () {
+        var NB_BUST_KEY = 'nb-bust-once'
+
+        function paintLoader() {
+          if (document.getElementById('nokhba-boot')) return
+          var wrap = document.createElement('div')
+          wrap.id = 'nokhba-boot'
+          wrap.innerHTML =
+            '<div class="nb-logo">ن</div>' +
+            '<div class="nb-ring"></div>' +
+            '<div class="nb-txt">جاري فتح النخبة…</div>'
+          document.body.appendChild(wrap)
+        }
+
+        function bootFailedMessage() {
+          var wrap = document.getElementById('nokhba-boot')
+          if (!wrap) { paintLoader(); wrap = document.getElementById('nokhba-boot') }
+          if (!wrap) return
+          wrap.innerHTML =
+            '<div class="nb-watchdog">' +
+            '<h1>نظام الآيفون قديم شوية</h1>' +
+            '<p>الصفحة محتاجت تحديث بسيط عشان تفتح على هذا الجهاز. اضغط الزر تحت لإعادة المحاولة — لو استمرت المشكلة، حدّث Safari من الإعدادات أو جرّب متصفح Chrome.</p>' +
+            '<button type="button" onclick="window.location.reload()">إعادة المحاولة</button>' +
+            '</div>'
+        }
+
+        /* Resource errors only (capture phase). Decides whether a failed
+           script/style is OURS (fatal) or third-party (never fatal). */
+        function isFatalResource(ev) {
+          var t = ev && ev.target
+          if (!t || !t.tagName) return false
+          var tag = t.tagName.toUpperCase()
+          if (tag !== 'SCRIPT' && tag !== 'LINK') return false
+          var url = String((tag === 'LINK' ? t.href : t.src) || '')
+          if (!url) return false
+          /* cross-origin (fonts, analytics, CDNs) → non-fatal by definition */
+          if (url.indexOf(window.location.origin) !== 0) return false
+          /* our hashed bundles and stylesheets are core */
+          return (tag === 'SCRIPT' && /\.js(\?|$)/.test(url)) || (tag === 'LINK' && /\.css(\?|$)/.test(url))
+        }
+
+        function autoBustOnce() {
+          try {
+            if (window.sessionStorage && window.sessionStorage.getItem(NB_BUST_KEY)) return
+            if (window.sessionStorage) window.sessionStorage.setItem(NB_BUST_KEY, String(Date.now()))
+          } catch (e) { /* private mode — just reload without the guard */ }
+          try {
+            var u = window.location.pathname + '?nbv=' + Date.now() + window.location.hash
+            window.location.replace(u)
+          } catch (e) { window.location.reload() }
+        }
+
+        window.addEventListener('error', function (ev) {
+          try {
+            if (!isFatalResource(ev)) return
+            autoBustOnce()
+          } catch (e) { /* never block the page */ }
+        }, true)
+
+        /* 15s watchdog — the app must signal the boot flag; else show fallback */
+        setTimeout(function () {
+          try {
+            if (window.__NOKHBA_BOOTED__ || window.__nokhbaBooted) return
+            bootFailedMessage()
+          } catch (e) { /* keep whatever is on screen */ }
+        }, 15000)
+
+        /* Escape hatch used by the production error boundary (ES5-safe) */
+        window.__NOKHBA_HARD_RESET__ = function () {
+          var done = 0
+          function finish() {
+            done += 1
+            if (done === 2) window.location.reload()
+          }
+          try {
+            if (window.caches && caches.keys) {
+              caches.keys().then(function (keys) {
+                var jobs = keys.filter(function (k) { return /workbox|vite|pwa|precache|nokhba/i.test(k) })
+                  .map(function (k) { return caches.delete(k) })
+                return Promise.all(jobs)
+              }).then(finish).catch(finish)
+            } else { finish() }
+          } catch (e) { finish() }
+          try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister() }))
+              }).then(finish).catch(finish)
+            } else { finish() }
+          } catch (e) { finish() }
+          try {
+            if (window.sessionStorage) window.sessionStorage.removeItem(NB_BUST_KEY)
+          } catch (e) { /* ignore */ }
+        }
+
+        /* Paint the splash as soon as a body exists (script runs in <head>) */
+        function startPaint() {
+          paintLoader()
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', startPaint)
+        } else {
+          startPaint()
+        }
+      })()
+    </script>
+    <script>
+      /* ══════════════════════════════════════════════════════════════════
+         NOKHBA DIAGNOSTIC ENGINE (Round 11–14) — strict ES5, no deps.
+         Captures crashes (error + unhandledrejection), runs WebKit feature
+         self-tests, probes the Supabase backend, and persists the last crash
+         so it survives the reload. Open the portal with ?diag=1 (or after a
+         crash on the watchdog screen) to see the report with two actions:
+         «نسخ تقرير التشخيص» and «مسح البيانات المحلية».
+         React code talks to it ONLY through window.__NOKHBA_DIAG (bridge).
+         ══════════════════════════════════════════════════════════════════ */
+      (function () {
+        var CRASH_KEY = '__nokhbaLastCrash'
+        var engine = {
+          version: 'nokhba-r14',
+          booted: false,
+          bootedAt: 0,
+          startedAt: new Date().getTime(),
+          crashes: [],
+          uiActive: false,
+        }
+        window.__NOKHBA_DIAG = engine
+        window.__NOKHBA_NATIVE = true
+
+        function featureSelfTests() {
+          var out = {}
+          try { out.broadcastChannel = typeof BroadcastChannel !== 'undefined' } catch (e) { out.broadcastChannel = false }
+          try {
+            var cv = document.createElement('canvas')
+            var ctx = cv.getContext && cv.getContext('2d')
+            out.canvas2d = !!ctx
+          } catch (e) { out.canvas2d = false }
+          try { out.localStorage = (function () { localStorage.setItem('__nb_t', '1'); var ok = localStorage.getItem('__nb_t') === '1'; localStorage.removeItem('__nb_t'); return ok })() } catch (e) { out.localStorage = false }
+          try { out.esModules = 'noModule' in document.createElement('script') } catch (e) { out.esModules = false }
+          try { out.cspBlockedEval = false } catch (e) { /* noop */ }
+          return out
+        }
+
+        function supabaseUrl() {
+          return String(window.__NOKHBA_SUPABASE_URL__ || '')
+        }
+
+        function probeSupabase(cb) {
+          var url = supabaseUrl()
+          if (!url || !window.fetch) { cb('unknown'); return }
+          fetch(url + '/rest/v1/', { method: 'HEAD' })
+            .then(function (r) { cb('http ' + r.status) })
+            .catch(function (e) { cb('network-failed: ' + (e && e.message ? e.message : 'error')) })
+        }
+
+        function capture(kind, message, extra) {
+          try {
+            var entry = {
+              kind: kind,
+              message: String(message || '').slice(0, 500),
+              at: new Date().toISOString(),
+              url: window.location.href,
+              ua: navigator.userAgent,
+              bootFlag: !!(window.__NOKHBA_BOOTED__ || window.__nokhbaBooted),
+              sinceStartMs: new Date().getTime() - engine.startedAt,
+              features: featureSelfTests(),
+              supabaseUrl: supabaseUrl(),
+              extra: extra || null,
+            }
+            engine.crashes.push(entry)
+            try { localStorage.setItem(CRASH_KEY, JSON.stringify(entry)) } catch (e) { /* full/private */ }
+            if (engine.uiActive || /diag=1/.test(window.location.search)) showPanel()
+            return entry
+          } catch (e) { /* diagnostics must never throw */ }
+        }
+
+        function reportText() {
+          var lines = ['== النخبة — تقرير التشخيص ==']
+          lines.push('engine: ' + engine.version)
+          lines.push('booted: ' + engine.booted + ' (' + (new Date().getTime() - engine.startedAt) + 'ms since start)')
+          lines.push('url: ' + window.location.href)
+          lines.push('ua: ' + navigator.userAgent)
+          lines.push('supabase: ' + (supabaseUrl() || 'غير معروف'))
+          lines.push('crashes: ' + engine.crashes.length)
+          for (var i = 0; i < engine.crashes.length; i++) {
+            lines.push('--- crash ' + (i + 1) + ' ---')
+            lines.push(JSON.stringify(engine.crashes[i], null, 2))
+          }
+          try {
+            var last = localStorage.getItem(CRASH_KEY)
+            if (last) lines.push('--- last persisted crash ---\n' + last)
+          } catch (e) { /* ignore */ }
+          return lines.join('\n')
+        }
+
+        function copyReport() {
+          var text = reportText()
+          var done = function () { alert('تم نسخ تقرير التشخيص. ابعت التقرير لصاحب المنصة.') }
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done) })
+              return
+            }
+          } catch (e) { /* fall through */ }
+          legacyCopy(text, done)
+        }
+
+        function legacyCopy(text, done) {
+          try {
+            var ta = document.createElement('textarea')
+            ta.value = text
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            done()
+          } catch (e) { window.prompt('انسخ التقرير يدويًا:', text) }
+        }
+
+        function hardResetLocal() {
+          try { localStorage.clear() } catch (e) { /* ignore */ }
+          try { if (window.sessionStorage) window.sessionStorage.clear() } catch (e) { /* ignore */ }
+          if (typeof window.__NOKHBA_HARD_RESET__ === 'function') { window.__NOKHBA_HARD_RESET__(); return }
+          window.location.reload()
+        }
+
+        function showPanel() {
+          var wrap = document.getElementById('nokhba-boot')
+          if (!wrap && document.body) {
+            wrap = document.createElement('div')
+            wrap.id = 'nokhba-boot'
+            document.body.appendChild(wrap)
+          }
+          if (!wrap) return /* DOM not ready yet — caller retries after DOMContentLoaded */
+          engine.uiActive = true
+          probeSupabase(function (status) {
+            wrap.innerHTML =
+              '<div class="nb-watchdog" style="max-width:420px;text-align:right">' +
+              '<h1>تقرير التشخيص</h1>' +
+              '<p id="nb-diag-summary">جاري التجميع…</p>' +
+              '<button type="button" id="nb-diag-copy" style="margin:0 4px">نسخ تقرير التشخيص</button>' +
+              '<button type="button" id="nb-diag-reset" style="margin:0 4px;background:#b91c1c">مسح البيانات المحلية</button>' +
+              '</div>'
+            var summary = document.getElementById('nb-diag-summary')
+            if (summary) {
+              var f = engine.crashes.length ? engine.crashes[engine.crashes.length - 1].features : featureSelfTests()
+              summary.innerHTML =
+                'booted: ' + engine.booted + '<br>' +
+                'supabase: ' + status + '<br>' +
+                'BroadcastChannel: ' + (f.broadcastChannel ? '✓' : '✗') +
+                ' — Canvas: ' + (f.canvas2d ? '✓' : '✗') +
+                ' — localStorage: ' + (f.localStorage ? '✓' : '✗') + '<br>' +
+                'عدد الأعطال المرصودة: ' + engine.crashes.length
+            }
+            var copyBtn = document.getElementById('nb-diag-copy')
+            if (copyBtn) copyBtn.addEventListener('click', copyReport)
+            var resetBtn = document.getElementById('nb-diag-reset')
+            if (resetBtn) resetBtn.addEventListener('click', hardResetLocal)
+          })
+        }
+
+        engine.markBooted = function () {
+          engine.booted = true
+          engine.bootedAt = new Date().getTime() - engine.startedAt
+        }
+        engine.show = function (error, info) {
+          capture('react-boundary', error && (error.message || String(error)), {
+            componentStack: info && info.componentStack ? String(info.componentStack).slice(0, 1200) : null,
+          })
+        }
+        engine.isEngineUIActive = function () { return engine.uiActive }
+        engine.capture = capture
+        engine.showPanel = showPanel
+
+        /* Global listeners: runtime errors + unhandled promise rejections */
+        window.addEventListener('error', function (ev) {
+          try {
+            if (ev && ev.target && (ev.target.tagName === 'SCRIPT' || ev.target.tagName === 'LINK')) return /* resource errors handled by boot layer */
+            capture('window-error', ev && ev.message, ev && ev.filename ? { filename: ev.filename + ':' + ev.lineno } : null)
+          } catch (e) { /* ignore */ }
+        })
+        window.addEventListener('unhandledrejection', function (ev) {
+          try {
+            var r = ev && ev.reason
+            capture('unhandledrejection', r && (r.message || String(r)), null)
+          } catch (e) { /* ignore */ }
+        })
+
+        /* Manual trigger: /?diag=1 opens the panel immediately — but only once
+           the body exists (this script runs in <head>). */
+        function maybeShowFromUrl() {
+          try {
+            if (/diag=1/.test(window.location.search)) showPanel()
+          } catch (e) { /* ignore */ }
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', maybeShowFromUrl)
+        } else {
+          maybeShowFromUrl()
+        }
+      })()
+    </script>
+    <script>
+      /* iOS 13–16 compatibility shims — MUST run before the app modules.
+         The bundle is transpiled to es2019 (see vite.config.js) so old
+         iPhones can parse it; these tiny polyfills cover newer runtime
+         APIs that some dependencies call directly. Classic inline script
+         = executes immediately, before any deferred module script. */
+      (function () {
+        function at(n) {
+          n = Math.trunc(n) || 0
+          if (n < 0) n += this.length
+          if (n < 0 || n >= this.length) return undefined
+          return this[n]
+        }
+        function define(obj, name, value) {
+          if (!obj[name]) Object.defineProperty(obj, name, { value: value, writable: true, configurable: true })
+        }
+        define(Array.prototype, 'at', at)
+        define(String.prototype, 'at', at)
+        define(Object, 'hasOwn', function (o, p) { return Object.prototype.hasOwnProperty.call(o, p) })
+        define(String.prototype, 'replaceAll', function (search, replacement) {
+          if (search instanceof RegExp) {
+            if (!search.global) throw new TypeError('String.prototype.replaceAll called with a non-global RegExp argument')
+            return this.replace(search, replacement)
+          }
+          return this.split(search).join(replacement)
+        })
+        define(Array.prototype, 'findLast', function (cb, thisArg) {
+          for (var i = this.length - 1; i >= 0; i--) if (cb.call(thisArg, this[i], i, this)) return this[i]
+          return undefined
+        })
+        define(Array.prototype, 'findLastIndex', function (cb, thisArg) {
+          for (var i = this.length - 1; i >= 0; i--) if (cb.call(thisArg, this[i], i, this)) return i
+          return -1
+        })
+        define(Promise, 'withResolvers', function () {
+          var resolve, reject
+          var promise = new this(function (res, rej) { resolve = res; reject = rej })
+          return { promise: promise, resolve: resolve, reject: reject }
+        })
+      })()
+    </script>
   </head>
   <body>
+    <div id="nokhba-boot">
+      <div class="nb-logo">ن</div>
+      <div class="nb-ring"></div>
+      <div class="nb-txt">جاري فتح النخبة…</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

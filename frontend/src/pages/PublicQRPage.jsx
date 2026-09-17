@@ -17,7 +17,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import QRCode from 'qrcode'
 import { supabase } from '../lib/supabaseClient'
-import { getStudentRank } from '../lib/helpers'
+import { getStudentRank, isIOSBrowser } from '../lib/helpers'
 import { getPalette } from '../lib/palettes'
 import { generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { registerStudentPush } from '../lib/pushNotifications'
@@ -156,12 +156,12 @@ export default function PublicQRPage() {
       // Tolerate both field-name styles (older RPC returns whatsapp_number,
       // a newer variant returns whatsappNumber).
       const whatsappNumber = payload.whatsapp_number || payload.whatsappNumber || ''
-      const attendance = asArray(payload.attendance)
-      const lessonAttendance = Array.isArray(payload.lesson_attendance) ? payload.lesson_attendance : []
-      const behavior = asArray(payload.behavior)
+      const attendance = asArray(payload.attendance).filter((r) => r && typeof r === 'object')
+      const lessonAttendance = asArray(payload.lesson_attendance).filter((r) => r && typeof r === 'object')
+      const behavior = asArray(payload.behavior).filter((r) => r && typeof r === 'object')
       // Announcements: older RPC exposes `message`, a newer variant `body`.
-      const announcements = asArray(payload.announcements).map((a) => ({ ...a, message: a.message ?? a.body }))
-      const examScores = asArray(payload.exam_scores || payload.examResults)
+      const announcements = asArray(payload.announcements).filter((a) => a && typeof a === 'object').map((a) => ({ ...a, title: asText(a.title), message: asText(a.message ?? a.body) }))
+      const examScores = asArray(payload.exam_scores || payload.examResults).filter((s) => s && typeof s === 'object')
       // FIX (ghost lesson shadowing): an auto-created empty OPEN lesson used to
       // win over the real saved lesson. If the lesson row from the data RPC is an
       // empty stub, enrich it with the teacher's saved topic/homework/video from
@@ -188,7 +188,16 @@ export default function PublicQRPage() {
       const finalAttendanceStatus = (rawAtt && rawAtt !== 'لم يرصد') ? rawAtt : (attendance[0]?.status || lessonAttendance[0]?.status || 'لم يرصد')
       const rawHw = sessionToday?.homework_status
       const finalHomeworkStatus = (rawHw && rawHw !== 'لم يرصد') ? rawHw : (lessonAttendance[0]?.homework_status || 'لم يرصد')
-      const finalStudent = { ...student, attendance_status: finalAttendanceStatus, hw_status: finalHomeworkStatus }
+      // FIX (portal crash): name must be a string for .trim(), and points must
+      // be renderable (an object value would crash React's child rendering).
+      const safePoints = Number(student.points)
+      const finalStudent = {
+        ...student,
+        name: asText(student.name),
+        points: Number.isFinite(safePoints) ? safePoints : 0,
+        attendance_status: finalAttendanceStatus,
+        hw_status: finalHomeworkStatus,
+      }
       const finalActivity = finalAttendanceStatus === 'لم يرصد' ? [] : buildActivityFeed([{ status: finalAttendanceStatus, recorded_at: sessionToday?.updated_at || sessionToday?.ended_at || attendance[0]?.recorded_at }], [])
       const rawAccess = access && typeof access === 'object' ? access : {}
       const accessStatus = {
@@ -202,11 +211,11 @@ export default function PublicQRPage() {
         paymentCount: Number(rawAccess.paymentCount ?? rawAccess.payment_count ?? 0),
         sessionToday: rawAccess.sessionToday || rawAccess.session_today || null,
       }
-      const scheduledWeekdays = asArray(payload.schedule).map((r) => r.weekday).filter(Number.isInteger).sort((a, b) => a - b)
+      const scheduledWeekdays = asArray(payload.schedule).filter((r) => r && typeof r === 'object').map((r) => r.weekday).filter(Number.isInteger).sort((a, b) => a - b)
       // Tolerate both homework shapes: the split homework_tasks + homework_status
       // pair, or a single combined homework array with an is_done flag per row.
-      const homeworkTasks = asArray(payload.homework_tasks || payload.homework)
-      const homeworkStatus = asArray(payload.homework_status)
+      const homeworkTasks = asArray(payload.homework_tasks || payload.homework).filter((t) => t && typeof t === 'object')
+      const homeworkStatus = asArray(payload.homework_status).filter((t) => t && typeof t === 'object')
 
       // Compute exam results (max score = max_per_section * sections_count)
       const examResults = examScores.map((s) => {
@@ -215,8 +224,8 @@ export default function PublicQRPage() {
         const max = typeof perSection === 'number' && Number.isFinite(s.max) && s.max > 0 ? s.max : perSection * sectionsCount
         return {
           id: s.id ?? s.exam_id,
-          title: s.exam_title || s.title || 'امتحان',
-          total: s.total_score ?? s.total,
+          title: asText(s.exam_title || s.title || 'امتحان'),
+          total: asNum(s.total_score ?? s.total),
           max,
           date: s.created_at,
         }
@@ -225,7 +234,7 @@ export default function PublicQRPage() {
       // Map homework tasks with their done status
       const homeworkStatusByTask = {}
       for (const hs of homeworkStatus) homeworkStatusByTask[hs.task_id] = hs.done
-      const homework = homeworkTasks.map((t) => ({ ...t, done: !!(homeworkStatusByTask[t.id] ?? t.is_done) }))
+      const homework = homeworkTasks.map((t) => ({ ...t, title: asText(t.title), done: !!(homeworkStatusByTask[t.id] ?? t.is_done) }))
       // FIX (refresh race): keep the just-made interaction state visible — a
       // background refresh that raced the tap would otherwise flip a "done"
       // homework row back to the unchecked state for up to 10 seconds.
@@ -237,8 +246,8 @@ export default function PublicQRPage() {
       // Attendance streak: count consecutive 'حاضر' from most recent record
       let streak = 0
       for (const rec of attendance) {
-        if (rec.status === 'حاضر') streak++
-        else break
+        if (!rec || rec.status !== 'حاضر') break
+        streak++
       }
 
       // Upcoming sessions: next occurrences of scheduled weekdays
@@ -246,10 +255,13 @@ export default function PublicQRPage() {
 
       // Apply the optimistic notification-read state over the fresh server data
       // so a background refresh can't revert a just-tapped "mark as read".
-      const freshNotifications = Array.isArray(payload.notifications) ? payload.notifications : []
-      const mergedNotifications = freshNotifications.map((n) => (
-        (optimistic.allRead || optimistic.readNotifIds.has(n.id)) ? { ...n, is_read: true } : n
-      ))
+      const freshNotifications = asArray(payload.notifications).filter((n) => n && typeof n === 'object')
+      const mergedNotifications = freshNotifications.map((n) => ({
+        ...n,
+        title: asText(n.title),
+        body: asText(n.body),
+        ...(((optimistic.allRead || optimistic.readNotifIds.has(n.id)) && { is_read: true }) || {}),
+      }))
       const serverUnread = Number(payload.unreadNotificationCount ?? payload.unread_notification_count ?? 0)
       const optimisticUnread = freshNotifications.filter((n) => !n.is_read && !optimistic.readNotifIds.has(n.id)).length
       const unreadNotificationCount = optimistic.allRead ? 0 : Math.min(serverUnread, Math.max(optimisticUnread, serverUnread - optimistic.readNotifIds.size))
@@ -260,7 +272,7 @@ export default function PublicQRPage() {
         ranks,
         whatsappNumber,
         sessionToday: sessionToday || accessStatus.sessionToday || null,
-        lessonSessions: Array.isArray(payload.lesson_sessions) ? payload.lesson_sessions : [],
+        lessonSessions: asArray(payload.lesson_sessions),
         lessonAttendance,
         upcomingSessions,
         announcements,
@@ -526,6 +538,17 @@ export default function PublicQRPage() {
   }
 
   // ─── Ready — Full Portal ───
+  // FIX (defensive): 'ready' must always co-occur with a portal object; if a
+  // race ever leaves portal null, render the loading shell instead of letting
+  // the destructure throw into the error boundary.
+  if (!portal) {
+    return (
+      <Shell>
+        <div style={spinner}><div style={spinnerRing} /></div>
+        <p style={loadingText}>جاري التحميل...</p>
+      </Shell>
+    )
+  }
   const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
   const rank = getStudentRank(student.points, ranks)
   const lessonTimeline = buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance)
@@ -775,6 +798,23 @@ function asArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+// FIX (portal crash): display fields coming from the RPC must never be raw
+// objects — React throws "Objects are not valid as a React child" and the
+// whole portal falls into the error-boundary screen. Non-objects are coerced
+// to String (display-identical to what React would render anyway) so calls
+// like student.name.trim() can never throw. null/undefined pass through
+// untouched so existing empty-state rendering stays identical.
+function asText(value) {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'object') return ''
+  return String(value)
+}
+function asNum(value) {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'object') return 0
+  return value
+}
+
 // Safely extract the optional session copy returned by get_student_portal_access
 // (sourced from the finalized session log — it carries the teacher's saved
 // topic/homework/video even when the lesson_sessions row is an empty stub).
@@ -793,7 +833,9 @@ function buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, les
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   }
   const today = dateKey(new Date())
-  const records = [...(Array.isArray(lessonSessions) ? lessonSessions : [])]
+  // FIX (portal crash): a null/invalid row inside lesson_sessions used to throw
+  // (reading .session_date/.id of null) and crash the whole portal render.
+  const records = (Array.isArray(lessonSessions) ? lessonSessions : []).filter((l) => l && typeof l === 'object')
   // FIX (timeline completeness): real lesson-attendance rows carry the lesson
   // they belong to (topic, homework, video, final status). Merge them in so a
   // "ghost" empty lesson cannot hide the lesson where the student's marks

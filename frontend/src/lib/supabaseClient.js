@@ -17,3 +17,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = (supabaseUrl && supabaseAnonKey)
   ? createClient(supabaseUrl, supabaseAnonKey)
   : createClient('https://placeholder.invalid', 'placeholder-key')
+
+// Bridge: expose the backend URL to the index.html diagnostics engine so the
+// crash report can show backend reachability (see window.__NOKHBA_DIAG).
+try {
+  if (supabaseUrl && typeof window !== 'undefined') window.__NOKHBA_SUPABASE_URL__ = supabaseUrl
+} catch { /* engine optional */ }

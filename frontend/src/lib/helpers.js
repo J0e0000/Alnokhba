@@ -48,10 +48,43 @@ export function isValidPhone(phone) {
   return Boolean(normalizeEgyptianPhone(phone))
 }
 
+/**
+ * Detect iOS Safari (iPhone / iPad / iPod, plus iPadOS 13+ which reports a
+ * desktop Mac UA but keeps touch points). Used by the student portal to show
+ * the correct "Add to Home Screen" push-notification guidance.
+ *
+ * FIX (Round 12 regression — the student-portal crash on every iPhone):
+ * PublicQRPage.jsx called isIOSBrowser() inside a render branch guarded by
+ * `typeof Notification === 'undefined'` — a branch ONLY taken on iOS Safari
+ * browser tabs (Apple exposes Notification to installed Home-Screen web
+ * apps). The function did not exist in the bundle, so every iPhone opening
+ * a /qr/:token link threw `ReferenceError: Can't find variable:
+ * isIOSBrowser` during React render and fell into the error boundary
+ * ("حدثت مشكلة بسيطة"), while Android/desktop never executed the branch and
+ * looked fine. It must stay exported from helpers.js and imported by every
+ * caller (guarded by tests/ios-render-check.cjs).
+ */
+export function isIOSBrowser() {
+  if (typeof navigator === 'undefined') return false
+  const ua = String(navigator.userAgent || '')
+  const platform = String(navigator.platform || '')
+  const touchPoints = Number(navigator.maxTouchPoints || 0)
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  // iPadOS 13+ masquerades as desktop macOS Safari: Mac platform + real touch
+  return platform === 'MacIntel' && touchPoints > 1
+}
+
 export function getStudentRank(points, ranks) {
-  if (!ranks || ranks.length === 0) return ''
-  let title = ranks[0].title
-  for (const r of ranks) { if (points >= r.min) title = r.title }
+  // FIX (portal crash): ranks can arrive malformed from the portal RPC
+  // (non-array, or an array holding null/empty rows) — the old code read
+  // ranks[0].title directly and threw, which crashed the whole student
+  // portal into the error-boundary screen. Filter to valid rows first;
+  // behavior for well-formed rank arrays is unchanged.
+  if (!Array.isArray(ranks)) return ''
+  const safeRanks = ranks.filter((r) => r && typeof r === 'object')
+  if (safeRanks.length === 0) return ''
+  let title = safeRanks[0].title
+  for (const r of safeRanks) { if (points >= r.min) title = r.title }
   return title
 }
 
