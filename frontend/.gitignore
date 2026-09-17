@@ -28,3 +28,6 @@ dist-ssr
 
 .vercel
 .env*
+
+# Next.js build output (was accidentally committed)
+.next/

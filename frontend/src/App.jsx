@@ -6,10 +6,12 @@ import { ThemeProvider } from './context/ThemeContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { UndoProvider } from './context/UndoContext'
 import { BrandingProvider } from './context/BrandingContext'
+import { WorkspaceProvider } from './store/WorkspaceStore'
+import { UIProvider } from './shell/UIContext'
+import AppShell from './shell/AppShell'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import ResetPassword from './pages/ResetPassword'
-import Dashboard from './pages/Dashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import SubscriptionGate from './pages/SubscriptionGate'
 import PublicQRPage from './pages/PublicQRPage'
@@ -133,15 +135,19 @@ function Gate() {
       <BrandingProvider>
         <SettingsProvider>
           <UndoProvider>
-            <div className="min-h-screen flex flex-col">
-              {supportSession && (
-                <SupportAccessBanner onExit={() => { setAdminView(true) }} />
-              )}
-              <Dashboard onOpenAdmin={supportSession ? undefined : () => setAdminView(true)} />
-              {/* Guaranteed WhatsApp path on iPhone: a real <a> link bar shown
-                  whenever a send is prepared (Round 4 iOS fix). */}
-              <WhatsAppHandoffBar />
-            </div>
+            <WorkspaceProvider>
+              <UIProvider teacherId={profile?.id}>
+                <div className="min-h-screen flex flex-col">
+                  {supportSession && (
+                    <SupportAccessBanner onExit={() => { setAdminView(true) }} />
+                  )}
+                  <AppShell onOpenAdmin={supportSession ? undefined : () => setAdminView(true)} />
+                  {/* Guaranteed WhatsApp path on iPhone: a real <a> link bar shown
+                      whenever a send is prepared (Round 4 iOS fix). */}
+                  <WhatsAppHandoffBar />
+                </div>
+              </UIProvider>
+            </WorkspaceProvider>
           </UndoProvider>
         </SettingsProvider>
       </BrandingProvider>

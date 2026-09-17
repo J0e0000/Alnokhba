@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "alnokhba-edu",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,7 +8,8 @@
     "start": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build && node scripts/unwrap-css-layers.mjs && node scripts/css-compat.mjs",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:push": "echo \"[nokhba] Supabase backend — no local db push needed\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

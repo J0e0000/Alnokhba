@@ -54,6 +54,43 @@
     </style>
     <script>
       /* ══════════════════════════════════════════════════════════════════
+         STORAGE GENERATION MIGRATION — pipeline cutover guard.
+         The frontend was fully rebuilt (pipeline UI). Browsers that used
+         the OLD dashboard on the SAME origin still hold localStorage keys
+         in old formats; shape mismatches crash the new UI during render
+         (ProductionErrorBoundary "حدثت مشكلة بسيطة"). This runs ONCE per
+         browser: if the stored generation stamp ≠ current frontend
+         generation, wipe app-owned temp state (localStorage,
+         sessionStorage, SW registrations, caches) and re-stamp.
+         REAL user data lives in Supabase and is NEVER stored here, so
+         nothing server-side is affected. Strict ES5, runs before modules.
+         ══════════════════════════════════════════════════════════════════ */
+      (function () {
+        var GEN_KEY = 'nk-store-gen'
+        var CURRENT_GEN = 'pipeline-1'
+        var stored = null
+        try { stored = window.localStorage.getItem(GEN_KEY) } catch (e) { return } /* storage blocked → nothing to migrate */
+        if (stored === CURRENT_GEN) return /* fast path: this browser is already on the new generation */
+        try { window.localStorage.clear() } catch (e) {}
+        try { if (window.sessionStorage) window.sessionStorage.clear() } catch (e) {}
+        try {
+          if (window.caches && window.caches.keys) {
+            window.caches.keys().then(function (keys) {
+              keys.forEach(function (k) { try { window.caches.delete(k) } catch (e) {} })
+            }).catch(function () {})
+          }
+        } catch (e) {}
+        try {
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              regs.forEach(function (r) { try { r.unregister() } catch (e) {} })
+            }).catch(function () {})
+          }
+        } catch (e) {}
+        try { window.localStorage.setItem(GEN_KEY, CURRENT_GEN) } catch (e) {}
+      })()
+
+      /* ══════════════════════════════════════════════════════════════════
          NOKHBA BOOT LAYER (Round 9–14) — strict ES5, runs BEFORE modules.
          1. paintLoader: instant splash so the phone never shows a white page
             while the 2.6MB bundle downloads.

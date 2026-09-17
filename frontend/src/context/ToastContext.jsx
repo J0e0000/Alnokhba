@@ -30,10 +30,13 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-4 left-4 z-[100] space-y-2 max-w-xs w-full" dir="rtl">
+      {/* pointer-events-none on the wrapper: an EMPTY toast stack must never
+          intercept clicks on content underneath (blocker bug). Individual
+          toasts re-enable pointer events. */}
+      <div className="fixed bottom-4 left-4 z-[100] space-y-2 max-w-xs w-full pointer-events-none" dir="rtl">
         {toasts.map((t) => (
           <div key={t.id} onClick={() => dismiss(t.id)}
-            className={`border rounded-xl shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2 cursor-pointer animate-[fadeIn_0.2s_ease] ${styles[t.type]}`}>
+            className={`pointer-events-auto border rounded-xl shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2 cursor-pointer animate-[fadeIn_0.2s_ease] ${styles[t.type]}`}>
             <span>{icons[t.type]}</span>
             <span className="flex-1">{t.message}</span>
           </div>

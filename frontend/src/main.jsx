@@ -46,7 +46,10 @@ function BootSignal() {
 }
 
 // Apply language & direction BEFORE React renders (prevents RTL/LTR flicker)
-const savedLang = localStorage.getItem('app-language') === 'en' ? 'en' : 'ar'
+// Guarded: blocked-storage iframes (preview panes, strict privacy modes)
+// must not crash the app before the error boundary even mounts.
+let savedLang = 'ar'
+try { if (localStorage.getItem('app-language') === 'en') savedLang = 'en' } catch { /* storage blocked */ }
 document.documentElement.setAttribute('dir', savedLang === 'ar' ? 'rtl' : 'ltr')
 document.documentElement.setAttribute('lang', savedLang)
 
