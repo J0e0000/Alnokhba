@@ -4,8 +4,15 @@
  * Also supports WhatsApp PDF report generation and text reports.
  */
 
-import jsPDF from 'jspdf'
-import QRCode from 'qrcode'
+/* PERF (performance round): jspdf and qrcode used to be STATIC imports here,
+   which forced both libraries (~450 KB minified combined) into the first
+   bundle of EVERY page — including the parents' QR portal, which never
+   generates a PDF unless the teacher-facing export button is pressed. They
+   are now loaded on demand inside the functions that need them. The pure
+   string/URL helpers (buildQRMessage, buildStudentQRLink, buildTextReport…)
+   stay synchronous and dependency-free. */
+const loadJsPDF = async () => (await import('jspdf')).default
+const loadQRCode = async () => (await import('qrcode')).default
 import { supabase } from './supabaseClient'
 import { isValidPhone, getWhatsAppPhoneDigits, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff, isHandheldBrowser } from './helpers'
 
@@ -327,6 +334,7 @@ export async function getStudentPortalLink(studentId) {
  */
 export async function generateStudentQR(qrUrl) {
   try {
+    const QRCode = await loadQRCode()
     return await QRCode.toDataURL(qrUrl, {
       width: 512, margin: 4,
       color: { dark: '#111111', light: '#FFFFFF' },
@@ -534,7 +542,8 @@ export function sendQRImageToWhatsApp(phone, studentName, studentLink, template)
  * Generate a branded PDF with student info and QR code.
  * Uses the same design system: navy + gold + Cairo font.
  */
-export function generateStudentQRPDF(student, qrDataUrl) {
+export async function generateStudentQRPDF(student, qrDataUrl) {
+  const jsPDF = await loadJsPDF()
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -655,7 +664,7 @@ export async function fullQRFlow(student, showToast) {
   }
 
   // Step 3: Generate PDF
-  const doc = generateStudentQRPDF(student, qrDataUrl)
+  const doc = await generateStudentQRPDF(student, qrDataUrl)
   const pdfBlob = doc.output('blob')
   const pdfUrl = URL.createObjectURL(pdfBlob)
 
@@ -1011,6 +1020,7 @@ export async function generateStudentReportPDF(student, { isDark = false, ranks,
 
     // Convert to A4 PDF
     const imgData = canvas.toDataURL('image/png')
+    const jsPDF = await loadJsPDF()
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',

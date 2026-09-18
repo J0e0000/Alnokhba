@@ -29,7 +29,29 @@ if (IS_DEMO) {
     return null
   })
 } else {
-  resolved = createClient(supabaseUrl, supabaseAnonKey)
+  // PERF (performance round, dev-only): in dev builds the client gets a tiny
+  // instrumented fetch that counts every REST/RPC call and flags slow ones
+  // into __NK_PERF (see src/lib/devPerf.js). Production keeps the stock
+  // client — zero instrumentation cost, zero behavior change.
+  const baseFetch = (...args) => globalThis.fetch(...args)
+  const instrumentedFetch = import.meta.env.DEV
+    ? async (url, options = {}) => {
+        const t0 = performance.now()
+        try {
+          return await baseFetch(url, options)
+        } finally {
+          try {
+            const u = String(url)
+            const label = u.includes('/rest/v1/rpc/')
+              ? `rpc:${u.split('/rest/v1/rpc/')[1].split('?')[0]}`
+              : `table:${u.split('/rest/v1/')[1]?.split('?')[0] || 'auth'}`
+            const { markQuery } = await import('./devPerf')
+            markQuery(label, performance.now() - t0)
+          } catch { /* diagnostics never break the app */ }
+        }
+      }
+    : undefined
+  resolved = createClient(supabaseUrl, supabaseAnonKey, instrumentedFetch ? { global: { fetch: instrumentedFetch } } : undefined)
 }
 
 /* Deep-queueing placeholder (preview-panel crash fix, 2026-09-17).

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
-import { useWorkspace } from '../store/WorkspaceStore'
+import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from './UIContext'
 import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
@@ -58,6 +58,7 @@ export default function AppShell({ onOpenAdmin }) {
   const { lang, isArabic, toggleLang } = useLanguage()
   const { isDark, toggleTheme } = useTheme()
   const ws = useWorkspace()
+  const wsMeta = useWorkspaceMeta()
   const ui = useUI()
 
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -315,7 +316,7 @@ export default function AppShell({ onOpenAdmin }) {
         onClose={() => setHistoryOpen(false)}
         onRestore={async (id) => { await ws.handleHistoryRestore(id) }}
         onRedo={() => ws.handleRedo()}
-        canRedo={ws.canRedo}
+        canRedo={wsMeta.canRedo}
         redoCount={getRedoCount()}
       />
       <MessageQueueModal
@@ -326,12 +327,12 @@ export default function AppShell({ onOpenAdmin }) {
         onAdvance={ui.advanceQueue}
       />
       <UndoSnackbar
-        visible={ws.undoSnackbar.visible}
-        message={ws.undoSnackbar.message}
+        visible={wsMeta.undoSnackbar.visible}
+        message={wsMeta.undoSnackbar.message}
         onUndo={() => ws.handleUndo()}
         onRedo={() => ws.handleRedo()}
-        canRedo={ws.canRedo}
-        onDismiss={() => ws.setUndoSnackbar({ visible: false, message: '' })}
+        canRedo={wsMeta.canRedo}
+        onDismiss={() => wsMeta.setUndoSnackbar({ visible: false, message: '' })}
         onHistory={() => setHistoryOpen(true)}
         historyCount={historyCount}
       />

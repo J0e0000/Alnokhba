@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
-    <link rel="icon" type="image/svg+xml" href="/nokhba-logo.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="192x192" href="/logo-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -29,6 +29,13 @@
     <meta name="twitter:description" content="حضور وامتحانات وتقارير أولياء الأمور ببساطة تامة." />
     <meta name="twitter:image" content="https://al-nokhbba.vercel.app/logo-512.png" />
     <title>النخبة — كل شغل المدرس في مكان واحد</title>
+    <!-- PERF (performance round): fonts used to load via a Google-Fonts
+         @import INSIDE the built CSS (serial waterfall: built CSS → fonts
+         CSS → woff2). Now: preconnect + a single Cairo variable-font
+         stylesheet (one file covers weights 400-900). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400..900&display=swap" />
     <style>
       /* Boot splash (ES5-safe, no external font so it paints instantly) */
       #nokhba-boot {
@@ -99,7 +106,12 @@
           }
         } catch (e) {}
         try { window.localStorage.setItem(GEN_KEY, CURRENT_GEN) } catch (e) {}
-      })()
+      })();
+      /* SEMICOLON FIX (perf round): this IIFE previously ended without a
+         semicolon, so the next line's `(function () { … })()` was parsed as
+         a CALL of this IIFE's return value (undefined) — a TypeError that
+         killed the rest of the boot layer (splash re-paint, auto-bust,
+         15s watchdog) on every fresh browser. */
 
       /* ══════════════════════════════════════════════════════════════════
          NOKHBA BOOT LAYER (Round 9–14) — strict ES5, runs BEFORE modules.
@@ -118,7 +130,6 @@
          ══════════════════════════════════════════════════════════════════ */
       (function () {
         var NB_BUST_KEY = 'nb-bust-once'
-
         function paintLoader() {
           if (document.getElementById('nokhba-boot')) return
           var wrap = document.createElement('div')

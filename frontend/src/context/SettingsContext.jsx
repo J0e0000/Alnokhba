@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from './AuthContext'
 
@@ -34,8 +34,10 @@ export function SettingsProvider({ children }) {
     return { data, error }
   }
 
+  const value = useMemo(() => ({ settings, loading, updateSettings, refresh: load }), [settings, loading, updateSettings, load])
+
   return (
-    <SettingsContext.Provider value={{ settings, loading, updateSettings, refresh: load }}>
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   )

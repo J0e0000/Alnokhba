@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
 
 const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص': 'ناقص', 'لم يتم': 'لم يتم', 'لم يرصد': 'لم يُرصد' }
 
@@ -15,6 +15,7 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // ═══════════════════════════════════════════════════════════════════════════
 export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFocus, onClearFocus }) {
   const ws = useWorkspace()
+  const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('present') // present | all | absent
@@ -197,7 +198,7 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
                     {interactionButtons.map((b) => (
                       <button
                         key={b.label}
-                        disabled={ws.savingIds.has(s.id)}
+                        disabled={wsMeta.savingIds.has(s.id)}
                         onClick={() => ws.adjustPoints(s.id, b.amount, b.reason)}
                         title={`${b.reason} (${b.amount > 0 ? '+' : ''}${b.amount})`}
                       >
@@ -212,7 +213,7 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
                         key={value}
                         className={hw === value ? onClass : ''}
                         aria-pressed={hw === value}
-                        disabled={ws.savingIds.has(s.id)}
+                        disabled={wsMeta.savingIds.has(s.id)}
                         onClick={() => ws.updateHW(s.id, value, ws.activeLessonId)}
                       >
                         {label}

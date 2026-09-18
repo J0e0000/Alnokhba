@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
-import Charts from '../components/Charts'
 import { getStudentRank } from '../lib/helpers'
 import { downloadCSV, localDateStr } from '../lib/csv'
+
+// PERF (performance round): chart.js/auto (~200 KB minified, zero
+// tree-shaking) used to be statically imported here — i.e. in the FIRST
+// bundle of every page, even though charts appear on exactly one tab (which
+// mobile navigation even hides). Lazy now.
+const Charts = lazy(() => import('../components/Charts'))
+const ChartsFallback = () => <div className="rounded-2xl border border-subtle p-6 text-center text-fg-subtle text-sm">…</div>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ANALYTICS AREA (rule 22) — broader trends only, NEVER inside the pipeline.
@@ -172,7 +178,9 @@ export default function AnalyticsArea() {
       </div>
 
       <div className="glass-card p-4 mb-4">
-        <Charts present={counts.present} absent={counts.absent} unrecorded={counts.unrecorded} examDatesMap={examDatesMap} variant="both" />
+        <Suspense fallback={<ChartsFallback />}>
+          <Charts present={counts.present} absent={counts.absent} unrecorded={counts.unrecorded} examDatesMap={examDatesMap} variant="both" />
+        </Suspense>
       </div>
 
       {/* Per-student period summary + CSV export */}

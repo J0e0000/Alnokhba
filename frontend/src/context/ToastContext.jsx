@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
 const ToastContext = createContext(null)
 
@@ -18,7 +18,7 @@ export function ToastProvider({ children }) {
     if (added) setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), duration)
   }, [])
 
-  const dismiss = (id) => setToasts((prev) => prev.filter((t) => t.id !== id))
+  const dismiss = useCallback((id) => setToasts((prev) => prev.filter((t) => t.id !== id)), [])
 
   const styles = {
     success: 'glass-card border-emerald-500/30 text-emerald-300',
@@ -26,9 +26,10 @@ export function ToastProvider({ children }) {
     info: 'glass-card border-brand-gold/40 text-fg',
   }
   const icons = { success: '✅', error: '❌', info: 'ℹ️' }
+  const value = useMemo(() => ({ showToast }), [showToast])
 
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={value}>
       {children}
       {/* pointer-events-none on the wrapper: an EMPTY toast stack must never
           intercept clicks on content underneath (blocker bug). Individual

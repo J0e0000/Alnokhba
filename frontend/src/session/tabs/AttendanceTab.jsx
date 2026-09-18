@@ -1,7 +1,13 @@
-import { useMemo, useState } from 'react'
-import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import { Suspense, lazy, useMemo, useState } from 'react'
+import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
-import QRSessionScanner from '../QRSessionScanner'
+
+// PERF (performance round): html5-qrcode (~230 KB minified) used to ship in
+// the first bundle on every page even though the scanner sits behind one
+// button. It is code-split now and streams in the first time the teacher
+// opens the scanner.
+const QRSessionScanner = lazy(() => import('../QRSessionScanner'))
+const ScannerFallback = () => <div className="nk-row" style={{ opacity: 0.6 }}>…</div>
 
 const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم يرصد': 'لم يُرصد' }
 
@@ -16,6 +22,7 @@ const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم ي�
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AttendanceTab({ groupId, lessonOpen }) {
   const ws = useWorkspace()
+  const wsMeta = useWorkspaceMeta()
   const ui = useUI()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
@@ -128,8 +135,8 @@ export default function AttendanceTab({ groupId, lessonOpen }) {
         {visible.map((s) => {
           const row = attendanceMap[s.id]
           const status = row?.status || 'لم يرصد'
-          const saving = ws.savingIds.has(s.id)
-          const saved = ws.savedIds.has(s.id)
+          const saving = wsMeta.savingIds.has(s.id)
+          const saved = wsMeta.savedIds.has(s.id)
           return (
             <div key={s.id} className="nk-row">
               <span className="min-w-0">
@@ -191,18 +198,20 @@ export default function AttendanceTab({ groupId, lessonOpen }) {
         </span>
       </div>
 
-      <QRSessionScanner
-        open={qrOpen}
-        onClose={() => setQrOpen(false)}
-        students={ws.students}
-        activeLessonId={ws.activeLessonId}
+      <Suspense fallback={qrOpen ? <ScannerFallback /> : null}>
+        <QRSessionScanner
+          open={qrOpen}
+          onClose={() => setQrOpen(false)}
+          students={ws.students}
+          activeLessonId={ws.activeLessonId}
         markPresent={async (studentId) => {
           try {
             await ws.setAttendance(studentId, 'حاضر', ws.activeLessonId)
             return true
           } catch { return false }
         }}
-      />
+        />
+      </Suspense>
     </div>
   )
 }

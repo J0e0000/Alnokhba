@@ -148,3 +148,16 @@ export function _disposePortalRefreshSender(teacherId) {
   senderChannels.delete(teacherId)
   senderPending.delete(teacherId)
 }
+
+/**
+ * PERF (performance round): dispose every cached sender channel that is NOT
+ * the given teacher's — used when the signed-in teacher changes (logout /
+ * account switch). The module-level Map used to keep the previous teacher's
+ * broadcast channel alive forever in the same tab, so a stale channel kept
+ * receiving join/keepalive traffic for a workspace nobody is using.
+ */
+export function disposeOtherPortalRefreshSenders(teacherId) {
+  for (const key of [...senderChannels.keys()]) {
+    if (key !== teacherId) _disposePortalRefreshSender(key)
+  }
+}

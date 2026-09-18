@@ -1,2 +1,19 @@
 .vercel
 .env*
+
+# Agent/QA working dirs — not part of the app (perf round)
+skills/
+download/
+tool-results/
+upload/
+perf-results/
+deploy-clone/
+scripts/pdf_pages/
+worklog.md
+
+# Dependencies and build output (perf round)
+node_modules/
+dist/
+*.local
+logs/
+*.log

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import QRCode from 'qrcode'
 import Modal from './Modal'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
@@ -13,6 +12,9 @@ import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsApp
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentQRModal({ open, student, template, onClose, showToast }) {
   const { isArabic } = useWorkspace()
+  // PERF: qrcode loads on demand (dynamic import) — it used to ship in the
+  // first bundle for every teacher even though QR modals are button-driven.
+  const makeQR = (url, opts) => import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(url, opts))
   const [link, setLink] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [status, setStatus] = useState('loading') // loading | ready | error
@@ -30,7 +32,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
         if (!token) { setStatus('error'); return }
         const url = buildStudentQRLink(token)
         setLink(url)
-        return QRCode.toDataURL(url, {
+        return makeQR(url, {
           width: 512, margin: 4,
           color: { dark: '#111111', light: '#FFFFFF' },
           errorCorrectionLevel: 'H',
@@ -93,7 +95,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
           <p className="text-sm font-extrabold mb-3" style={{ color: 'var(--danger-strong)' }}>
             {isArabic ? 'تعذر إنشاء رابط الطالب. حاول تاني.' : 'Could not create the student link. Try again.'}
           </p>
-          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); QRCode.toDataURL(u, { width: 512, margin: 4, color: { dark: '#111111', light: '#FFFFFF' }, errorCorrectionLevel: 'H' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
+          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); makeQR(u, { width: 512, margin: 4, color: { dark: '#111111', light: '#FFFFFF' }, errorCorrectionLevel: 'H' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
             {isArabic ? 'إعادة المحاولة' : 'Retry'}
           </button>
         </div>

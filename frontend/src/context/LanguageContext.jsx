@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import dictionary, { WEEKDAY_KEYS, REPORT_FIELD_KEYS } from '../lib/i18n'
 
 const LanguageContext = createContext(null)
@@ -63,8 +63,10 @@ export function LanguageProvider({ children }) {
     return t(`rf_${key}`)
   }, [t])
 
+  const value = useMemo(() => ({ lang, setLang, toggleLang, t, isArabic, weekday, reportFieldLabel }), [lang, setLang, toggleLang, t, isArabic, weekday, reportFieldLabel])
+
   return (
-    <LanguageContext.Provider value={{ lang, setLang, toggleLang, t, isArabic, weekday, reportFieldLabel }}>
+    <LanguageContext.Provider value={value}>
       {children}
     </LanguageContext.Provider>
   )

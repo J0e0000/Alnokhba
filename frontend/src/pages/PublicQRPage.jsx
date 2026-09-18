@@ -15,7 +15,6 @@
  * backgrounded (user switched back to the tab / app).
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
-import QRCode from 'qrcode'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, isIOSBrowser, copyToClipboard } from '../lib/helpers'
 import { getPalette } from '../lib/palettes'
@@ -92,7 +91,20 @@ export default function PublicQRPage() {
       //
       // This eliminates the cross-tenant data leak (migration_019) while keeping
       // every existing QR link working (migration_020 + 021).
-      const { data: payload, error } = await supabase.rpc('get_student_portal_data', { p_token: token })
+      // PERF (performance round): the three RPCs used to run SEQUENTIALLY
+      // (data → access → teacher-name): 3 serial round-trips per 10s poll.
+      // They are independent of each other, so they now run in ONE parallel
+      // batch — same error semantics (data RPC gates validity; the other two
+      // are optional and individually tolerated).
+      const tnCachePre = teacherNameCacheRef.current
+      const tnCacheFreshPre = tnCachePre.name !== null && (Date.now() - tnCachePre.at) < TEACHER_NAME_TTL_MS
+      const needTeacherName = !isBackgroundRefresh || reason === 'visible' || !tnCacheFreshPre
+      const [dataRes, accessRes, teacherNameRes] = await Promise.all([
+        supabase.rpc('get_student_portal_data', { p_token: token }),
+        supabase.rpc('get_student_portal_access', { p_token: token }),
+        needTeacherName ? supabase.rpc('get_portal_teacher_name', { p_token: token }) : Promise.resolve(null),
+      ])
+      const { data: payload, error } = dataRes
       if (error) {
         console.error('[PublicQRPage] RPC error:', error.message || error, 'code:', error.code)
         if (!isBackgroundRefresh) {
@@ -134,23 +146,18 @@ export default function PublicQRPage() {
       }
 
       const student = payload.student
-      const { data: access, error: accessError } = await supabase.rpc('get_student_portal_access', { p_token: token })
-      if (accessError) console.warn('[PublicQRPage] optional access RPC failed:', accessError.message || accessError)
-      // PERF (performance round): the access RPC stays on every refresh — it
-      // carries the payment/entry status which the teacher can change at any
-      // moment. The teacher NAME, however, is quasi-static: reuse the cache on
-      // background ticks (within the TTL), and always re-fetch on the initial
-      // load or when the tab just became visible again (reason === 'visible').
-      const tnCache = teacherNameCacheRef.current
-      const cacheFresh = tnCache.name !== null && (Date.now() - tnCache.at) < TEACHER_NAME_TTL_MS
-      let teacherName = tnCache.name
-      if (!isBackgroundRefresh || reason === 'visible' || !cacheFresh) {
-        const { data: fetchedName, error: teacherNameError } = await supabase.rpc('get_portal_teacher_name', { p_token: token })
-        if (teacherNameError) {
-          console.warn('[PublicQRPage] optional teacher-name RPC failed:', teacherNameError.message || teacherNameError)
+      const access = accessRes?.data ?? null
+      if (accessRes?.error) console.warn('[PublicQRPage] optional access RPC failed:', accessRes.error.message || accessRes.error)
+      // The teacher NAME is quasi-static: reuse the cache on background ticks
+      // (within the TTL), and always re-fetch on the initial load or when the
+      // tab just became visible again (reason === 'visible').
+      let teacherName = teacherNameCacheRef.current.name
+      if (teacherNameRes) {
+        if (teacherNameRes.error) {
+          console.warn('[PublicQRPage] optional teacher-name RPC failed:', teacherNameRes.error.message || teacherNameRes.error)
         } else {
-          teacherName = fetchedName
-          teacherNameCacheRef.current = { name: fetchedName, at: Date.now() }
+          teacherName = teacherNameRes.data
+          teacherNameCacheRef.current = { name: teacherNameRes.data, at: Date.now() }
         }
       }
       // Re-check after the optional RPCs: if a newer load started while these
@@ -395,11 +402,13 @@ export default function PublicQRPage() {
   useEffect(() => {
     if (!showQR || qrDataUrl || !portal?.student?.id) return
     const portalLink = `${window.location.origin}${window.location.pathname}`
-    QRCode.toDataURL(portalLink, {
+    // PERF: qrcode loads on demand — only when the parent expands the QR
+    // section (it used to be a static import on the portal page).
+    import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(portalLink, {
       width: 640, margin: 3,
       color: { dark: '#111111', light: '#FFFFFF' },
       errorCorrectionLevel: 'H',
-    }).then(setQrDataUrl).catch(() => {})
+    })).then(setQrDataUrl).catch(() => {})
   }, [showQR, qrDataUrl, portal])
 
   const handleDownloadQR = () => {

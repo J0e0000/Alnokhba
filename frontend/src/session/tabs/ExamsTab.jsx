@@ -307,7 +307,8 @@ function ExamCard({ exam, groupId, autoFilter }) {
     setBusy(false)
     if (error) { setMsg({ type: 'error', text: error.message }); return }
     setMaxDraft(null); setMsg({ type: 'ok', text: isArabic ? 'تم تعديل النهائي — درجات الطلاب لم تتغير' : 'Max updated — student scores unchanged' })
-    ws.loadAll()
+    // PERF: targeted exam-tables refresh instead of the full 6-table loadAll.
+    ws.refreshExamData({ immediate: true })
   }
 
   const saveStudentScore = async (scoreRow, studentName) => {
@@ -321,7 +322,8 @@ function ExamCard({ exam, groupId, autoFilter }) {
     if (error) { setMsg({ type: 'error', text: `${studentName}: ${error.message}` }); return }
     setScoreDrafts((prev) => { const n = { ...prev }; delete n[scoreRow.id]; return n })
     setMsg({ type: 'ok', text: isArabic ? `تم تحديث درجة ${studentName}` : `Score updated for ${studentName}` })
-    ws.loadAll()
+    // PERF: targeted exam-tables refresh instead of the full 6-table loadAll.
+    ws.refreshExamData({ immediate: true })
   }
 
   return (

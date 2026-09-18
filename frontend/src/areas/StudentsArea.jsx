@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
+import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
@@ -18,6 +18,7 @@ import { getOrCreateStudentToken, buildStudentQRLink } from '../lib/qrPdfWhatsAp
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentsArea() {
   const ws = useWorkspace()
+  const wsMeta = useWorkspaceMeta()
   const ui = useUI()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
@@ -95,6 +96,17 @@ export default function StudentsArea() {
     ui.startQueue(items)
   }
 
+  // PERF: bulk attendance marks run in parallel instead of one-by-one —
+  // each student's write chain is independent (per-student RPC/points row).
+  const bulkPresent = async () => {
+    await Promise.all([...selected].map((id) => ws.setAttendance(id, 'حاضر')))
+    setSelected(new Set())
+  }
+  const bulkAbsent = async () => {
+    await Promise.all([...selected].map((id) => ws.setAttendance(id, 'غائب')))
+    setSelected(new Set())
+  }
+
   if (ws.loading) return <SkeletonTableRows rows={6} cols={5} />
 
   return (
@@ -148,7 +160,7 @@ export default function StudentsArea() {
         {filtered.map((s) => {
           const rank = getStudentRank(s.points || 0, ws.ranks)
           const isSel = selected.has(s.id)
-          const isSavingRow = ws.savingIds.has(s.id)
+          const isSavingRow = wsMeta.savingIds.has(s.id)
           return (
             <div
               key={s.id}
@@ -226,7 +238,7 @@ export default function StudentsArea() {
           const result = await ws.saveStudent(form, studentModal.student)
           if (result?.ok) setStudentModal({ open: false, student: null })
         }}
-        isSaving={ws.isSaving}
+        isSaving={wsMeta.isSaving}
       />
 
       <StudentProfileModal

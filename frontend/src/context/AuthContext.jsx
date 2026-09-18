@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { initUndoManager, resetUndoManager } from '../lib/undoManager'
 import { clearQueue } from '../lib/offlineQueue'
@@ -36,6 +36,11 @@ export function AuthProvider({ children }) {
   })
 
   const loadAll = async (userId) => {
+    // PERF (performance round): this chain used to be 5-6 SEQUENTIAL
+    // round-trips (profile → owner rpc → owner profile → feature_unlocks →
+    // support rpc). The owner/support RPCs are independent of each other, and
+    // feature_unlocks/owner-profile both only depend on the owner result —
+    // so the tail now runs as two parallel batches: 6 RTTs → 3 RTTs.
     const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
     if (error) {
       console.error('Failed to load profile:', error.message)
@@ -45,26 +50,31 @@ export function AuthProvider({ children }) {
     }
     setProfile(data)
 
-    // هل الحساب ده مساعد مربوط بمساحة عمل حد تاني؟
-    const { data: ownerId } = await supabase.rpc('my_workspace_owner')
+    // Independent post-profile lookups in one parallel batch:
+    // (a) is this account an assistant bound to another teacher's workspace?
+    // (b) is there an active support-access session? (admin inspecting a user)
+    const [ownerRes, supportRes] = await Promise.all([
+      supabase.rpc('my_workspace_owner'),
+      supabase.rpc('my_support_session').catch(() => ({ data: null })), // migration 036 not applied yet — normal behavior
+    ])
+    const ownerId = ownerRes.data
+    const supportData = supportRes?.data ?? null
+    setSupportSession(supportData)
+
     let effectiveId = userId
     if (ownerId) {
-      const { data: owner } = await supabase.from('profiles').select('*').eq('id', ownerId).single()
-      setOwnerProfile(owner ?? null)
       effectiveId = ownerId
+      // Owner profile + feature unlocks are independent of each other.
+      const [ownerRes2, unlocksRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', ownerId).single(),
+        supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', ownerId),
+      ])
+      setOwnerProfile(ownerRes2.data ?? null)
+      setUnlockedFeatures(new Set((unlocksRes.data ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
     } else {
       setOwnerProfile(null)
-    }
-
-    const { data: unlocks } = await supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', effectiveId)
-    setUnlockedFeatures(new Set((unlocks ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
-
-    // هل في جلسة وصول دعم نشطة؟ (الأدمن داخل بحساب مستخدم تاني مؤقتاً)
-    try {
-      const { data: activeSupport } = await supabase.rpc('my_support_session')
-      setSupportSession(activeSupport ?? null)
-    } catch {
-      setSupportSession(null) // migration 036 غير مطبّق بعد — سلوك عادي تماماً
+      const { data: unlocks } = await supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', effectiveId)
+      setUnlockedFeatures(new Set((unlocks ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
     }
   }
 
@@ -94,11 +104,19 @@ export function AuthProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
-      if (session?.user) {
+      // PERF (performance round): the listener used to re-run the FULL
+      // profile chain on EVERY auth event. Two concrete costs:
+      //  1) at boot, supabase-js emits INITIAL_SESSION right after our own
+      //     getSession() already loaded everything → the whole chain ran TWICE;
+      //  2) every hourly TOKEN_REFRESHED re-ran the chain AND flipped the
+      //     full-screen loading gate on top of the teacher's work.
+      // Profile/subscription data does NOT change when a JWT is refreshed,
+      // so only real sign-ins need a reload. Boot is covered by getSession().
+      if (event === 'SIGNED_IN' && session?.user) {
         setLoading(true)
         initUndoManager(session.user.id)
         loadAll(session.user.id).finally(() => setLoading(false))
-      } else {
+      } else if (!session) {
         // Sign-out (manual, inactivity, or session-expired):
         // Clear per-user local state to prevent the next logged-in user
         // (on this same browser) from seeing the previous user's undo
@@ -175,7 +193,10 @@ export function AuthProvider({ children }) {
     new Date(subscriptionSourceProfile.subscription_expires_at) > new Date()
   )
 
-  const value = {
+  // PERF (performance round): the provider value used to be a fresh object
+  // literal on every render, so ANY AuthProvider state change re-rendered
+  // every useAuth() consumer in the app. Memoized now.
+  const value = useMemo(() => ({
     session,
     user: session?.user ?? null,
     profile,
@@ -192,7 +213,7 @@ export function AuthProvider({ children }) {
     signIn,
     signOut,
     refreshProfile,
-  }
+  }), [session, profile, ownerProfile, isAssistant, effectiveTeacherId, supportSession, loading, isSubscriptionActive, unlockedFeatures, passwordRecovery])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
