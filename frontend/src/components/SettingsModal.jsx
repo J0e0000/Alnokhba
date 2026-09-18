@@ -57,7 +57,7 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
       setAbsenceWarningThreshold(Number(settings.insight_config?.absence_warning_threshold || settings.absence_warning_threshold || 2))
       setAbsenceAttentionThreshold(Number(settings.insight_config?.absence_attention_threshold || settings.absence_attention_threshold || 3))
       setNotificationPreferences({ attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true, ...(settings.notification_preferences || {}) })
-      setQrMessageTemplate(settings.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب:')
+      setQrMessageTemplate(settings.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب: {link}')
     }
   }, [settings, open])
 
@@ -140,7 +140,7 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
 
         <div>
           <p className='text-sm text-fg-muted mb-2 font-bold'>{isArabic ? 'قالب رسالة QR الثابت' : 'Fixed QR message template'}</p>
-          <p className='text-[11px] text-fg-subtle mb-2'>{isArabic ? 'استخدم {studentName} وسيتم إضافة رابط Student Portal الخاص بكل طالب تلقائياً.' : 'Use {studentName}; each student’s Student Portal link is appended automatically.'}</p>
+          <p className='text-[11px] text-fg-subtle mb-2'>{isArabic ? 'استخدم {studentName} و{link} — ولو {link} مش موجودة في القالب، هنتضاف تلقائياً في آخر الرسالة فلا يضيع الرابط أبداً.' : 'Use {studentName} and {link} — if {link} is missing, the student portal link is appended automatically so it can never be lost.'}</p>
           <textarea value={qrMessageTemplate} onChange={(e) => setQrMessageTemplate(e.target.value)} rows={3} className='w-full glass-input rounded-lg px-3 py-2 text-sm outline-none border border-subtle resize-y' />
         </div>
 

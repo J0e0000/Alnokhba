@@ -28,7 +28,7 @@ export default function Charts({ present, absent, unrecorded, examDatesMap, vari
   const hasScoreData = Object.keys(examDatesMap).length > 0
 
   useEffect(() => {
-    if (!showAtt) return
+    if (!showAtt || !hasAttData || !attCanvasRef.current) return
     if (attChartRef.current) attChartRef.current.destroy()
     attChartRef.current = new Chart(attCanvasRef.current, {
       type: 'doughnut',
@@ -42,16 +42,16 @@ export default function Charts({ present, absent, unrecorded, examDatesMap, vari
   }, [present, absent, unrecorded, showAtt])
 
   useEffect(() => {
-    if (!showScores) return
+    if (!showScores || !hasScoreData || !scoreCanvasRef.current) return
     const dates = Object.keys(examDatesMap).sort()
     const avgs = dates.map((d) => Math.round((examDatesMap[d].earned / Math.max(1, examDatesMap[d].max)) * 100))
     if (scoreChartRef.current) scoreChartRef.current.destroy()
     scoreChartRef.current = new Chart(scoreCanvasRef.current, {
       type: 'line',
       data: {
-        labels: dates.length ? dates : ['لا امتحانات بعد'],
+        labels: dates,
         datasets: [{
-          label: 'متوسط %', data: avgs.length ? avgs : [0], borderColor: '#D4A373', backgroundColor: 'rgba(212,163,115,0.12)',
+          label: 'متوسط %', data: avgs, borderColor: '#D4A373', backgroundColor: 'rgba(212,163,115,0.12)',
           tension: 0.4, fill: true, pointBackgroundColor: '#D4A373', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2.5,
         }],
       },

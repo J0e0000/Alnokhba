@@ -4,6 +4,7 @@ import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
 import StudentProfileModal from '../components/StudentProfileModal'
+import StudentQRModal from '../components/StudentQRModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, copyToClipboard } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink } from '../lib/qrPdfWhatsApp'
@@ -27,7 +28,7 @@ export default function StudentsArea() {
   const [studentModal, setStudentModal] = useState({ open: false, student: null })
   const [profileModal, setProfileModal] = useState({ open: false, student: null })
   const [bulkAddOpen, setBulkAddOpen] = useState(false)
-  const [qrBusy, setQrBusy] = useState(null)
+  const [qrModal, setQrModal] = useState({ open: false, student: null })
   const [copyBusy, setCopyBusy] = useState(null)
 
   // Deep link from global search: pre-filter to the focused student (brief §16).
@@ -67,21 +68,10 @@ export default function StudentsArea() {
     openWhatsAppUrl(url)
   }
 
-  const sendQRToStudent = async (student) => {
-    setQrBusy(student.id)
-    try {
-      const token = await getOrCreateStudentToken(student.id)
-      if (!token) { ws.showToast?.('تعذر إنشاء رابط الطالب', 'error'); return }
-      const link = buildStudentQRLink(token)
-      const template = ws.settings?.qr_message_template || ''
-      const message = template
-        .replace('{studentName}', student.name)
-        .replace('{link}', link)
-      const phone = normalizeEgyptianPhone(student.phone)
-      if (!phone) { ws.showToast?.('لا يوجد رقم هاتف صحيح', 'error'); return }
-      openWhatsAppUrl(buildWhatsAppUrl(phone, message))
-    } finally { setQrBusy(null) }
-  }
+  // QR button opens the StudentQRModal: the ONE surface where the portal link
+  // is visible, copyable, shareable, downloadable — and the WhatsApp message
+  // ALWAYS carries the link (buildQRMessage appends it when {link} is missing).
+  const openQrModal = (student) => setQrModal({ open: true, student })
 
   // Copy the student's portal link straight to the clipboard — no WhatsApp,
   // no modal, the raw https://.../qr/<token> ready to paste anywhere.
@@ -206,10 +196,9 @@ export default function StudentsArea() {
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
-                  onClick={() => sendQRToStudent(s)}
-                  disabled={qrBusy === s.id}
-                  title={isArabic ? 'إرسال رابط البوابة واتساب' : 'Send portal link via WhatsApp'}
-                >{qrBusy === s.id ? '…' : 'QR'}</button>
+                  onClick={() => openQrModal(s)}
+                  title={isArabic ? 'رابط البوابة و QR' : 'Portal link & QR'}
+                >QR</button>
                 <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
@@ -248,6 +237,14 @@ export default function StudentsArea() {
         showToast={ws.showToast}
         isArabic={isArabic}
         ranks={ws.ranks}
+      />
+
+      <StudentQRModal
+        open={qrModal.open}
+        student={qrModal.student}
+        template={ws.settings?.qr_message_template || ''}
+        onClose={() => setQrModal({ open: false, student: null })}
+        showToast={ws.showToast}
       />
 
       {bulkAddOpen && <BulkAddModal onClose={() => setBulkAddOpen(false)} />}

@@ -328,7 +328,7 @@ export async function getStudentPortalLink(studentId) {
 export async function generateStudentQR(qrUrl) {
   try {
     return await QRCode.toDataURL(qrUrl, {
-      width: 512, margin: 3,
+      width: 512, margin: 4,
       color: { dark: '#111111', light: '#FFFFFF' },
       errorCorrectionLevel: 'H',
     })

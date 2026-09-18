@@ -3,9 +3,11 @@ import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import TemplatesModal from '../components/TemplatesModal'
 import AnnouncementsModal from '../components/AnnouncementsModal'
-import { buildTextReport, getOrCreateStudentToken, buildStudentQRLink } from '../lib/qrPdfWhatsApp'
+import { buildTextReport, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone, buildWhatsAppUrl } from '../lib/helpers'
+import { downloadCSV, localDateStr } from '../lib/csv'
+import { supabase } from '../lib/supabaseClient'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORTS AREA (rule 14/22) — broader, batch reporting lives OUTSIDE the
@@ -57,18 +59,45 @@ export default function ReportsArea() {
     setBusy('qr')
     try {
       const groupStudents = ws.students.filter((s) => s.group_name === group)
-      const template = ws.settings?.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب: {link}'
+      const template = ws.settings?.qr_message_template || ''
       const items = []
       for (const s of groupStudents) {
         if (!s.phone || !isValidPhone(s.phone)) continue
         const token = await getOrCreateStudentToken(s.id)
         if (!token) continue
         const link = buildStudentQRLink(token)
-        const message = template.replace('{studentName}', s.name).replace('{link}', link)
+        // buildQRMessage ALWAYS appends the link when the template lacks {link}
+        const message = buildQRMessage(s.name, link, template)
         items.push({ student: s, phone: normalizeEgyptianPhone(s.phone), message, qrUrl: link })
       }
       if (items.length === 0) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
       ui.startQueue(items)
+    } finally { setBusy('') }
+  }
+
+  // CSV export of the picked completed session: attendance + homework per student.
+  const exportSessionCSV = async () => {
+    if (!lesson || busy === 'csv') return
+    setBusy('csv')
+    try {
+      const { data: rows } = await supabase
+        .from('attendance_records')
+        .select('student_id, status, homework_status')
+        .eq('lesson_session_id', lesson.id)
+      const attendanceMap = Object.fromEntries((rows || []).map((r) => [r.student_id, r]))
+      const groupStudents = ws.students.filter((s) => s.group_name === group)
+      const csvRows = groupStudents.map((s) => {
+        const r = attendanceMap[s.id]
+        return [s.name, s.code || '', s.phone || '', r?.status || 'لم يرصد', r?.homework_status || 'لم يرصد']
+      })
+      downloadCSV(
+        `session_${lesson.session_date}_${group.replace(/\s+/g, '_')}.csv`,
+        ['الاسم', 'الكود', 'الهاتف', 'الحضور', 'الواجب'],
+        csvRows,
+      )
+      ws.showToast?.(isArabic ? 'تم تحميل ملف CSV ✓' : 'CSV downloaded ✓', 'success')
+    } catch {
+      ws.showToast?.(isArabic ? 'تعذر تجهيز الملف' : 'Could not build the file', 'error')
     } finally { setBusy('') }
   }
 
@@ -109,6 +138,9 @@ export default function ReportsArea() {
           </button>
           <button className="btn-ghost action-button !min-h-[3rem]" onClick={bulkWelcome}>
             ✆ {isArabic ? 'رسالة ترحيب جماعية' : 'Bulk welcome message'}
+          </button>
+          <button className="btn-ghost action-button !min-h-[3rem]" disabled={!lesson || busy === 'csv'} onClick={exportSessionCSV}>
+            ⬇ {busy === 'csv' ? '...' : isArabic ? 'تصدير CSV' : 'Export CSV'}
           </button>
         </div>
         {!lesson && <p className="text-[.68rem] text-fg-muted mt-2 mb-0">{isArabic ? 'التقارير متاحة للحصص المنتهية فقط (نفس قاعدة النظام).' : 'Reports are available for completed sessions only (existing rule).'}</p>}

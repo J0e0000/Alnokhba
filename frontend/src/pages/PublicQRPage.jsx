@@ -412,11 +412,23 @@ export default function PublicQRPage() {
     document.body.removeChild(a)
   }
 
+  // The canonical portal URL — shown as selectable text and shareable via
+  // the Web Share API (falls back to copy on browsers without it).
+  const portalUrl = `${window.location.origin}${window.location.pathname}`
+
+  const handleSharePortalLink = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'بوابة الطالب — النخبة', url: portalUrl }); return } catch (e) { if (e?.name === 'AbortError') return }
+    }
+    const ok = await copyToClipboard(portalUrl)
+    setCopiedLink(ok)
+    if (ok) setTimeout(() => setCopiedLink(false), 2200)
+  }
+
   // The parent/teacher can copy the raw portal link from HERE too —
   // previously the link was impossible to copy from the student's portal.
   const handleCopyPortalLink = async () => {
-    const portalLink = `${window.location.origin}${window.location.pathname}`
-    const ok = await copyToClipboard(portalLink)
+    const ok = await copyToClipboard(portalUrl)
     setCopiedLink(ok)
     setTimeout(() => setCopiedLink(false), 2200)
   }
@@ -652,9 +664,24 @@ export default function PublicQRPage() {
             <div style={qrBorder}>
               {qrDataUrl ? <img src={qrDataUrl} alt="Student QR Code" style={qrImage} /> : <div style={{ width: 220, height: 220 }} />}
             </div>
-            <button onClick={handleCopyPortalLink} style={{ ...outlineBtn, padding: '10px' }}>
-              {copiedLink ? '✅ تم نسخ رابط البوابة' : '📋 نسخ رابط البوابة'}
-            </button>
+            <input
+              readOnly
+              dir="ltr"
+              value={portalUrl}
+              onFocus={(e) => e.target.select()}
+              style={{
+                width: '100%', maxWidth: 420, padding: '10px 12px', textAlign: 'center',
+                fontSize: 13, borderRadius: 12, border: '1px solid rgba(148,163,184,0.45)',
+                background: 'rgba(255,255,255,0.9)', color: '#0F172A', userSelect: 'all', direction: 'ltr',
+              }}
+              aria-label="رابط البوابة"
+            />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+              <button onClick={handleCopyPortalLink} style={{ ...outlineBtn, padding: '10px' }}>
+                {copiedLink ? '✅ تم نسخ رابط البوابة' : '📋 نسخ رابط البوابة'}
+              </button>
+              <button onClick={handleSharePortalLink} style={{ ...goldBtn, padding: '10px' }}>مشاركة الرابط</button>
+            </div>
             <button onClick={handleDownloadQR} style={goldBtn} disabled={!qrDataUrl}>تحميل QR Code</button>
           </div>
         )}

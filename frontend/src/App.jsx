@@ -20,6 +20,7 @@ import ProductionErrorBoundary from './components/ProductionErrorBoundary'
 import LandingPage from './pages/LandingPage'
 import PreviewDashboard from './pages/PreviewDashboard'
 import StatusPage from './pages/StatusPage'
+import PrivacyPage from './pages/PrivacyPage'
 import AuthAction from './pages/AuthAction'
 import SupportAccessBanner from './components/SupportAccessBanner'
 import WhatsAppHandoffBar from './components/WhatsAppHandoffBar'
@@ -67,6 +68,11 @@ function getStatusPath() {
   return null
 }
 
+// /privacy — standalone public page (footer link on the landing page).
+function isPrivacyPath() {
+  return window.location.pathname === '/privacy'
+}
+
 function Gate() {
   const { session, profile, loading, isSubscriptionActive, passwordRecovery, supportSession } = useAuth()
   const [authView, setAuthView] = useState(getRequestedAuthView)
@@ -83,6 +89,8 @@ function Gate() {
       </div>
     )
   }
+
+  if (isPrivacyPath()) return <PrivacyPage />
 
   if (passwordRecovery) return <ResetPassword />
 
