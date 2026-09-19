@@ -4,7 +4,7 @@ import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
 import { SkeletonTableRows } from '../components/Skeleton'
-import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
+import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { downloadCSV } from '../lib/csv'
 
@@ -157,16 +157,9 @@ export default function StudentsArea() {
     }
   }
 
-  const bulkPresent = async () => {
-    setMoreOpen(false)
-    await Promise.all([...selected].map((id) => ws.setAttendance(id, 'حاضر')))
-    setSelected(new Set())
-  }
-  const bulkAbsent = async () => {
-    setMoreOpen(false)
-    await Promise.all([...selected].map((id) => ws.setAttendance(id, 'غائب')))
-    setSelected(new Set())
-  }
+  // NOTE: attendance & homework are SESSION-ONLY actions (الحصة) — they are
+  // deliberately NOT available from this table (neither per-row nor bulk),
+  // per teacher request. This table is identity/contact management only.
 
   if (ws.loading) return <SkeletonTableRows rows={6} cols={5} />
 
@@ -236,7 +229,6 @@ export default function StudentsArea() {
       {/* Student cards/rows */}
       <div className="grid gap-2 pb-20 lg:pb-0">
         {filtered.map((s) => {
-          const rank = getStudentRank(s.points || 0, ws.ranks)
           const isSel = selected.has(s.id)
           const isSavingRow = wsMeta.savingIds.has(s.id)
           return (
@@ -262,17 +254,13 @@ export default function StudentsArea() {
                   <small className="block">{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.stage ? ` · ${s.stage}` : ''}</small>
                 </button>
               </span>
+              {/* Points ONLY — no attendance/homework status pill here (it
+                  lives in the session); warnings stay visible when present. */}
               <span className="flex flex-wrap items-center gap-1.5">
-                <span className={`nk-pill ${s.attendance_status === 'حاضر' ? 'nk-pill-live' : s.attendance_status === 'غائب' ? 'nk-pill-danger' : 'nk-pill-neutral'}`}>
-                  {s.attendance_status === 'حاضر' ? '✓ حاضر' : s.attendance_status === 'غائب' ? '✗ غائب' : 'لم يُرصد'}
-                </span>
-                <span className="nk-pill nk-pill-gold">{rank} · {s.points || 0}</span>
+                <span className="nk-pill nk-pill-gold">{s.points || 0}</span>
                 {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
               </span>
               <span className="flex flex-wrap items-center gap-1.5 ms-auto">
-                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.setAttendance(s.id, 'حاضر')}>ح</button>
-                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.setAttendance(s.id, 'غائب')}>غ</button>
-                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.updateHW(s.id, 'مكتمل')}>و✓</button>
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
@@ -321,8 +309,6 @@ export default function StudentsArea() {
               <>
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
                 <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
-                  <button role="menuitem" onClick={bulkPresent}>✓ {isArabic ? 'رصد المحددين حاضر' : 'Mark selected present'}</button>
-                  <button role="menuitem" onClick={bulkAbsent}>✗ {isArabic ? 'رصد المحددين غائب' : 'Mark selected absent'}</button>
                   <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
                   <button role="menuitem" onClick={bulkExportCSV}>⬇ {isArabic ? 'تصدير المحددين CSV' : 'Export selected (CSV)'}</button>
                   <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
