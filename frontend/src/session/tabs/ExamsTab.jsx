@@ -10,6 +10,11 @@ import { usePublishBar } from '../WorkflowBar'
 //   B) Change individual student score → rpc update_student_exam_score
 // Absent students: excluded from the default grading list (PRESENT filter),
 // never graded, never penalized — same server rule as production.
+// CLOSED SESSIONS (user round): exams CAN be added/graded on a completed or
+// not-open session — the server (exams insert + both RPCs) has no
+// session-status guard, so the old client lock was removed. The only
+// impossible case is a day with NO saved session row at all (nothing to
+// attach the exam to) — shown as a notice, not a dead end.
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, onBar, onAdvance, missingCount, onGoPrev }) {
@@ -39,10 +44,17 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, 
   } : null
   usePublishBar(onBar, barData, { next: () => onAdvance?.(), prev: () => onGoPrev?.() })
 
-  if (!lessonOpen && sessionExams.length === 0) {
+  // No saved session row at all (e.g. a past day with no session) — nothing
+  // to attach an exam to. Every other state (open / completed / not open)
+  // allows the full exams workflow.
+  if (!lessonId) {
     return (
-      <div className="nk-notice">
-        {isArabic ? 'لا يوجد امتحان مرتبط بهذه الحصة والحصة منتهية — لا يمكن إضافة امتحان لحصة مغلقة.' : 'No exam linked to this completed session — exams cannot be added after closing.'}
+      <div>
+        <div className="nk-notice">
+          {isArabic
+            ? 'لا توجد حصة محفوظة لهذا اليوم — افتح الحصة أو سجّلها الأول عشان تقدر ترفق امتحان بها.'
+            : 'No saved session for this day — open/record the session first to attach an exam to it.'}
+        </div>
       </div>
     )
   }
@@ -63,14 +75,19 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, 
   }
   return (
     <div>
-      {lessonOpen && (
-        <button
-          className="btn-gold action-button !min-h-[3rem] mb-4"
-          onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول', 'السؤال الثاني'], max: 20 }); setView('setup') }}
-        >
-          ＋ {isArabic ? 'امتحان جديد' : 'New exam'}
-        </button>
+      {!lessonOpen && (
+        <div className="nk-notice mb-4">
+          {isArabic
+            ? 'الحصة مش مفتوحة — لكن تقدر تضيف امتحان وترصد الدرجات وتعدّلها عادي.'
+            : 'Session is not open — you can still add an exam and enter/edit grades normally.'}
+        </div>
       )}
+      <button
+        className="btn-gold action-button !min-h-[3rem] mb-4"
+        onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول', 'السؤال الثاني'], max: 20 }); setView('setup') }}
+      >
+        ＋ {isArabic ? 'امتحان جديد' : 'New exam'}
+      </button>
       {sessionExams.length === 0 ? (
         <p className="text-center py-6 text-sm text-fg-muted">
           {isArabic ? 'لا يوجد امتحان مرتبط بهذه الحصة (اختياري).' : 'No exam linked to this session (optional).'}

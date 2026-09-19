@@ -487,6 +487,16 @@ html.dark .btn-glow { background: #223055; }
 }
 .nk-row b { font-size: .84rem; color: var(--fg); display: block; }
 .nk-row small { display: block; color: var(--fg-muted); font-size: .7rem; margin-top: 2px; }
+/* Current row in a walked list (interaction/homework list + «التالي») —
+   gold ring + faint gold tint; scroll-margin keeps it clear of the sticky
+   progress strip (top) and the workflow bar (bottom) when scrolled to. */
+.nk-row--current {
+  border-color: var(--brand-gold);
+  background: color-mix(in srgb, var(--brand-gold) 7%, var(--surface-solid));
+  box-shadow: 0 0 0 1px var(--brand-gold);
+  scroll-margin-top: 110px;
+  scroll-margin-bottom: 150px;
+}
 .nk-seg { display: inline-flex; gap: 6px; flex-shrink: 0; }
 .nk-seg button {
   border: 1px solid var(--surface-border);

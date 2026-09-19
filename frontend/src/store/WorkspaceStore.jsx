@@ -148,7 +148,7 @@ export function WorkspaceProvider({ children }) {
       ;(scoresR.data ?? []).forEach((row) => {
         if (!scoresMap[row.student_id]) scoresMap[row.student_id] = []
         scoresMap[row.student_id].push({
-          id: row.id, exam_id: row.exam_id, exam_title: row.exams?.title,
+          id: row.id, exam_id: row.exam_id, student_id: row.student_id, exam_title: row.exams?.title,
           max_score_per_section: row.exams?.max_score_per_section, section_scores: row.section_scores,
           total_score: row.total_score, version: row.version, created_at: row.created_at,
         })
@@ -196,7 +196,7 @@ export function WorkspaceProvider({ children }) {
       ;(scoresR.data ?? []).forEach((row) => {
         if (!scoresMap[row.student_id]) scoresMap[row.student_id] = []
         scoresMap[row.student_id].push({
-          id: row.id, exam_id: row.exam_id, exam_title: row.exams?.title,
+          id: row.id, exam_id: row.exam_id, student_id: row.student_id, exam_title: row.exams?.title,
           max_score_per_section: row.exams?.max_score_per_section, section_scores: row.section_scores,
           total_score: row.total_score, version: row.version, created_at: row.created_at,
         })
@@ -331,7 +331,7 @@ export function WorkspaceProvider({ children }) {
               return { ...prev, [sid]: list.filter((r) => r.id !== payload.old.id) }
             }
             const row = payload.new
-            const mapped = { id: row.id, exam_id: row.exam_id, exam_title: row.exams?.title || row.exam_title, max_score_per_section: row.exams?.max_score_per_section || row.max_score_per_section, section_scores: row.section_scores, total_score: row.total_score, version: row.version, created_at: row.created_at }
+            const mapped = { id: row.id, exam_id: row.exam_id, student_id: row.student_id, exam_title: row.exams?.title || row.exam_title, max_score_per_section: row.exams?.max_score_per_section || row.max_score_per_section, section_scores: row.section_scores, total_score: row.total_score, version: row.version, created_at: row.created_at }
             const list = prev[row.student_id] || []
             const idx = list.findIndex((r) => r.id === row.id)
             if (idx === -1) return { ...prev, [row.student_id]: [...list, mapped] }

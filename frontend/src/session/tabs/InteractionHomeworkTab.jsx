@@ -18,28 +18,30 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // - 'completed' homework must persist as مكتمل — the mirror field and the
 //   lesson row are written together, exactly like production.
 //
-// SPEED (user: "ما تعرضش كل الطلاب — أبحث بالاسم أو أمسح الكود"):
-// - FOCUS mode is the default: ONE student at a time (same sequential pattern
-//   as attendance) — mark interaction/homework → التالي → next student.
-//   No scrolling through the whole roster, no wall of buttons.
-// - Jump tools inside focus mode: search by name/code (chips, one tap) and
-//   QR scan (pick mode — jumps to the scanned student, does NOT mark).
-// - The full list stays available (☰ القائمة) as the secondary view —
-//   progressive disclosure, nothing removed.
-// - Position (studentId + mode) persists in sessionStorage per group, so a
-//   reload/crash resumes on the same student.
+// LIST MODE (user round: "شيل موضوع ان كل طالب اختار حاجته و ادوس next —
+// خليها قائمة و اقدر اخش علي اللي بعدها من زرار next"):
+// - The SEQUENTIAL one-student focus card is REMOVED. The tab is ONE LIST:
+//   every student is a row with their interaction + homework controls inline
+//   — everything visible, every click saves instantly (same writes).
+// - The bar's gold «التالي» WALKS the visible list: highlights the next row
+//   and scrolls to it. At the end of the list it advances to Exams (gated
+//   like every advance — blockers panel, never silent).
+// - Jump tools stay: search by name/code, completeness filters, tapping a
+//   row sets the walk position, and QR scan (pick mode — jumps to the
+//   scanned row, never writes attendance).
+// - Position (studentId) persists in sessionStorage per group — a reload or
+//   crash resumes on the same row (highlight + scroll).
 // ═══════════════════════════════════════════════════════════════════════════
 export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFocus, onClearFocus, onBar, onAdvance, missingCount, onGoPrev }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
-  const [mode, setMode] = useState('focus') // focus (sequential) | list
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('present') // present | all | absent
   const [intFilter, setIntFilter] = useState('all') // all | done | missing  (interaction completeness)
   const [hwFilter, setHwFilter] = useState('all') // all | done | partial | missing (homework completeness)
-  const [focusSearch, setFocusSearch] = useState('')
   const [qrOpen, setQrOpen] = useState(false)
+  const [currentId, setCurrentId] = useState(null) // highlighted walk position
 
   const attendanceMap = ws.lessonAttendanceByStudent
   const groupStudents = ws.sessionStudentsFor(groupId)
@@ -60,50 +62,14 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
     return { status, hw, isPresent, isAbsent, hasInteraction, hwDone, hwPartial, hwMissing, complete }
   }
 
-  // Applicable = PRESENT students in roster order — the sequential queue.
+  // Applicable = PRESENT students — completion math + empty-state copy.
   const applicable = useMemo(
     () => groupStudents.filter((s) => flag(s).isPresent),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [groupStudents, attendanceMap, lessonOpen, ws.todayLogsByStudent],
   )
 
-  // ── Sequential position: restore saved student, else first incomplete ──
-  const [idx, setIdx] = useState(0)
-  const restoredRef = useRef('')
-  useEffect(() => {
-    if (!applicable.length) return
-    if (restoredRef.current === groupId) return
-    restoredRef.current = groupId
-    let target = -1
-    try {
-      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_int_pos') || 'null')
-      if (saved?.groupId === groupId && saved.studentId) target = applicable.findIndex((s) => s.id === saved.studentId)
-    } catch { /* ignore */ }
-    if (target < 0) target = applicable.findIndex((s) => !flag(s).complete)
-    setIdx(target >= 0 ? target : 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, applicable.length])
-
-  // Blockers-panel shortcut (missingFocus): jump straight to the first
-  // student who still needs something — in focus mode.
-  useEffect(() => {
-    if (!missingFocus || !applicable.length) return
-    const firstMissing = applicable.findIndex((s) => !flag(s).complete)
-    if (firstMissing >= 0) setIdx(firstMissing)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [missingFocus])
-
-  // Persist position (studentId — survives roster reshuffles better than index).
-  useEffect(() => {
-    const currentId = applicable[idx]?.id || null
-    try { sessionStorage.setItem('nokhba_ws_int_pos', JSON.stringify({ groupId, studentId: currentId, mode })) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, idx, mode, applicable.length])
-
-  // Clamp if the queue shrinks (defensive).
-  useEffect(() => {
-    if (idx > 0 && idx >= applicable.length) setIdx(Math.max(0, applicable.length - 1))
-  }, [applicable.length, idx])
+  const counts = ws.countsForLesson(groupId)
 
   const rows = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -128,6 +94,63 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupStudents, search, filter, intFilter, hwFilter, attendanceMap, lessonOpen, missingFocus, ws.todayLogsByStudent])
 
+  // ── Walk position: restore the saved row, else the first incomplete one ──
+  const restoredRef = useRef('')
+  useEffect(() => {
+    if (!rows.length || restoredRef.current === groupId) return
+    restoredRef.current = groupId
+    let target = -1
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_int_pos') || 'null')
+      if (saved?.groupId === groupId && saved.studentId) target = rows.findIndex((s) => s.id === saved.studentId)
+    } catch { /* ignore */ }
+    if (target < 0) target = rows.findIndex((s) => !flag(s).complete)
+    setCurrentId(target >= 0 ? rows[target].id : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, rows.length])
+
+  // Blockers-panel shortcut (missingFocus): start the walk at the first
+  // filtered (missing) row.
+  useEffect(() => {
+    if (!missingFocus) return
+    setCurrentId(rows[0]?.id || null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingFocus])
+
+  // Persist position (studentId — survives roster reshuffles better than index).
+  useEffect(() => {
+    try { sessionStorage.setItem('nokhba_ws_int_pos', JSON.stringify({ groupId, studentId: currentId })) } catch { /* ignore */ }
+  }, [groupId, currentId])
+
+  // Keep the current row in view — walk steps, jumps, AND reload restore
+  // ("سيبني مكاني"): after a refresh the teacher lands on the same row,
+  // highlighted and scrolled into view.
+  useEffect(() => {
+    if (!currentId) return
+    const el = document.getElementById(`nk-int-row-${currentId}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [currentId])
+
+  // ── Walk the visible list ─────────────────────────────────────────────────
+  const currentIdx = rows.findIndex((s) => s.id === currentId)
+  const hasNext = rows.length > 0 && currentIdx < rows.length - 1
+  const goNextRow = () => {
+    if (!rows.length) { onAdvance?.(); return }
+    if (currentIdx < 0) setCurrentId(rows[0].id)
+    else if (currentIdx < rows.length - 1) setCurrentId(rows[currentIdx + 1].id)
+    else onAdvance?.() // end of the list → continue to Exams (gated)
+  }
+  const goPrevRow = () => { if (currentIdx > 0) setCurrentId(rows[currentIdx - 1].id) }
+  const jumpToStudent = (studentId) => {
+    if (!rows.some((s) => s.id === studentId)) {
+      // Filtered out — reset the filters (and the missing-only shortcut) so
+      // the row is visible, then highlight it.
+      if (missingFocus) onClearFocus?.()
+      setSearch(''); setIntFilter('all'); setHwFilter('all'); setFilter('present')
+    }
+    setCurrentId(studentId)
+  }
+
   const interactionButtons = [
     { label: '🌟 ' + (isArabic ? 'تفاعل' : 'Interact'), amount: ws.settings?.points_interact ?? 3, reason: isArabic ? 'إجابة وتفاعل' : 'Interaction' },
     { label: '🧠 ' + (isArabic ? 'إجابة ذهبية' : 'Golden answer'), amount: 5, reason: isArabic ? 'إجابة ذهبية' : 'Golden answer' },
@@ -141,9 +164,35 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
     ['لم يتم', isArabic ? 'لم يتم' : 'Missing', 'nk-on-hw-missing'],
   ]
 
-  const counts = ws.countsForLesson(groupId)
+  // ── Bar spec (serializable) + handlers — published to the workspace root.
+  // ALWAYS called (stable hook order) — null in the read-only completed view.
+  const total = applicable.length
+  const doneCount = applicable.filter((s) => flag(s).complete).length
+  const progressMeta = missingCount > 0
+    ? studentsNeedPhrase(missingCount, isArabic, isArabic ? 'تفاعل / واجب' : 'input')
+    : (isArabic ? `مكتمل ${doneCount} من ${total} ✓` : `${doneCount}/${total} complete ✓`)
 
-  // ── Read-only view (completed session) — unchanged behavior ──────────────
+  const barData = !lessonOpen ? null : {
+    ariaLabel: isArabic ? 'إجراءات التفاعل والواجب' : 'Interaction & homework actions',
+    primary: [hasNext
+      ? { key: 'next', kind: 'gold', label: isArabic ? 'التالي ←' : 'Next →', disabled: false }
+      : { key: 'next', kind: 'gold', label: isArabic ? 'متابعة — الامتحانات ←' : 'Continue — Exams →', disabled: !onAdvance }],
+    secondary: [
+      { key: 'prevRow', label: isArabic ? '↑ السابق' : '↑ Previous', disabled: currentIdx <= 0, title: isArabic ? 'الطالب اللي قبله في القائمة' : 'Previous student in the list' },
+      { key: 'prevTab', label: isArabic ? '→ السابق — الحضور' : '← Previous — Attendance', disabled: !onGoPrev },
+      { key: 'openQR', label: '⛶ QR', disabled: false, title: isArabic ? 'امسح كود الطالب للانتقال إليه في القائمة' : 'Scan a student QR to jump to them in the list' },
+    ],
+    meta: progressMeta,
+  }
+
+  usePublishBar(onBar, barData, {
+    next: goNextRow,
+    prevRow: goPrevRow,
+    prevTab: () => onGoPrev?.(),
+    openQR: () => setQrOpen(true),
+  })
+
+  // ── Read-only view (completed session) ────────────────────────────────────
   if (!lessonOpen) {
     return (
       <div>
@@ -178,347 +227,175 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
     )
   }
 
-  // ── Sequential (focus) mode ───────────────────────────────────────────────
-  const total = applicable.length
-  const current = applicable[idx] || null
-  const currentFlag = current ? flag(current) : null
-  const isLast = idx >= total - 1
-  const doneCount = applicable.filter((s) => flag(s).complete).length
-  const saving = Boolean(current) && wsMeta.savingIds.has(current.id)
-
-  const goNext = () => { if (!isLast) setIdx((i) => Math.min(total - 1, i + 1)) }
-  const goPrev = () => { setIdx((i) => Math.max(0, i - 1)) }
-  const jumpToStudent = (studentId) => {
-    const i = applicable.findIndex((s) => s.id === studentId)
-    if (i >= 0) { setIdx(i); setFocusSearch(''); return true }
-    return false
-  }
-
-  const focusMatches = useMemo(() => {
-    const q = normalizeArabicSearch(focusSearch)
-    if (!q) return []
-    return applicable
-      .filter((s) => normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q))
-      .slice(0, 5)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusSearch, applicable])
-
-  // ── Bar spec (serializable) + handlers — published to the workspace root
-  const progressMeta = missingCount > 0
-    ? studentsNeedPhrase(missingCount, isArabic, isArabic ? 'تفاعل / واجب' : 'input')
-    : (isArabic ? `مكتمل ${doneCount} من ${total} ✓` : `${doneCount}/${total} complete ✓`)
-
-  const barData = mode === 'focus'
-    ? {
-        ariaLabel: isArabic ? 'إجراءات التفاعل والواجب' : 'Interaction & homework actions',
-        primary: [isLast
-          ? { key: 'next', kind: 'gold', label: isArabic ? 'متابعة — الامتحانات ←' : 'Continue — Exams →', disabled: !onAdvance }
-          : { key: 'next', kind: 'gold', label: isArabic ? 'التالي ←' : 'Next →', disabled: false }],
-        secondary: [
-          { key: 'prev', label: isArabic ? '→ السابق' : '← Previous', disabled: idx === 0, title: isArabic ? 'الطالب السابق' : 'Previous student' },
-          { key: 'openList', label: isArabic ? '☰ القائمة' : '☰ List', disabled: false, title: isArabic ? 'عرض القائمة الكاملة' : 'Full list view' },
-          { key: 'openQR', label: '⛶ QR', disabled: false, title: isArabic ? 'امسح كود الطالب للانتقال إليه' : 'Scan a student QR to jump to them' },
-        ],
-        meta: `${isArabic ? `الطالب ${idx + 1} من ${total}` : `Student ${idx + 1} of ${total}`} · ${progressMeta}`,
-      }
-    : {
-        ariaLabel: isArabic ? 'إجراءات التفاعل والواجب' : 'Interaction & homework actions',
-        primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — الامتحانات ←' : 'Next — Exams →', disabled: !onAdvance }],
-        secondary: [
-          { key: 'prev', label: isArabic ? '→ السابق — الحضور' : '← Previous — Attendance', disabled: !onGoPrev },
-          { key: 'openFocus', label: `⚡ ${isArabic ? 'الرصد التسلسلي' : 'Sequential mode'}`, disabled: !total, title: isArabic ? 'طالب بطالب — أسرع، مع بحث ومسح QR' : 'Student-by-student — faster, with search & QR' },
-        ],
-        meta: progressMeta,
-      }
-
-  usePublishBar(onBar, barData, {
-    next: () => { if (mode === 'focus' && !isLast) goNext(); else onAdvance?.() },
-    prev: () => { if (mode === 'focus') goPrev(); else onGoPrev?.() },
-    openList: () => setMode('list'),
-    openFocus: () => {
-      const firstMissing = applicable.findIndex((s) => !flag(s).complete)
-      setIdx(firstMissing >= 0 ? firstMissing : 0)
-      setMode('focus')
-    },
-    openQR: () => setQrOpen(true),
-  })
-
   return (
     <div>
       <div className="nk-notice mb-4">
         {isArabic
-          ? 'التفاعل والواجب للحاضرين فقط — الغائبون مستثنون تلقائيًا. كل ضغطة بتتحفظ فورًا.'
-          : 'Interaction & homework apply to present students only — absentees are excluded automatically. Every click saves instantly.'}
+          ? 'قائمة الحاضرين — تفاعل وواجب كل طالب في صفه، وكل ضغطة بتتحفظ فورًا. زر «التالي» بينقلك للطالب اللي بعده.'
+          : 'Present students as one list — interaction & homework per row, every click saves instantly. «Next» walks to the following student.'}
       </div>
 
-      {mode === 'focus' && current && (
-        <>
-          {/* Focus card — ONE student, ONE goal */}
-          <div className="nk-focus-card" aria-live="polite">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="nk-focus-muted text-[.7rem] font-black tracking-wide">
-                {isArabic ? `الطالب ${idx + 1} من ${total}` : `Student ${idx + 1} of ${total}`}
-              </span>
-              <span className="flex items-center gap-1.5 flex-wrap justify-end">
-                <span className={`nk-pill !py-0.5 !text-[.62rem] ${currentFlag.hasInteraction ? 'nk-pill-live' : 'nk-pill-neutral'}`}>
-                  {currentFlag.hasInteraction ? `✓ ${isArabic ? 'تفاعل' : 'Interaction'}` : (isArabic ? 'تفاعل —' : 'Interaction —')}
-                </span>
-                <span className={`nk-pill !py-0.5 !text-[.62rem] ${!currentFlag.hwMissing ? (currentFlag.hwDone ? 'nk-pill-live' : 'nk-pill-neutral') : 'nk-pill-pending'}`}>
-                  {isArabic ? 'واجب' : 'Homework'}: {HW_LABEL[currentFlag.hw] || (currentFlag.hwMissing ? 'لم يُرصد' : currentFlag.hw)}
-                </span>
-              </span>
-            </div>
-            <div className="nk-focus-name">{current.name}</div>
-            <small className="nk-focus-muted text-[.72rem] block">
-              {[current.code, current.stage].filter(Boolean).join(' · ')}
-            </small>
-
-            {/* Interaction quick actions (existing points semantics) */}
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="nk-seg flex-wrap">
-                {interactionButtons.map((b) => (
-                  <button
-                    key={b.label}
-                    disabled={saving}
-                    onClick={() => ws.adjustPoints(current.id, b.amount, b.reason)}
-                    title={`${b.reason} (${b.amount > 0 ? '+' : ''}${b.amount})`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </span>
-            </div>
-            {/* Homework status (existing per-lesson homework semantics) */}
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              <span className="nk-seg" role="group" aria-label={`${current.name} homework`}>
-                {hwOptions.map(([value, label, onClass]) => (
-                  <button
-                    key={value}
-                    className={currentFlag.hw === value ? onClass : ''}
-                    aria-pressed={currentFlag.hw === value}
-                    disabled={saving}
-                    onClick={() => ws.updateHW(current.id, value, ws.activeLessonId)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </span>
-              <span className="nk-focus-muted text-[.66rem]">
-                {saving ? (isArabic ? '… جاري الحفظ' : 'Saving…') : (isArabic ? '✓ الحفظ فوري' : '✓ Saves instantly')}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 mt-3">
-              <span className="nk-bar flex-1"><span style={{ width: `${total ? Math.round((doneCount / total) * 100) : 0}%` }} /></span>
-              <span className="nk-focus-muted text-[.66rem] font-extrabold shrink-0">
-                {isArabic ? `مكتمل ${doneCount}/${total}` : `${doneCount}/${total} complete`}
-              </span>
-            </div>
-
-            {/* Jump tools: search by name/code — one tap to jump */}
-            <div className="mt-3">
-              <input
-                className="glass-input rounded-xl px-3 py-2 text-[.8rem] w-full"
-                placeholder={isArabic ? '🔍 اكتب اسم طالب للانتقال السريع...' : 'Type a student name to jump...'}
-                value={focusSearch}
-                onChange={(e) => setFocusSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && focusMatches[0]) jumpToStudent(focusMatches[0].id) }}
-                aria-label={isArabic ? 'انتقال سريع لطالب' : 'Quick jump to student'}
-              />
-              {focusMatches.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {focusMatches.map((s) => (
-                    <button
-                      key={s.id}
-                      className="nk-pill nk-pill-gold cursor-pointer border-0 px-3 py-1.5 text-[.7rem] font-extrabold"
-                      onClick={() => jumpToStudent(s.id)}
-                    >
-                      {s.name}{flag(s).complete ? ' ✓' : ''}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {mode === 'focus' && !current && (
-        <div className="nk-notice">
-          {counts.present === 0
-            ? (isArabic ? 'سجّل الحضور أولاً — الحاضرون فقط يظهرون هنا.' : 'Record attendance first — present students appear here.')
-            : (isArabic ? 'لا يوجد طلاب في هذه المجموعة.' : 'No students in this group.')}
+      {missingFocus && (
+        <div className="nk-block mb-3" role="status">
+          <b>{isArabic ? 'يُعرض الطلاب الناقصون فقط — أكملهم ليصبح التقدم متاحًا.' : 'Showing only missing students — complete them to unlock progress.'}</b>
+          {onClearFocus && (
+            <button className="btn-ghost rounded-xl px-3 py-1.5 text-[.7rem] font-extrabold" onClick={onClearFocus}>
+              {isArabic ? 'إلغاء التصفية' : 'Clear filter'}
+            </button>
+          )}
         </div>
       )}
 
-      {mode === 'list' && (
-        <>
-          {missingFocus && (
-            <div className="nk-block mb-3" role="status">
-              <b>{isArabic ? 'يُعرض الطلاب الناقصون فقط — أكملهم ليصبح التقدم متاحًا.' : 'Showing only missing students — complete them to unlock progress.'}</b>
-              {onClearFocus && (
-                <button className="btn-ghost rounded-xl px-3 py-1.5 text-[.7rem] font-extrabold" onClick={onClearFocus}>
-                  {isArabic ? 'إلغاء التصفية' : 'Clear filter'}
-                </button>
+      {/* Toolbar: search + presence filter + homework counter */}
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <input
+          className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[180px]"
+          placeholder={isArabic ? '🔍 بحث بالاسم أو الكود...' : 'Search name / code...'}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label={isArabic ? 'بحث' : 'Search'}
+        />
+        <div className="flex rounded-xl overflow-hidden border border-subtle">
+          {[
+            ['present', isArabic ? 'الحاضرون' : 'Present'],
+            ['all', isArabic ? 'الكل' : 'All'],
+            ['absent', isArabic ? 'الغائبون' : 'Absent'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className="px-3 py-2 text-[.72rem] font-extrabold"
+              style={filter === key
+                ? { background: 'var(--brand-navy)', color: '#fff' }
+                : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="nk-pill nk-pill-gold">{isArabic ? 'الواجب' : 'Homework'}: {counts.hwDone} / {counts.hwApplicable}</span>
+      </div>
+
+      {/* Stage completeness filters (brief §7): Interaction All/Done/Missing ·
+          Homework All/Done/Partial/Missing — same segmented UX as everywhere. */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="text-[.68rem] font-extrabold text-fg-muted">{isArabic ? 'التفاعل:' : 'Interaction:'}</span>
+        <div className="flex rounded-xl overflow-hidden border border-subtle">
+          {[
+            ['all', isArabic ? 'الكل' : 'All'],
+            ['done', isArabic ? 'تم' : 'Done'],
+            ['missing', isArabic ? 'ناقص' : 'Missing'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setIntFilter(key)}
+              className="px-3 py-1.5 text-[.68rem] font-extrabold"
+              style={intFilter === key
+                ? { background: 'var(--brand-navy)', color: '#fff' }
+                : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="text-[.68rem] font-extrabold text-fg-muted ms-2">{isArabic ? 'الواجب:' : 'Homework:'}</span>
+        <div className="flex rounded-xl overflow-hidden border border-subtle">
+          {[
+            ['all', isArabic ? 'الكل' : 'All'],
+            ['done', isArabic ? 'مكتمل' : 'Done'],
+            ['partial', isArabic ? 'ناقص' : 'Partial'],
+            ['missing', isArabic ? 'لم يُرصد' : 'Missing'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setHwFilter(key)}
+              className="px-3 py-1.5 text-[.68rem] font-extrabold"
+              style={hwFilter === key
+                ? { background: 'var(--brand-navy)', color: '#fff' }
+                : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-2.5">
+        {rows.map((s) => {
+          const lf = flag(s)
+          const isAbsent = lf.isAbsent
+          const logs = ws.todayLogsByStudent[s.id] || []
+          const lastLog = logs.length ? logs[logs.length - 1] : null
+          return (
+            <div
+              key={s.id}
+              id={`nk-int-row-${s.id}`}
+              className={`nk-row !items-start flex-col gap-2.5 ${currentId === s.id ? 'nk-row--current' : ''}`}
+              style={{ opacity: isAbsent ? 0.75 : 1 }}
+            >
+              <div
+                className="flex items-center justify-between gap-2 w-full min-w-0 cursor-pointer"
+                onClick={(e) => { if (e.target.closest('button')) return; setCurrentId(s.id) }}
+                title={isArabic ? 'اضغط هنا عشان زر «التالي» يبدأ من هذا الصف' : 'Set «Next» to start from this row'}
+              >
+                <span className="min-w-0">
+                  <b className="truncate">{s.name}</b>
+                  <small>
+                    {isArabic ? 'الحضور' : 'Attendance'}: {lf.status}
+                    {lastLog ? ` · ${lastLog.note}` : ''}
+                  </small>
+                </span>
+                <span className="flex items-center gap-1.5 shrink-0">
+                  {!isAbsent && lf.complete && <span className="nk-pill nk-pill-live !py-0.5 !text-[.62rem]">✓ {isArabic ? 'تم' : 'Done'}</span>}
+                  {isAbsent && <span className="nk-pill nk-pill-danger">{isArabic ? 'غائب — غير applicable' : 'Absent — excluded'}</span>}
+                </span>
+              </div>
+
+              {!isAbsent && (
+                <div className="flex flex-wrap items-center gap-2 w-full">
+                  {/* Interaction quick actions (existing points semantics) */}
+                  <span className="nk-seg flex-wrap">
+                    {interactionButtons.map((b) => (
+                      <button
+                        key={b.label}
+                        disabled={wsMeta.savingIds.has(s.id)}
+                        onClick={() => ws.adjustPoints(s.id, b.amount, b.reason)}
+                        title={`${b.reason} (${b.amount > 0 ? '+' : ''}${b.amount})`}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </span>
+                  {/* Homework status (existing per-lesson homework semantics) */}
+                  <span className="nk-seg ms-auto" role="group" aria-label={`${s.name} homework`}>
+                    {hwOptions.map(([value, label, onClass]) => (
+                      <button
+                        key={value}
+                        className={lf.hw === value ? onClass : ''}
+                        aria-pressed={lf.hw === value}
+                        disabled={wsMeta.savingIds.has(s.id)}
+                        onClick={() => ws.updateHW(s.id, value, ws.activeLessonId)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </span>
+                </div>
               )}
             </div>
-          )}
+          )
+        })}
+        {rows.length === 0 && (
+          <p className="text-center py-6 text-sm text-fg-muted">
+            {filter === 'present' && counts.present === 0
+              ? (isArabic ? 'سجّل الحضور أولاً ليظهروا هنا' : 'Record attendance first — present students appear here')
+              : (isArabic ? 'لا نتائج مطابقة' : 'No matching students')}
+          </p>
+        )}
+      </div>
 
-          {/* Toolbar: search + filters + homework counter */}
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <input
-              className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[180px]"
-              placeholder={isArabic ? '🔍 بحث بالاسم أو الكود...' : 'Search name / code...'}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label={isArabic ? 'بحث' : 'Search'}
-            />
-            <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[
-                ['present', isArabic ? 'الحاضرون' : 'Present'],
-                ['all', isArabic ? 'الكل' : 'All'],
-                ['absent', isArabic ? 'الغائبون' : 'Absent'],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className="px-3 py-2 text-[.72rem] font-extrabold"
-                  style={filter === key
-                    ? { background: 'var(--brand-navy)', color: '#fff' }
-                    : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="nk-pill nk-pill-gold">{isArabic ? 'الواجب' : 'Homework'}: {counts.hwDone} / {counts.hwApplicable}</span>
-          </div>
-
-          {/* Stage completeness filters (brief §7): Interaction All/Done/Missing ·
-              Homework All/Done/Partial/Missing — same segmented UX as everywhere. */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span className="text-[.68rem] font-extrabold text-fg-muted">{isArabic ? 'التفاعل:' : 'Interaction:'}</span>
-            <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[
-                ['all', isArabic ? 'الكل' : 'All'],
-                ['done', isArabic ? 'تم' : 'Done'],
-                ['missing', isArabic ? 'ناقص' : 'Missing'],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setIntFilter(key)}
-                  className="px-3 py-1.5 text-[.68rem] font-extrabold"
-                  style={intFilter === key
-                    ? { background: 'var(--brand-navy)', color: '#fff' }
-                    : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="text-[.68rem] font-extrabold text-fg-muted ms-2">{isArabic ? 'الواجب:' : 'Homework:'}</span>
-            <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[
-                ['all', isArabic ? 'الكل' : 'All'],
-                ['done', isArabic ? 'مكتمل' : 'Done'],
-                ['partial', isArabic ? 'ناقص' : 'Partial'],
-                ['missing', isArabic ? 'لم يُرصد' : 'Missing'],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setHwFilter(key)}
-                  className="px-3 py-1.5 text-[.68rem] font-extrabold"
-                  style={hwFilter === key
-                    ? { background: 'var(--brand-navy)', color: '#fff' }
-                    : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid gap-2.5">
-            {rows.map((s) => {
-              const row = attendanceMap[s.id]
-              const status = row?.status || (lessonOpen ? 'لم يرصد' : s.attendance_status)
-              const hw = row?.homework_status || (lessonOpen ? 'لم يرصد' : s.hw_status)
-              const isAbsent = status === 'غائب'
-              const logs = ws.todayLogsByStudent[s.id] || []
-              const lastLog = logs.length ? logs[logs.length - 1] : null
-              const listIdx = applicable.findIndex((x) => x.id === s.id)
-              return (
-                <div key={s.id} className="nk-row !items-start flex-col gap-2.5" style={{ opacity: isAbsent ? 0.75 : 1 }}>
-                  <div
-                    className={`flex items-center justify-between gap-2 w-full min-w-0 ${!isAbsent && listIdx >= 0 ? 'cursor-pointer' : ''}`}
-                    onClick={(e) => {
-                      if (e.target.closest('button')) return
-                      if (!isAbsent && listIdx >= 0) { setIdx(listIdx); setMode('focus') }
-                    }}
-                    title={!isAbsent && listIdx >= 0 ? (isArabic ? 'اضغط لفتح هذا الطالب في وضع التسلسل' : 'Open this student in sequential mode') : undefined}
-                  >
-                    <span className="min-w-0">
-                      <b className="truncate">{s.name}</b>
-                      <small>
-                        {isArabic ? 'الحضور' : 'Attendance'}: {status}
-                        {lastLog ? ` · ${lastLog.note}` : ''}
-                      </small>
-                    </span>
-                    {isAbsent && <span className="nk-pill nk-pill-danger">{isArabic ? 'غائب — غير applicable' : 'Absent — excluded'}</span>}
-                  </div>
-
-                  {!isAbsent && lessonOpen && (
-                    <div className="flex flex-wrap items-center gap-2 w-full">
-                      {/* Interaction quick actions (existing points semantics) */}
-                      <span className="nk-seg flex-wrap">
-                        {interactionButtons.map((b) => (
-                          <button
-                            key={b.label}
-                            disabled={wsMeta.savingIds.has(s.id)}
-                            onClick={() => ws.adjustPoints(s.id, b.amount, b.reason)}
-                            title={`${b.reason} (${b.amount > 0 ? '+' : ''}${b.amount})`}
-                          >
-                            {b.label}
-                          </button>
-                        ))}
-                      </span>
-                      {/* Homework status (existing per-lesson homework semantics) */}
-                      <span className="nk-seg ms-auto" role="group" aria-label={`${s.name} homework`}>
-                        {hwOptions.map(([value, label, onClass]) => (
-                          <button
-                            key={value}
-                            className={hw === value ? onClass : ''}
-                            aria-pressed={hw === value}
-                            disabled={wsMeta.savingIds.has(s.id)}
-                            onClick={() => ws.updateHW(s.id, value, ws.activeLessonId)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </span>
-                    </div>
-                  )}
-                  {!isAbsent && !lessonOpen && (
-                    <small className="text-fg-muted">
-                      {isArabic ? `الواجب: ${HW_LABEL[hw] || hw}` : `Homework: ${HW_LABEL[hw] || hw}`} — {isArabic ? 'حصة منتهية (عرض فقط)' : 'completed session (read-only)'}
-                    </small>
-                  )}
-                </div>
-              )
-            })}
-            {rows.length === 0 && (
-              <p className="text-center py-6 text-sm text-fg-muted">
-                {filter === 'present' && counts.present === 0
-                  ? (isArabic ? 'سجّل الحضور أولاً ليظهروا هنا' : 'Record attendance first — present students appear here')
-                  : (isArabic ? 'لا نتائج مطابقة' : 'No matching students')}
-              </p>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* QR scanner in PICK mode: scanning jumps to the student (attendance is
-          already done at this stage — it never re-marks). */}
+      {/* QR scanner in PICK mode: scanning jumps to the student's row in the
+          list (attendance is already done at this stage — it never re-marks). */}
       <Suspense fallback={qrOpen ? <ScannerFallback /> : null}>
         <QRSessionScanner
           open={qrOpen}
@@ -526,7 +403,8 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
           students={ws.students}
           pickMode
           onPickStudent={(studentId, studentName) => {
-            if (jumpToStudent(studentId)) return
+            const target = studentId ? groupStudents.find((s) => s.id === studentId) : null
+            if (target && flag(target).isPresent) { jumpToStudent(studentId); return }
             ws.showToast(
               isArabic
                 ? `${studentName || 'الطالب'} غير حاضر في هذه الحصة — لا يحتاج تفاعل أو واجب.`
