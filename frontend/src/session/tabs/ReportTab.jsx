@@ -4,6 +4,7 @@ import { useUI } from '../../shell/UIContext'
 import { buildTextReport } from '../../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../../lib/helpers'
 import { getStudentRank, getStudentRankPosition } from '../../lib/helpers'
+import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORT TAB (rule 14) — the report belongs to THIS session only.
@@ -11,7 +12,7 @@ import { getStudentRank, getStudentRankPosition } from '../../lib/helpers'
 // SAVE (lesson details) and FINISH SESSION are two separate actions, and
 // finishing uses the production finalize RPC + final notifications, unchanged.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName }) {
+export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName, onBar }) {
   const ws = useWorkspace()
   const ui = useUI()
   const { isArabic } = ws
@@ -83,6 +84,35 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
   const topStudents = useMemo(() => {
     return [...groupStudents].sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 3)
   }, [groupStudents])
+
+  // Persistent workflow bar — the session pipeline ends here.
+  const barData = lessonOpen
+    ? {
+        ariaLabel: isArabic ? 'إجراءات التقرير' : 'Report actions',
+        primary: [{
+          key: 'finish',
+          kind: 'ok',
+          label: finishing ? (isArabic ? '… جاري الإنهاء' : 'Finishing…') : `✓ ${isArabic ? 'إنهاء الحصة' : 'Finish session'}`,
+          disabled: finishing,
+        }],
+        secondary: dirty
+          ? [{ key: 'save', label: `💾 ${isArabic ? 'حفظ البيانات أولًا' : 'Save first'}`, disabled: saving }]
+          : [],
+        meta: dirty
+          ? (isArabic ? 'تغييرات غير محفوظة — الإنهاء يحفظها تلقائيًا' : 'Unsaved changes — finishing saves them')
+          : (isArabic ? 'الإنهاء يغلق الحصة نهائيًا' : 'Finishing closes the session for good'),
+      }
+    : {
+        ariaLabel: isArabic ? 'إجراءات التقرير' : 'Report actions',
+        primary: [{ key: 'home', kind: 'gold', label: isArabic ? 'العودة للرئيسية ←' : 'Back to Home →', disabled: false }],
+        secondary: [],
+        meta: '',
+      }
+  usePublishBar(onBar, barData, {
+    finish: () => finish(),
+    save: () => save(),
+    home: () => ui.closeSession(),
+  })
 
   return (
     <div>
@@ -160,27 +190,22 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
         </button>
       </div>
 
-      {/* FINISH SESSION — separate from SAVE (rule 7) */}
+      {/* FINISH SESSION — the action lives in the persistent workflow bar;
+          this card explains what finishing does (rule 7: SAVE ≠ FINISH). */}
       {lessonOpen ? (
         <div className="rounded-2xl p-4" style={{ background: 'var(--ok-bg)', border: '1px solid var(--ok-border)' }}>
           <b className="block mb-1 text-[.85rem]" style={{ color: 'var(--ok-strong)' }}>{isArabic ? 'إنهاء الحصة' : 'Finish session'}</b>
-          <p className="text-[.72rem] m-0 mb-3" style={{ color: 'var(--ok-strong)' }}>
+          <p className="text-[.72rem] m-0" style={{ color: 'var(--ok-strong)' }}>
             {isArabic
-              ? 'الإنهاء يحوّل غير المرصد إلى غائب، يغلق الحصة، ويرسل التحديث النهائي لأولياء الأمور. الحفظ شيء والإنهاء شيء آخر.'
-              : 'Finishing converts unrecorded to absent, closes the session, and sends the final parent update. Save and Finish are separate.'}
+              ? 'الإنهاء يحوّل غير المرصد إلى غائب، يغلق الحصة، ويرسل التحديث النهائي لأولياء الأمور. الحفظ شيء والإنهاء شيء آخر — زر الإنهاء في الشريط بالأسفل.'
+              : 'Finishing converts unrecorded to absent, closes the session, and sends the final parent update. Save and Finish are separate — the Finish button is in the bar below.'}
           </p>
-          <button className="action-button !min-h-[3rem]" style={{ background: 'var(--ok)', borderColor: 'var(--ok)', color: '#fff' }} disabled={finishing} onClick={finish}>
-            {finishing ? (isArabic ? 'جاري الإنهاء...' : 'Finishing...') : `✓ ${isArabic ? 'إنهاء الحصة' : 'Finish session'}`}
-          </button>
         </div>
       ) : lessonCompleted ? (
         <div className="rounded-2xl p-4 text-center" style={{ background: 'var(--info-bg)', border: '1px solid var(--info-border)' }}>
           <p className="m-0 text-[.8rem] font-extrabold" style={{ color: 'var(--info-strong)' }}>
             ✓ {isArabic ? 'الحصة منتهية ومحفوظة في السجل — يمكن للطالب رؤيتها في بوابته.' : 'Session completed and logged — visible in the student portal.'}
           </p>
-          <button className="btn-navy action-button !min-h-[3rem] mt-3" onClick={ui.closeSession}>
-            {isArabic ? 'العودة للرئيسية' : 'Back to Home'}
-          </button>
         </div>
       ) : null}
     </div>

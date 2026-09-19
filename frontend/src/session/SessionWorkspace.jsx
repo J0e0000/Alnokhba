@@ -9,6 +9,7 @@ import InteractionHomeworkTab from './tabs/InteractionHomeworkTab'
 import ExamsTab from './tabs/ExamsTab'
 import ReviewTab from './tabs/ReviewTab'
 import ReportTab from './tabs/ReportTab'
+import WorkflowBar from './WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSION WORKSPACE — the core experience (rules 5–14 + update brief §4–6).
@@ -47,6 +48,14 @@ export default function SessionWorkspace({ params }) {
   const [opening, setOpening] = useState(true)
   const [missingFocus, setMissingFocus] = useState(null) // 'interaction' | 'exams' | null → pre-filters a tab to missing students
   const [showBlockers, setShowBlockers] = useState({})   // per-tab blocking panel visibility
+
+  // PERSISTENT WORKFLOW BAR (UX round) — rendered at the workspace ROOT, not
+  // inside the tab panel: a sticky element can never rise above the top of
+  // its containing block, so the bar must live in a container that starts
+  // near the top of the page. Tabs publish serializable specs via
+  // usePublishBar (republish only on real changes — no re-render loops).
+  const [bar, setBar] = useState(null) // { data, handlers }
+  const publishBar = useCallback((spec) => setBar(spec), [])
 
   // Resolve the session for this group — server-authoritative open-or-reuse.
   // Past-day review resolves the lesson for THAT date (view-only via existing
@@ -145,6 +154,15 @@ export default function SessionWorkspace({ params }) {
     setShowBlockers({})
   }, [])
 
+  // Gated advance for the sticky workflow bar: a blocked advance opens the
+  // missing-students panel instead of moving on (brief §5 — never silent).
+  const tryAdvance = useCallback((fromTab) => {
+    const next = NEXT_TAB[fromTab]
+    if (!next) return
+    if (blockersFor(fromTab).length > 0) { setShowBlockers((p) => ({ ...p, [fromTab]: true })); return }
+    goToTab(next)
+  }, [blockersFor, goToTab])
+
   const issues = useMemo(() => {
     const list = []
     if (lessonOpen && counts.unrecorded > 0) list.push(isArabic ? `${counts.unrecorded} طالب لم يُرصد حضورهم (مسموح — لا يمنع التقدم)` : `${counts.unrecorded} students unrecorded (allowed — does not block)`)
@@ -222,64 +240,46 @@ export default function SessionWorkspace({ params }) {
   const isPastReview = Boolean(openedForDate) && openedForDate !== todayLocalISO()
   const overallPct = Math.round(progress.overall * 100)
 
-  // ── Advance bar (Continue validation, brief §5) — attendance/exams/interaction tabs.
-  // The review tab gates its own continue via the blockers prop (no double bar).
-  const renderAdvanceBar = (fromTab) => {
-    const next = NEXT_TAB[fromTab]
-    if (!next || !lessonOpen || fromTab === 'review') return null
+  // ── Missing-students panel (brief §5) — opened by a gated advance from the
+  // sticky workflow bar; the teacher stays on the tab and sees exactly who
+  // still needs what, with a one-click filtered shortcut.
+  const kindLabel = (kind) => kind === 'interaction'
+    ? (isArabic ? 'تفاعل' : 'interaction')
+    : kind === 'hw' ? (isArabic ? 'رصد واجب' : 'homework') : (isArabic ? 'إدخال درجة' : 'grade')
+
+  const renderBlockersPanel = (fromTab) => {
+    if (!lessonOpen || fromTab === 'review') return null
     const blockers = blockersFor(fromTab)
-    const panelOpen = showBlockers[fromTab]
-    const nextMeta = TABS.find((t) => t.key === next)
-    const kindLabel = (kind) => kind === 'interaction'
-      ? (isArabic ? 'تفاعل' : 'interaction')
-      : kind === 'hw' ? (isArabic ? 'رصد واجب' : 'homework') : (isArabic ? 'إدخال درجة' : 'grade')
+    if (!showBlockers[fromTab] || blockers.length === 0) return null
     return (
-      <div className="nk-advance">
-        {fromTab === 'attendance' && counts.unrecorded > 0 && (
-          <small className="nk-advance__note">
-            ⓘ {isArabic ? 'الحضور اختياري — عدم رصد بعض الطلاب لا يمنع التقدم.' : 'Attendance is optional — unrecorded students never block progress.'}
-          </small>
-        )}
-        <button
-          className="btn-navy action-button !min-h-[3rem]"
-          onClick={() => {
-            if (blockers.length > 0) { setShowBlockers((p) => ({ ...p, [fromTab]: true })); return }
-            goToTab(next)
-          }}
-        >
-          {isArabic ? `التالي — ${nextMeta.title} ←` : `Next — ${nextMeta.titleEn} →`}
-        </button>
-        {panelOpen && blockers.length > 0 && (
-          <div className="nk-block" role="alert">
-            <b>
-              {blockers.length} {isArabic ? 'طلاب ما زالوا بحاجة إلى' : 'students still need'}
-              {' '}{[...new Set(blockers.map((b) => kindLabel(b.kind)))].join(isArabic ? ' / ' : ' / ')}.
-            </b>
-            <ul className="nk-block__list">
-              {blockers.slice(0, 6).map(({ student, kind }) => (
-                <li key={`${student.id}-${kind}`}>
-                  <b>{student.name}</b> — {kindLabel(kind)}
-                </li>
-              ))}
-              {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
-            </ul>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <button
-                className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
-                onClick={() => {
-                  const targetTab = blockers.some((b) => b.kind === 'interaction') ? 'interaction'
-                    : blockers.some((b) => b.kind === 'exam') ? 'exams' : 'interaction'
-                  goToTab(targetTab, blockers.some((b) => b.kind === 'exam') && targetTab === 'exams' ? 'exams' : 'missing')
-                }}
-              >
-                {isArabic ? `عرض الطلاب الناقصين (${blockers.length})` : `Show missing students (${blockers.length})`}
-              </button>
-              <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={() => setShowBlockers((p) => ({ ...p, [fromTab]: false }))}>
-                {isArabic ? 'إغلاق' : 'Dismiss'}
-              </button>
-            </div>
-          </div>
-        )}
+      <div className="nk-block mt-3" role="alert">
+        <b>
+          {blockers.length} {isArabic ? 'طلاب ما زالوا بحاجة إلى' : 'students still need'}
+          {' '}{[...new Set(blockers.map((b) => kindLabel(b.kind)))].join(isArabic ? ' / ' : ' / ')}.
+        </b>
+        <ul className="nk-block__list">
+          {blockers.slice(0, 6).map(({ student, kind }) => (
+            <li key={`${student.id}-${kind}`}>
+              <b>{student.name}</b> — {kindLabel(kind)}
+            </li>
+          ))}
+          {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
+        </ul>
+        <div className="flex flex-wrap gap-2 mt-2">
+          <button
+            className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
+            onClick={() => {
+              const targetTab = blockers.some((b) => b.kind === 'interaction') ? 'interaction'
+                : blockers.some((b) => b.kind === 'exam') ? 'exams' : 'interaction'
+              goToTab(targetTab, blockers.some((b) => b.kind === 'exam') && targetTab === 'exams' ? 'exams' : 'missing')
+            }}
+          >
+            {isArabic ? `عرض الطلاب الناقصين (${blockers.length})` : `Show missing students (${blockers.length})`}
+          </button>
+          <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={() => setShowBlockers((p) => ({ ...p, [fromTab]: false }))}>
+            {isArabic ? 'إغلاق' : 'Dismiss'}
+          </button>
+        </div>
       </div>
     )
   }
@@ -393,11 +393,38 @@ export default function SessionWorkspace({ params }) {
             : 'Each stage is a tab; every click saves instantly. Remember: Save does not finish the session — finish from the Report tab. Attendance is optional: unrecorded students never block you.'}
         />
 
-        {tab === 'attendance' && <AttendanceTab groupId={groupId} lessonOpen={lessonOpen} />}
-        {tab === 'interaction' && (
-          <InteractionHomeworkTab groupId={groupId} lessonOpen={lessonOpen} missingFocus={missingFocus} onClearFocus={() => setMissingFocus(null)} />
+        {tab === 'attendance' && (
+          <AttendanceTab
+            groupId={groupId}
+            lessonOpen={lessonOpen}
+            onGoNext={() => goToTab('interaction')}
+            onBar={publishBar}
+          />
         )}
-        {tab === 'exams' && <ExamsTab groupId={groupId} lessonId={ws.activeLessonId} lessonOpen={lessonOpen} missingFocus={missingFocus === 'exams'} />}
+        {tab === 'interaction' && (
+          <InteractionHomeworkTab
+            groupId={groupId}
+            lessonOpen={lessonOpen}
+            missingFocus={missingFocus}
+            onClearFocus={() => setMissingFocus(null)}
+            onBar={publishBar}
+            onAdvance={() => tryAdvance('interaction')}
+            missingCount={blockersFor('interaction').length}
+            onGoPrev={() => goToTab('attendance')}
+          />
+        )}
+        {tab === 'exams' && (
+          <ExamsTab
+            groupId={groupId}
+            lessonId={ws.activeLessonId}
+            lessonOpen={lessonOpen}
+            missingFocus={missingFocus === 'exams'}
+            onBar={publishBar}
+            onAdvance={() => tryAdvance('exams')}
+            missingCount={blockersFor('exams').length}
+            onGoPrev={() => goToTab('interaction')}
+          />
+        )}
         {tab === 'review' && (
           <ReviewTab
             groupId={groupId}
@@ -409,6 +436,7 @@ export default function SessionWorkspace({ params }) {
             lessonOpen={lessonOpen}
             onGoTo={(k, focus) => goToTab(k, focus)}
             blockers={blockersFor('review')}
+            onBar={publishBar}
           />
         )}
         {tab === 'report' && (
@@ -419,11 +447,22 @@ export default function SessionWorkspace({ params }) {
             lessonCompleted={lessonCompleted}
             counts={counts}
             teacherName={profile?.full_name || ''}
+            onBar={publishBar}
           />
         )}
 
-        {renderAdvanceBar(tab)}
+        {renderBlockersPanel(tab)}
       </section>
+
+      {/* ── Persistent contextual workflow bar (workspace root level) ─────── */}
+      {bar && (
+        <WorkflowBar
+          ariaLabel={bar.data.ariaLabel}
+          primary={bar.data.primary.map((b) => ({ ...b, onClick: () => bar.handlers[b.key]?.() }))}
+          secondary={(bar.data.secondary || []).map((b) => ({ ...b, onClick: () => bar.handlers[b.key]?.() }))}
+          meta={bar.data.meta}
+        />
+      )}
 
       {/* Mobile sticky save hint: attendance marks persist instantly; the
           explicit Save lives inside each tab, Finish inside the Report tab. */}

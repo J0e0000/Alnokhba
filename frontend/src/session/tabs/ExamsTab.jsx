@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXAMS / GRADES TAB (rule 12)
@@ -11,7 +12,7 @@ import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
 // never graded, never penalized — same server rule as production.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus }) {
+export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, onBar, onAdvance, missingCount, onGoPrev }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [view, setView] = useState('list') // list | setup | grade
@@ -21,6 +22,22 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus }
     () => ws.examsList.filter((e) => e.lesson_session_id === lessonId),
     [ws.examsList, lessonId],
   )
+
+  // Persistent workflow bar — only on the exams home view (setup / grade
+  // sub-flows carry their own actions → bar hidden, state-based interface).
+  const barData = view === 'list' ? {
+    ariaLabel: isArabic ? 'إجراءات الامتحانات' : 'Exams actions',
+    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — المراجعة ←' : 'Next — Review →', disabled: !onAdvance }],
+    secondary: [
+      { key: 'prev', label: isArabic ? '→ السابق — التفاعل والواجب' : '← Previous — Interaction', disabled: !onGoPrev },
+    ],
+    meta: sessionExams.length === 0
+      ? (isArabic ? 'الامتحانات اختيارية — تخطّيها لا يوقف المسار' : 'Exams are optional — skipping never blocks the pipeline')
+      : missingCount > 0
+        ? (isArabic ? `${missingCount} طالب لم تُرصد درجته` : `${missingCount} student(s) ungraded`)
+        : '',
+  } : null
+  usePublishBar(onBar, barData, { next: () => onAdvance?.(), prev: () => onGoPrev?.() })
 
   if (!lessonOpen && sessionExams.length === 0) {
     return (

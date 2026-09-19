@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useWorkspace } from '../../store/WorkspaceStore'
+import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REVIEW TAB (rule 13 + update brief §4/§5) — pre-finish checkpoint.
@@ -8,10 +9,30 @@ import { useWorkspace } from '../../store/WorkspaceStore'
 // unrecorded→absent rule). Interaction / homework / exams DO block advancing
 // to the report, with a one-click jump to the responsible stage.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo, blockers = [] }) {
+export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo, blockers = [], onBar }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [showBlockers, setShowBlockers] = useState(false)
+
+  // Persistent workflow bar (UX round): the pre-finish continue action lives
+  // here, always visible without scrolling. Blocked advances open the
+  // missing-students panel (same gating as production).
+  const barData = {
+    ariaLabel: isArabic ? 'إجراءات المراجعة' : 'Review actions',
+    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →', disabled: false }],
+    secondary: [
+      { key: 'exams', label: isArabic ? '→ الامتحانات' : '← Exams', disabled: false },
+      { key: 'attendance', label: isArabic ? '→ الحضور' : '← Attendance', disabled: false },
+    ],
+    meta: blockers.length
+      ? (isArabic ? `${blockers.length} طالب ما زال بحاجة لإكمال` : `${blockers.length} student(s) still need input`)
+      : (isArabic ? 'كل شيء مكتمل ✓' : 'All complete ✓'),
+  }
+  usePublishBar(onBar, barData, {
+    next: () => { if (blockers.length > 0) setShowBlockers(true); else onGoTo?.('report') },
+    exams: () => onGoTo?.('exams'),
+    attendance: () => onGoTo?.('attendance'),
+  })
 
   const rows = [
     {
@@ -82,15 +103,6 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
         <span className={`nk-pill ${lessonOpen ? 'nk-pill-live' : 'nk-pill-done'}`}>
           {lessonOpen ? `● ${isArabic ? 'قيد التنفيذ — التقرير هو مكان الإنهاء' : 'In progress — finish from the Report tab'}` : `✓ ${isArabic ? 'منتهية ومحفوظة' : 'Completed & saved'}`}
         </span>
-      </div>
-
-      <div className="flex flex-wrap gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--surface-border)' }}>
-        <button
-          className="btn-navy action-button !min-h-[3rem]"
-          onClick={() => { if (blockers.length > 0) setShowBlockers(true); else onGoTo('report') }}
-        >
-          {isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →'}
-        </button>
       </div>
 
       {showBlockers && blockers.length > 0 && (

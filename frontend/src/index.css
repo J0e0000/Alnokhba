@@ -764,8 +764,11 @@ html.dark .nk-sidebar { background: linear-gradient(135deg, #0a1122, #101a30); }
 
 /* Mobile-first polish */
 button, [role="button"], input, select, textarea { touch-action: pan-y; }
-html { overflow-x: hidden; }
-body, #root { overflow-x: hidden; overscroll-behavior-x: none; }
+/* overflow-x: clip (not hidden!) — hidden turns html/body/#root into scroll
+   containers, which silently breaks every position:sticky descendant
+   (e.g. the session workflow bar). clip clips without creating scrollports. */
+html { overflow-x: clip; }
+body, #root { overflow-x: clip; overscroll-behavior-x: none; }
 main, [class*="overflow-y-auto"], [class*="overflow-x-auto"] {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -803,3 +806,170 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UX ROUND — workflow bar, sequential attendance, next-session, account menu
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Persistent contextual workflow bar — sticks above the mobile bottom nav.
+   One primary action per state; secondary/meta actions stay visually quiet. */
+.nk-workflow-bar {
+  position: sticky;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  margin-top: 1.25rem;
+  padding: .65rem .75rem;
+  border-radius: 16px;
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 -6px 24px rgba(16, 24, 45, .10);
+  display: grid;
+  gap: .5rem;
+}
+@media (min-width: 1024px) {
+  .nk-workflow-bar { bottom: .75rem; }
+}
+.nk-workflow-bar__primary { display: flex; gap: .5rem; }
+.nk-workflow-bar__primary > button {
+  flex: 1;
+  min-height: 3rem;
+  font-weight: 800;
+  border-radius: 14px;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .88rem;
+}
+.nk-workflow-bar__primary > button:disabled { opacity: .45; cursor: not-allowed; }
+.nk-mark-present { background: var(--ok); color: #fff; }
+.nk-mark-absent { background: var(--danger-bg); color: var(--danger-strong); border: 1px solid var(--danger-border) !important; }
+.nk-workflow-bar__row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.nk-workflow-bar__meta {
+  font-size: .68rem;
+  font-weight: 800;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-width: 0;
+}
+.nk-wf-ghost {
+  border: 1px solid var(--surface-border);
+  background: var(--surface-container);
+  color: var(--fg-muted);
+  border-radius: 11px;
+  padding: .45rem .8rem;
+  font-size: .7rem;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 2.35rem;
+}
+.nk-wf-ghost:hover { color: var(--fg); border-color: var(--brand-gold); }
+.nk-wf-ghost:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Sequential attendance focus card — one student, one goal */
+.nk-focus-card {
+  background: var(--ws-head-bg);
+  color: var(--ws-head-fg);
+  border-radius: 22px;
+  padding: 1.15rem 1.1rem;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+.nk-focus-card .nk-focus-muted { color: var(--ws-head-muted); }
+.nk-focus-card .nk-focus-name {
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1.35;
+  margin: .35rem 0 .15rem;
+  word-break: break-word;
+}
+.nk-focus-card .nk-bar { background: rgba(255, 255, 255, .16); }
+.nk-focus-state {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  border-radius: 999px;
+  padding: .3rem .8rem;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.nk-focus-state--none { background: rgba(255, 255, 255, .10); color: var(--ws-head-muted); }
+.nk-focus-state--present { background: rgba(76, 200, 145, .18); color: #7fe0bd; }
+.nk-focus-state--absent { background: rgba(235, 100, 100, .16); color: #f3b0ae; }
+.nk-focus-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .68rem;
+  font-weight: 800;
+  color: #7fe0bd;
+}
+
+/* Next upcoming session — distinct treatment, not icon-dependent */
+.nk-session-card--next {
+  border-color: var(--brand-gold);
+  border-width: 2px;
+  background: linear-gradient(0deg, var(--brand-gold-surface), var(--brand-gold-surface)), var(--surface-solid);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--brand-gold) 16%, transparent);
+}
+.nk-next-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: var(--brand-gold);
+  color: #10233f;
+  border-radius: 999px;
+  padding: .22rem .7rem;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+
+/* Account menu — profile popover (logout lives here, never in workflow areas) */
+.nk-account-anchor { position: relative; }
+.nk-account-backdrop { position: fixed; inset: 0; z-index: 60; }
+.nk-account-menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 8px);
+  z-index: 61;
+  width: min(300px, calc(100vw - 1.5rem));
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(16, 24, 45, .22);
+  padding: .85rem;
+  display: grid;
+  gap: .4rem;
+}
+.nk-account-menu__head { padding: .15rem .35rem .65rem; border-bottom: 1px solid var(--surface-border); }
+.nk-account-menu__head b { display: block; font-size: .88rem; }
+.nk-account-menu__head small { display: block; color: var(--fg-muted); font-size: .68rem; margin-top: 2px; word-break: break-word; }
+.nk-account-menu__item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  border-radius: 11px;
+  padding: .6rem .55rem;
+  font-size: .78rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: start;
+  font-family: inherit;
+}
+.nk-account-menu__item:hover { background: var(--surface-container); }
+.nk-account-menu__item--logout {
+  color: var(--danger-strong);
+  border-top: 1px solid var(--surface-border);
+  border-radius: 0 0 11px 11px;
+  margin-top: .2rem;
+  padding-top: .7rem;
+}
+.nk-account-menu__item--logout:hover { background: var(--danger-bg); }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import { usePublishBar } from '../WorkflowBar'
 
 const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص': 'ناقص', 'لم يتم': 'لم يتم', 'لم يرصد': 'لم يُرصد' }
 
@@ -13,7 +14,7 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // - 'completed' homework must persist as مكتمل — the mirror field and the
 //   lesson row are written together, exactly like production.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFocus, onClearFocus }) {
+export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFocus, onClearFocus, onBar, onAdvance, missingCount, onGoPrev }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
@@ -77,6 +78,21 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, missingFoc
   ]
 
   const counts = ws.countsForLesson(groupId)
+
+  // Persistent workflow bar (UX round): forward to exams (gated by the
+  // workspace — blocked advances open the missing-students panel), back to
+  // attendance when a mark needs fixing.
+  const barData = {
+    ariaLabel: isArabic ? 'إجراءات التفاعل والواجب' : 'Interaction & homework actions',
+    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — الامتحانات ←' : 'Next — Exams →', disabled: !onAdvance }],
+    secondary: [
+      { key: 'prev', label: isArabic ? '→ السابق — الحضور' : '← Previous — Attendance', disabled: !onGoPrev },
+    ],
+    meta: missingCount > 0
+      ? (isArabic ? `${missingCount} طالب ما زال بحاجة لإكمال` : `${missingCount} student(s) still need input`)
+      : (isArabic ? `الواجب مكتمل ${counts.hwDone} من ${counts.hwApplicable}` : `Homework ${counts.hwDone}/${counts.hwApplicable}`),
+  }
+  usePublishBar(onBar, barData, { next: () => onAdvance?.(), prev: () => onGoPrev?.() })
 
   return (
     <div>

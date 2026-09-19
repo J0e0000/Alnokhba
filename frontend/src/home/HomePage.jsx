@@ -132,6 +132,11 @@ export default function HomePage() {
   }
 
   const dayIsToday = selectedDay === today
+  // THE NEXT SESSION (UX round) — the one the teacher is most likely supposed
+  // to open: sessions are sorted in_progress -> not_started -> completed (time
+  // within each group), so the first non-completed one IS next. Distinct
+  // gold treatment + badge - never just a tiny icon. Today only.
+  const nextKey = dayIsToday && sessions.length && sessions[0].status !== 'completed' ? sessions[0].groupName : null
   const heading = dayIsToday ? (ar ? 'حصص اليوم' : "Today's sessions") : (ar ? `حصص ${weekdayName(weekdayOfISO(selectedDay), true)}` : `Sessions · ${formatDayLabel(selectedDay, false)}`)
 
   return (
@@ -197,7 +202,7 @@ export default function HomePage() {
             return (
               <button
                 key={s.groupName}
-                className="nk-session-card"
+                className={`nk-session-card ${s.groupName === nextKey ? 'nk-session-card--next' : ''}`}
                 onClick={() => openDaySession(s)}
                 disabled={noLessonPast}
                 style={noLessonPast ? { opacity: 0.62, cursor: 'default' } : undefined}
@@ -206,6 +211,13 @@ export default function HomePage() {
                 <span className="flex items-center gap-3 min-w-0">
                   <span className="nk-session-icon" aria-hidden="true">⌂</span>
                   <span className="min-w-0">
+                    {s.groupName === nextKey && (
+                      <span className="nk-next-badge mb-1.5">
+                        {s.status === 'in_progress'
+                          ? (ar ? '▶ أكمل هذه الحصة الآن' : '▶ Continue this session now')
+                          : (ar ? '★ الحصة القادمة' : '★ Next session')}
+                      </span>
+                    )}
                     <b className="block text-[.88rem] truncate">{s.groupName}</b>
                     <small className="block text-[.7rem] text-fg-muted mt-1 truncate">
                       {s.stage ? `${s.stage} · ` : ''}{s.time ? AR_TIME(s.time) : ''}{s.studentCount ? ` · ${s.studentCount} ${ar ? 'طالب' : 'students'}` : ''}

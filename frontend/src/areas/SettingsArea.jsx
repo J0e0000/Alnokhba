@@ -17,7 +17,7 @@ const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأر�
 export default function SettingsArea() {
   const ws = useWorkspace()
   const ui = useUI()
-  const { profile, isAssistant, ownerProfile } = useAuth()
+  const { profile, isAssistant, ownerProfile, signOut } = useAuth()
   const { isArabic } = ws
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
@@ -114,6 +114,31 @@ export default function SettingsArea() {
           {isArabic ? `أنت مساعد لدى ${ownerProfile.full_name} — تعمل على نفس مساحة العمل بنفس الصلاحيات.` : `You are assisting ${ownerProfile.full_name} — same workspace, same permissions.`}
         </div>
       )}
+
+      {/* Account — logout lives here (under the profile section), never in
+          navigation bars or workflow areas. Always confirmed. */}
+      <section className="glass-card p-4 mt-4">
+        <h3 className="text-[.85rem] font-extrabold mt-0 mb-3">{isArabic ? 'الحساب' : 'Account'}</h3>
+        <div className="nk-row mb-3">
+          <span className="min-w-0">
+            <b className="truncate">{profile?.full_name || '—'}</b>
+            <small>{profile?.email || ''}{profile?.email ? ' · ' : ''}{isAssistant ? (isArabic ? `مساعد لدى ${ownerProfile?.full_name || ''}` : `Assistant to ${ownerProfile?.full_name || ''}`) : (isArabic ? 'مدرس' : 'Teacher')}</small>
+          </span>
+        </div>
+        <button
+          className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold"
+          style={{ color: 'var(--danger-strong)' }}
+          onClick={async () => {
+            const ok = await ui.askConfirm(
+              isArabic ? 'تسجيل الخروج من حسابك؟' : 'Sign out of your account?',
+              { title: isArabic ? 'تسجيل الخروج' : 'Sign out', confirmLabel: isArabic ? 'تسجيل الخروج' : 'Sign out', danger: true },
+            )
+            if (ok) await signOut()
+          }}
+        >
+          ⎋ {isArabic ? 'تسجيل الخروج' : 'Sign out'}
+        </button>
+      </section>
 
       <SettingsModal
         open={settingsOpen}

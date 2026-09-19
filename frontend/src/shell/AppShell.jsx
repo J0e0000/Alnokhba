@@ -65,6 +65,7 @@ export default function AppShell({ onOpenAdmin }) {
   const [historyCount, setHistoryCount] = useState(getHistoryCount())
   const [tourOpen, setTourOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
 
   useEffect(() => {
     const refresh = () => setHistoryCount(getHistoryCount())
@@ -106,6 +107,29 @@ export default function AppShell({ onOpenAdmin }) {
   const dateLabel = useMemo(() => (isArabic ? AR_DATE : EN_DATE).format(new Date()), [isArabic])
 
   const activeNav = ui.area === 'session' ? 'home' : ui.area
+
+  // LOGOUT SAFETY (UX round): logout lives ONLY in the account menu (under
+  // the user's name) and in Settings — never in the bottom navigation, the
+  // More sheet, or next to workflow actions — and always asks for
+  // confirmation first (session-aware wording).
+  const handleSignOut = async () => {
+    setAccountOpen(false)
+    const ok = await ui.askConfirm(
+      ui.area === 'session'
+        ? (isArabic
+            ? 'أنت جوه مساحة حصة — كل علامة بتتحفظ فورًا ومحفوظة. تحب تسجل الخروج؟'
+            : 'You are inside a session workspace — every mark is saved instantly. Sign out?')
+        : (isArabic ? 'تسجيل الخروج من حسابك؟' : 'Sign out of your account?'),
+      { title: isArabic ? 'تسجيل الخروج' : 'Sign out', confirmLabel: isArabic ? 'تسجيل الخروج' : 'Sign out', danger: true },
+    )
+    if (ok) await signOut()
+  }
+
+  const roleLabel = profile?.is_admin
+    ? (isArabic ? 'مدير النظام' : 'Administrator')
+    : isAssistant
+      ? (isArabic ? `مساعد لدى ${ownerProfile?.full_name || ''}` : `Assistant to ${ownerProfile?.full_name || ''}`)
+      : (isArabic ? 'مدرس' : 'Teacher')
 
   const nav = (
     <>
@@ -197,6 +221,19 @@ export default function AppShell({ onOpenAdmin }) {
                 🛡
               </button>
             )}
+            <div className="nk-account-anchor">
+              <button
+                className="w-9 h-9 rounded-xl grid place-items-center text-[.72rem] font-black"
+                style={{ background: 'var(--brand-navy)', color: '#fff' }}
+                onClick={() => setAccountOpen((o) => !o)}
+                title={profile?.full_name}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                aria-label={isArabic ? 'قائمة الحساب' : 'Account menu'}
+              >
+                {(profile?.full_name || 'ن').slice(0, 1)}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -207,13 +244,6 @@ export default function AppShell({ onOpenAdmin }) {
         <aside className="hidden lg:block w-[215px] shrink-0 nk-sidebar" aria-label="التنقل الرئيسي">
           <h3>{isArabic ? 'مساحة المدرس' : 'Teacher Space'}</h3>
           <nav className="grid gap-2">{nav}</nav>
-          <button
-            className="nav-btn mt-3 !text-[.72rem]"
-            style={{ color: '#f0b9b9' }}
-            onClick={async () => { await signOut() }}
-          >
-            ⎋ {isArabic ? 'خروج' : 'Sign out'}
-          </button>
         </aside>
 
         <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
@@ -252,10 +282,6 @@ export default function AppShell({ onOpenAdmin }) {
           <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>⋯</span>
           <span>{isArabic ? 'المزيد' : 'More'}</span>
         </button>
-        <button onClick={async () => { await signOut() }}>
-          <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>⎋</span>
-          <span>{isArabic ? 'خروج' : 'Exit'}</span>
-        </button>
       </nav>
 
       {moreOpen && (
@@ -283,15 +309,6 @@ export default function AppShell({ onOpenAdmin }) {
                 <span>{isArabic ? item.label : item.labelEn}</span>
               </button>
             ))}
-            <button
-              role="menuitem"
-              className="nk-more-sheet__item"
-              style={{ color: 'var(--danger-strong)' }}
-              onClick={async () => { setMoreOpen(false); await signOut() }}
-            >
-              <span aria-hidden="true">⎋</span>
-              <span>{isArabic ? 'خروج' : 'Sign out'}</span>
-            </button>
           </div>
         </div>
       )}
@@ -307,6 +324,40 @@ export default function AppShell({ onOpenAdmin }) {
         ؟
       </button>
       <BackToTop />
+
+      {/* ── Account menu (logout lives here — UX round) ─────────── */}
+      {accountOpen && profile && (
+        <>
+          <div className="nk-account-backdrop" onClick={() => setAccountOpen(false)} aria-hidden="true" />
+          <div
+            className="fixed z-[61]"
+            style={{ position: 'fixed', insetInlineEnd: 'max(1rem, calc((100vw - 1180px) / 2 + 1rem))', top: '64px' }}
+          >
+            <div className="nk-account-menu" role="menu" aria-label={isArabic ? 'الحساب' : 'Account'}>
+              <div className="nk-account-menu__head">
+                <b>{profile.full_name}</b>
+                <small>{roleLabel}{profile.email ? ` · ${profile.email}` : ''}</small>
+              </div>
+              <button
+                className="nk-account-menu__item"
+                role="menuitem"
+                onClick={() => { setAccountOpen(false); ui.setArea('settings') }}
+              >
+                <span aria-hidden="true">⚙</span>
+                <span>{isArabic ? 'الإعدادات' : 'Settings'}</span>
+              </button>
+              <button
+                className="nk-account-menu__item nk-account-menu__item--logout"
+                role="menuitem"
+                onClick={handleSignOut}
+              >
+                <span aria-hidden="true">⎋</span>
+                <span>{isArabic ? 'تسجيل الخروج' : 'Sign out'}</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ── Overlays ────────────────────────────────────────────── */}
       <GlobalSearch />
