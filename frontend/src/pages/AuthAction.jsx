@@ -64,7 +64,7 @@ export default function AuthAction({ onDone }) {
           <div className="space-y-4">
             <div className="w-12 h-12 border-4 border-brand-gold border-t-transparent rounded-full animate-spin mx-auto"></div>
             <h2 className="text-xl font-bold text-brand-navy">{message}</h2>
-            <p className="text-outline text-sm">برجاء الانتظار لحظة...</p>
+            <p className="text-fg-muted text-sm">برجاء الانتظار لحظة...</p>
           </div>
         )}
 
@@ -74,7 +74,7 @@ export default function AuthAction({ onDone }) {
               ✓
             </div>
             <h2 className="text-2xl font-black text-brand-navy">تمت العملية بنجاح</h2>
-            <p className="text-outline font-medium">{message}</p>
+            <p className="text-fg-muted font-medium">{message}</p>
             <button
               onClick={goHome}
               className="w-full bg-brand-navy text-white font-bold py-3 rounded-xl hover:bg-brand-navy-light transition-colors mt-4"
@@ -91,7 +91,7 @@ export default function AuthAction({ onDone }) {
             </div>
             <h2 className="text-2xl font-black text-brand-navy">عذراً، حدث خطأ</h2>
             <p className="text-rose-600 font-medium">{message}</p>
-            <p className="text-outline text-sm">قد يكون الرابط قديم أو تم استخدامه مسبقاً.</p>
+            <p className="text-fg-muted text-sm">قد يكون الرابط قديم أو تم استخدامه مسبقاً.</p>
             <button
               onClick={goHome}
               className="w-full bg-slate-100 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-200 transition-colors mt-4"

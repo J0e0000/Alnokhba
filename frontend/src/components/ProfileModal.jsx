@@ -199,8 +199,8 @@ export default function ProfileModal({ open, student, allStudents, exams, dailyL
               {student.name}
               {hasWarning && <span className="text-rose-600 text-sm" title={isArabic ? 'تراجع أكاديمي' : 'Academic decline'}>📉</span>}
             </h4>
-            <p className="text-sm text-outline">{student.stage} · {student.group_name}</p>
-            <p className="text-xs text-outline font-mono mt-1" dir="ltr">{student.code || 'N/A'}</p>
+            <p className="text-sm text-fg-muted">{student.stage} · {student.group_name}</p>
+            <p className="text-xs text-fg-muted font-mono mt-1" dir="ltr">{student.code || 'N/A'}</p>
             </div>
           </div>
           {qrDataUrl && <img src={qrDataUrl} alt="QR" className="w-20 h-20 rounded-lg border border-slate-200 p-1" />}
@@ -245,8 +245,8 @@ export default function ProfileModal({ open, student, allStudents, exams, dailyL
         {session && (session.lesson_topic || session.homework_text) && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-sm font-bold text-[#D97706] mb-1">📚 {t('today_session')} ({student.group_name})</p>
-            {session.lesson_topic && <p className="text-xs text-outline"><span className="text-on-surface-variant">{t('lesson')} </span>{session.lesson_topic}</p>}
-            {session.homework_text && <p className="text-xs text-outline mt-0.5"><span className="text-on-surface-variant">{t('homework_label')} </span>{session.homework_text}</p>}
+            {session.lesson_topic && <p className="text-xs text-fg-muted"><span className="text-on-surface-variant">{t('lesson')} </span>{session.lesson_topic}</p>}
+            {session.homework_text && <p className="text-xs text-fg-muted mt-0.5"><span className="text-on-surface-variant">{t('homework_label')} </span>{session.homework_text}</p>}
           </div>
         )}
 
@@ -257,7 +257,7 @@ export default function ProfileModal({ open, student, allStudents, exams, dailyL
           ) : (
             <div className="space-y-1 max-h-32 overflow-y-auto">
               {dailyLogs.map((l) => (
-                <div key={l.id} className="text-xs text-outline border-b border-slate-100 pb-1">
+                <div key={l.id} className="text-xs text-fg-muted border-b border-outline pb-1">
                   [{new Date(l.created_at).toLocaleTimeString(isArabic ? 'ar-EG' : 'en', { hour: '2-digit', minute: '2-digit' })}] {l.note}
                 </div>
               ))}
@@ -281,7 +281,7 @@ export default function ProfileModal({ open, student, allStudents, exams, dailyL
                       <span className="text-on-surface-variant text-xs">{new Date(ex.created_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en')}</span>
                     </div>
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-outline">{t('total')} {ex.total_score}</span>
+                      <span className="text-fg-muted">{t('total')} {ex.total_score}</span>
                       <span className="font-black text-[#D97706]">{pct}%</span>
                     </div>
                   </div>
@@ -327,7 +327,7 @@ export default function ProfileModal({ open, student, allStudents, exams, dailyL
             <div className="text-center mb-4">
               <p className="text-lg font-black text-[#0E2954] leading-tight">{student.name}</p>
               <span className="inline-block bg-amber-50 text-[#D97706] text-[10px] font-bold px-2 py-0.5 rounded-full mt-1">{t('student_label')}</span>
-              <p className="text-outline text-xs mt-1">{student.group_name} · {student.stage}</p>
+              <p className="text-fg-muted text-xs mt-1">{student.group_name} · {student.stage}</p>
               <p className="text-on-surface-variant text-[10px] mt-0.5">{today}</p>
             </div>
 

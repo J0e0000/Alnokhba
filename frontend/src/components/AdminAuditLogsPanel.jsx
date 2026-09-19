@@ -75,86 +75,86 @@ export default function AdminAuditLogsPanel({ teams, showToast }) {
 
   return (
     <div className="space-y-3">
-      <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <div className="bg-surface border border-outline rounded-xl p-4">
         <div className="flex items-center justify-between gap-3 mb-3">
           <div>
-            <h2 className="font-black text-brand-navy">🛡️ سجل التدقيق</h2>
-            <p className="text-outline text-xs mt-1">
+            <h2 className="font-black text-fg">🛡️ سجل التدقيق</h2>
+            <p className="text-fg-muted text-xs mt-1">
               سجل دائم للإضافة فقط — لا يمكن تعديله أو حذفه حتى من الأدمن. يشمل وصول الدعم وكل عمليات النسخ والفرق والاستعادة.
             </p>
           </div>
-          <button onClick={load} className="text-outline hover:text-brand-gold-hover text-xs font-bold">↻ تحديث</button>
+          <button onClick={load} className="text-fg-muted hover:text-brand-gold-hover text-xs font-bold">↻ تحديث</button>
         </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             الإجراء
-            <select value={filters.action} onChange={(e) => setFilters({ ...filters, action: e.target.value })} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-700">
+            <select value={filters.action} onChange={(e) => setFilters({ ...filters, action: e.target.value })} className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg">
               <option value="">الكل</option>
               {actionOptions.map((a) => <option key={a} value={a}>{ACTION_LABEL[a] || a}</option>)}
             </select>
           </label>
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             الفريق (فلترة المستهدفين)
-            <select value={filters.team_id} onChange={(e) => setFilters({ ...filters, team_id: e.target.value })} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-700">
+            <select value={filters.team_id} onChange={(e) => setFilters({ ...filters, team_id: e.target.value })} className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg">
               <option value="">كل الفرق</option>
               {(teams || []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </label>
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             من تاريخ
-            <input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-700" />
+            <input type="date" value={filters.date_from} onChange={(e) => setFilters({ ...filters, date_from: e.target.value })} className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg" />
           </label>
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             إلى تاريخ
-            <input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} className="mt-1 w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm text-slate-700" />
+            <input type="date" value={filters.date_to} onChange={(e) => setFilters({ ...filters, date_to: e.target.value })} className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg" />
           </label>
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             بحث باسم/معرّف الأدمن
             <div className="flex gap-1 mt-1">
-              <input value={searchDraft.admin} onChange={(e) => setSearchDraft({ ...searchDraft, admin: e.target.value })} placeholder="اسم أو معرّف" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm" />
+              <input value={searchDraft.admin} onChange={(e) => setSearchDraft({ ...searchDraft, admin: e.target.value })} placeholder="اسم أو معرّف" className="flex-1 bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg" />
               <button onClick={() => setFilters({ ...filters, admin_user_id: resolveId('admin') })} className="bg-brand-navy text-white text-xs font-bold px-3 rounded-lg">فلتر</button>
             </div>
           </label>
-          <label className="text-xs font-bold text-outline">
+          <label className="text-xs font-bold text-fg-muted">
             بحث باسم/معرّف المستخدم المستهدف
             <div className="flex gap-1 mt-1">
-              <input value={searchDraft.target} onChange={(e) => setSearchDraft({ ...searchDraft, target: e.target.value })} placeholder="اسم أو معرّف" className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-2 text-sm" />
+              <input value={searchDraft.target} onChange={(e) => setSearchDraft({ ...searchDraft, target: e.target.value })} placeholder="اسم أو معرّف" className="flex-1 bg-surface-container border border-outline rounded-lg px-2 py-2 text-sm text-fg" />
               <button onClick={() => setFilters({ ...filters, target_user_id: resolveId('target') })} className="bg-brand-navy text-white text-xs font-bold px-3 rounded-lg">فلتر</button>
             </div>
           </label>
           <div className="flex items-end gap-2">
-            <button onClick={() => { setFilters({ admin_user_id: '', target_user_id: '', action: '', date_from: '', date_to: '', team_id: '' }); setSearchDraft({ admin: '', target: '' }) }} className="bg-slate-100 text-slate-600 font-bold px-3 py-2 rounded-lg text-xs">مسح الفلاتر</button>
+            <button onClick={() => { setFilters({ admin_user_id: '', target_user_id: '', action: '', date_from: '', date_to: '', team_id: '' }); setSearchDraft({ admin: '', target: '' }) }} className="bg-surface-container-high text-fg font-bold px-3 py-2 rounded-lg text-xs">مسح الفلاتر</button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 text-sm">
-          <span className="font-black text-brand-navy">السجلات</span>
-          <span className="text-outline text-xs"> ({total} إجمالي — أحدث 100)</span>
+      <div className="bg-surface border border-outline rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-outline text-sm">
+          <span className="font-black text-fg">السجلات</span>
+          <span className="text-fg-muted text-xs"> ({total} إجمالي — أحدث 100)</span>
         </div>
         {loading ? (
-          <p className="text-outline text-sm text-center py-8">جاري التحميل...</p>
+          <p className="text-fg-muted text-sm text-center py-8">جاري التحميل...</p>
         ) : logs.length === 0 ? (
-          <p className="text-outline text-sm text-center py-8">لا توجد سجلات مطابقة.</p>
+          <p className="text-fg-muted text-sm text-center py-8">لا توجد سجلات مطابقة.</p>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-outline">
             {logs.map((l) => (
-              <div key={l.id} className="px-4 py-2.5 text-sm hover:bg-slate-50/60">
+              <div key={l.id} className="px-4 py-2.5 text-sm hover:bg-surface-container">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="text-[10px] font-mono text-slate-400 shrink-0" dir="ltr">#{l.id}</span>
-                  <span className="font-bold text-brand-navy">{l.admin_name || 'النظام'}</span>
-                  <span className="text-outline text-xs">
+                  <span className="text-[10px] font-mono text-fg-subtle shrink-0" dir="ltr">#{l.id}</span>
+                  <span className="font-bold text-fg">{l.admin_name || 'النظام'}</span>
+                  <span className="text-fg-muted text-xs">
                     {(ACTION_LABEL[l.action] || l.action)}
-                    {l.target_name && <> → <span className="font-bold text-slate-700">{l.target_name}</span></>}
+                    {l.target_name && <> → <span className="font-bold text-fg">{l.target_name}</span></>}
                   </span>
-                  {l.support_session_id && <span className="text-[10px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded-full">جلسة دعم</span>}
+                  {l.support_session_id && <span className="text-[10px] bg-[var(--info-bg)] text-[var(--info-strong)] px-1.5 py-0.5 rounded-full">جلسة دعم</span>}
                 </div>
                 {(l.reason || l.details) && (
-                  <p className="text-xs text-outline mt-0.5 truncate">{l.details || l.reason}</p>
+                  <p className="text-xs text-fg-muted mt-0.5 truncate">{l.details || l.reason}</p>
                 )}
-                <p className="text-[11px] text-outline mt-0.5">{new Date(l.created_at).toLocaleString('ar-EG')}</p>
+                <p className="text-[11px] text-fg-subtle mt-0.5">{new Date(l.created_at).toLocaleString('ar-EG')}</p>
               </div>
             ))}
           </div>

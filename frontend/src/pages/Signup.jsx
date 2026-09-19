@@ -30,7 +30,7 @@ export default function Signup({ onSwitchToLogin }) {
       <div className="min-h-screen flex items-center justify-center bg-brand-bg p-4" dir="rtl">
         <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-8 shadow-2xl text-center">
           <h2 className="text-xl font-black text-emerald-600 mb-2">طلبك قيد المراجعة ⏳</h2>
-          <p className="text-outline text-sm">
+          <p className="text-fg-muted text-sm">
             تم استلام بياناتك بنجاح. حسابك الآن في انتظار موافقة الإدارة. سيتم تفعيل حسابك قريبًا، برجاء مراجعة بريدك الإلكتروني لتأكيده أولاً.
           </p>
           <button onClick={onSwitchToLogin} className="mt-6 text-brand-gold-hover hover:text-brand-gold-hover font-bold text-sm">
@@ -48,7 +48,7 @@ export default function Signup({ onSwitchToLogin }) {
         <h1 className="text-2xl font-black text-center mb-1 text-brand-navy font-black">
           النخبة
         </h1>
-        <p className="text-outline text-sm text-center mb-6">حساب جديد — 7 أيام تجربة مجانية</p>
+        <p className="text-fg-muted text-sm text-center mb-6">حساب جديد — 7 أيام تجربة مجانية</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -91,7 +91,7 @@ export default function Signup({ onSwitchToLogin }) {
           </button>
         </form>
 
-        <p className="text-outline text-xs text-center mt-6">
+        <p className="text-fg-muted text-xs text-center mt-6">
           عندك حساب؟{' '}
           <button onClick={onSwitchToLogin} className="text-brand-gold-hover hover:text-brand-gold-hover font-bold">
             سجّل دخول
