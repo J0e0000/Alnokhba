@@ -1,10 +1,55 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { initUndoManager, resetUndoManager } from '../lib/undoManager'
 import { clearQueue } from '../lib/offlineQueue'
 
 const AuthContext = createContext(null)
 const INACTIVITY_LIMIT_MS = 30 * 60 * 1000 // 30 دقيقة
+
+// ── Network-resilient profile loading ──────────────────────────────────────
+// WHY THIS EXISTS — the "تعذر الاتصال" hard-stuck screen (fixed):
+// the profile query used to be a single un-retried round-trip; one hiccup
+// (flaky mobile data, phone waking from sleep with a dead socket, Supabase
+// cold start) left `session && !profile` → the network status screen with no
+// way out but a manual reload. Now every critical query gets a per-attempt
+// timeout (hung fetches on mobile networks) + bounded backoff retries for
+// transport-level failures only.
+
+const RETRYABLE_MSG = /failed to fetch|fetch failed|networkerror|network error|load failed|timed?\s?out|timeout|aborted?|err_name_not_resolved|err_internet_disconnected|err_connection/i
+
+// Transport failures are retryable; PostgREST/RLS problems (machine codes
+// like PGRST*, 42501…) are NOT — retrying those just burns time.
+function isRetryableQueryError(error) {
+  if (!error) return true
+  if (String(error.code || '').startsWith('PGRST')) return false
+  if (!error.code) return true // bare fetch/timeout rejection = transport
+  return RETRYABLE_MSG.test(`${error.message || ''} ${error.details || ''}`)
+}
+
+function delay(ms) { return new Promise((r) => setTimeout(r, ms)) }
+
+async function fetchWithRetry(run, { attempts = 3, timeoutMs = 12000, baseMs = 700 } = {}) {
+  let lastError
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('network timeout')), timeoutMs)
+        Promise.resolve(run()).then(
+          (v) => { clearTimeout(timer); resolve(v) },
+          (e) => { clearTimeout(timer); reject(e) },
+        )
+      })
+    } catch (err) {
+      lastError = err
+      if (i === attempts - 1 || !isRetryableQueryError(err)) break
+      await delay(baseMs * 2 ** i + Math.random() * 300)
+    }
+  }
+  throw lastError
+}
+
+const PROFILE_FETCH_OPTS = { attempts: 3, timeoutMs: 12000, baseMs: 700 }
+const RPC_FETCH_OPTS = { attempts: 3, timeoutMs: 12000, baseMs: 700 }
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
@@ -15,6 +60,8 @@ export function AuthProvider({ children }) {
   const [supportSession, setSupportSession] = useState(null)
   const [unlockedFeatures, setUnlockedFeatures] = useState(new Set())
   const [loading, setLoading] = useState(true)
+  // صحيح لو فشل تحميل البروفايل نهائيًا بعد كل المحاولات — بيفعّل حلقة الإصلاح الذاتي تحت
+  const [profileError, setProfileError] = useState(false)
 
   // تسجيل خروج تلقائي بعد فترة عدم نشاط طويلة، لحماية الحساب لو الجهاز اتسيب مفتوح
   useEffect(() => {
@@ -35,48 +82,68 @@ export function AuthProvider({ children }) {
     return query.get('auth') === 'recovery' || hash.get('type') === 'recovery' || Boolean(hash.get('access_token'))
   })
 
-  const loadAll = async (userId) => {
-    // PERF (performance round): this chain used to be 5-6 SEQUENTIAL
-    // round-trips (profile → owner rpc → owner profile → feature_unlocks →
-    // support rpc). The owner/support RPCs are independent of each other, and
-    // feature_unlocks/owner-profile both only depend on the owner result —
-    // so the tail now runs as two parallel batches: 6 RTTs → 3 RTTs.
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    if (error) {
-      console.error('Failed to load profile:', error.message)
+  // Gate-critical profile read + post-profile lookups. RESILIENCE CONTRACT:
+  //   1) the profile read retries (timeout + backoff) on transport failures —
+  //      one hiccup no longer strands the teacher on the error screen;
+  //   2) failures in LATER legs (owner binding / support / unlocks) degrade in
+  //      place and NEVER null an already-loaded profile (the old code threw
+  //      past `setProfile(data)` and the boot handler nulled it → bogus
+  //      "تعذر الاتصال" even though the profile had loaded fine).
+  const loadAll = useCallback(async (userId) => {
+    let data
+    try {
+      data = await fetchWithRetry(async () => {
+        const res = await supabase.from('profiles').select('*').eq('id', userId).single()
+        if (res.error) {
+          const e = new Error(res.error.message || 'profile query failed')
+          e.code = res.error.code
+          e.details = res.error.details
+          throw e
+        }
+        return res.data
+      }, PROFILE_FETCH_OPTS)
+    } catch (loadError) {
+      console.error('Failed to load profile:', loadError?.message)
       setProfile(null)
       setOwnerProfile(null)
-      return
+      setProfileError(true)
+      throw loadError
     }
     setProfile(data)
+    setProfileError(false)
 
     // Independent post-profile lookups in one parallel batch:
     // (a) is this account an assistant bound to another teacher's workspace?
     // (b) is there an active support-access session? (admin inspecting a user)
+    // Best-effort: a transport failure here degrades to "standalone teacher"
+    // for this pass instead of wiping the loaded profile.
     const [ownerRes, supportRes] = await Promise.all([
-      supabase.rpc('my_workspace_owner'),
-      supabase.rpc('my_support_session').catch(() => ({ data: null })), // migration 036 not applied yet — normal behavior
+      fetchWithRetry(() => supabase.rpc('my_workspace_owner'), RPC_FETCH_OPTS).catch(() => null),
+      // migration 036 not applied yet → RPC missing → result carries .error → data null. Normal behavior.
+      fetchWithRetry(() => supabase.rpc('my_support_session'), { attempts: 2, timeoutMs: 12000, baseMs: 700 }).catch(() => null),
     ])
-    const ownerId = ownerRes.data
-    const supportData = supportRes?.data ?? null
-    setSupportSession(supportData)
+    setSupportSession(supportRes?.data ?? null)
+    const ownerId = ownerRes?.data ?? null
 
-    let effectiveId = userId
     if (ownerId) {
-      effectiveId = ownerId
       // Owner profile + feature unlocks are independent of each other.
-      const [ownerRes2, unlocksRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', ownerId).single(),
-        supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', ownerId),
+      const [ownerProfileRes, unlocksRes] = await Promise.all([
+        fetchWithRetry(() => supabase.from('profiles').select('*').eq('id', ownerId).single(), RPC_FETCH_OPTS)
+          .then((r) => (r?.error ? { data: null } : r))
+          .catch(() => ({ data: null })),
+        fetchWithRetry(() => supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', ownerId), RPC_FETCH_OPTS).catch(() => null),
       ])
-      setOwnerProfile(ownerRes2.data ?? null)
-      setUnlockedFeatures(new Set((unlocksRes.data ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
+      setOwnerProfile(ownerProfileRes?.data ?? null)
+      setUnlockedFeatures(new Set((unlocksRes?.data ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
     } else {
       setOwnerProfile(null)
-      const { data: unlocks } = await supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', effectiveId)
-      setUnlockedFeatures(new Set((unlocks ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
+      const unlocksRes = await fetchWithRetry(
+        () => supabase.from('feature_unlocks').select('feature_key, unlocked').eq('teacher_id', userId),
+        RPC_FETCH_OPTS,
+      ).catch(() => null)
+      setUnlockedFeatures(new Set((unlocksRes?.data ?? []).filter((u) => u.unlocked).map((u) => u.feature_key)))
     }
-  }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -115,7 +182,7 @@ export function AuthProvider({ children }) {
       if (event === 'SIGNED_IN' && session?.user) {
         setLoading(true)
         initUndoManager(session.user.id)
-        loadAll(session.user.id).finally(() => setLoading(false))
+        loadAll(session.user.id).catch(() => { /* profileError set inside loadAll; self-heal loop takes over */ }).finally(() => setLoading(false))
       } else if (!session) {
         // Sign-out (manual, inactivity, or session-expired):
         // Clear per-user local state to prevent the next logged-in user
@@ -133,6 +200,58 @@ export function AuthProvider({ children }) {
 
     return () => { mounted = false; listener.subscription.unsubscribe() }
   }, [])
+
+  // ── Self-healing profile gate ──────────────────────────────────────────
+  // While the "تعذر الاتصال" gate is visible (session restored but profile
+  // missing), keep retrying in the background with capped backoff — and
+  // retry IMMEDIATELY when connectivity returns (online event) or the user
+  // comes back to the tab (wake from sleep is the #1 trigger of the old
+  // hard-stuck screen). When the profile finally loads, the Gate re-renders
+  // straight into the app with no manual reload.
+  useEffect(() => {
+    const uid = session?.user?.id
+    if (!uid || !profileError || profile || loading) return
+    let cancelled = false
+    let timer = null
+    let inFlight = false
+    const delays = [3000, 6000, 10000, 15000]
+    let step = 0
+    const attempt = async () => {
+      if (inFlight) return false
+      inFlight = true
+      try { await loadAll(uid); return true } catch { return false } finally { inFlight = false }
+    }
+    const loop = () => {
+      timer = setTimeout(async () => {
+        if (cancelled) return
+        const ok = await attempt()
+        if (cancelled) return
+        if (!ok) step = Math.min(step + 1, delays.length - 1)
+        else step = 0
+        loop()
+      }, delays[step])
+    }
+    const immediate = () => {
+      if (cancelled) return
+      clearTimeout(timer)
+      step = 0
+      attempt().then((ok) => {
+        if (cancelled) return
+        if (!ok) loop() // if ok → profileError flips → this effect cleans itself up
+      })
+    }
+    const onOnline = () => immediate()
+    const onVisible = () => { if (document.visibilityState === 'visible') immediate() }
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisible)
+    loop()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [session?.user?.id, profileError, profile, loading, loadAll])
 
   const signUp = async ({ email, password, fullName, phone }) => {
     return supabase.auth.signUp({
@@ -174,6 +293,16 @@ export function AuthProvider({ children }) {
     if (session?.user) await loadAll(session.user.id)
   }
 
+  // Manual in-place retry for the gate screen button — NO full page reload
+  // (keeps the browser alive, works even when a reload would hit the same
+  // flaky state). Failure is safe: profileError stays and the self-heal
+  // loop keeps running in the background.
+  const retryProfile = useCallback(async () => {
+    const uid = session?.user?.id
+    if (!uid || loading) return
+    try { await loadAll(uid) } catch { /* handled: error state persists, loop continues */ }
+  }, [session, loading, loadAll])
+
   const setNewPassword = async (password) => {
     const res = await supabase.auth.updateUser({ password })
     if (!res.error) setPasswordRecovery(false)
@@ -213,7 +342,9 @@ export function AuthProvider({ children }) {
     signIn,
     signOut,
     refreshProfile,
-  }), [session, profile, ownerProfile, isAssistant, effectiveTeacherId, supportSession, loading, isSubscriptionActive, unlockedFeatures, passwordRecovery])
+    retryProfile,
+    profileError,
+  }), [session, profile, ownerProfile, isAssistant, effectiveTeacherId, supportSession, loading, isSubscriptionActive, unlockedFeatures, passwordRecovery, retryProfile, profileError])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

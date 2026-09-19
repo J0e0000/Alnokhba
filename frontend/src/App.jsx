@@ -88,7 +88,7 @@ function isPrivacyPath() {
 }
 
 function Gate() {
-  const { session, profile, loading, isSubscriptionActive, passwordRecovery, supportSession } = useAuth()
+  const { session, profile, loading, isSubscriptionActive, passwordRecovery, supportSession, retryProfile } = useAuth()
   const [authView, setAuthView] = useState(getRequestedAuthView)
   const [adminView, setAdminView] = useState(false)
   const [onboardingDone, setOnboardingDone] = useState(false)
@@ -128,9 +128,13 @@ function Gate() {
   )
 
   if (session && !profile) {
+    // Profile fetch failed after retries. The provider self-heals in the
+    // background (backoff loop + online/visibility triggers), so the copy
+    // says so — and the primary button retries IN PLACE (no full reload).
     return <StatusPage
       code="network"
-      onRetry={() => window.location.reload()}
+      body="تعذّر تحميل بيانات حسابك بسبب انقطاع مؤقت في الاتصال. بنحاول نرجع الاتصال تلقائيًا حالما يستقر — أو دوس إعادة المحاولة."
+      onRetry={retryProfile}
       onHome={() => { window.location.href = '/?auth=login' }}
     />
   }
