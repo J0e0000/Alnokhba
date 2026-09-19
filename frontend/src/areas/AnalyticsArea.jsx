@@ -2,6 +2,7 @@ import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { getStudentRank } from '../lib/helpers'
 import { downloadCSV, localDateStr } from '../lib/csv'
+import { weekStart } from '../lib/week'
 
 // PERF (performance round): chart.js/auto (~200 KB minified, zero
 // tree-shaking) used to be statically imported here — i.e. in the FIRST
@@ -22,8 +23,10 @@ export default function AnalyticsArea() {
   const { isArabic } = ws
   const [periodDays, setPeriodDays] = useState(30)
 
+  // periodDays: 30 | 90 | 0 (all) | 'week' — 'week' = the CURRENT Friday→Thursday
+  // week via the central week rule (src/lib/week.js). One definition app-wide.
   const sinceDate = useMemo(
-    () => (periodDays ? new Date(Date.now() - periodDays * 86400000) : null),
+    () => (periodDays === 'week' ? weekStart(new Date()) : periodDays ? new Date(Date.now() - periodDays * 86400000) : null),
     [periodDays],
   )
   const sinceStr = useMemo(() => (sinceDate ? localDateStr(sinceDate) : null), [sinceDate])
@@ -111,7 +114,7 @@ export default function AnalyticsArea() {
       r.examPct === null ? '—' : `${r.examPct}%`,
       r.examCount, r.points,
     ])
-    const label = periodDays ? `last_${periodDays}_days` : 'all_time'
+    const label = periodDays === 'week' ? 'this_week_fri_thu' : periodDays ? `last_${periodDays}_days` : 'all_time'
     downloadCSV(`analytics_${label}_${localDateStr()}.csv`, headers, rows)
     ws.showToast?.(isArabic ? 'تم تحميل ملف CSV ✓' : 'CSV downloaded ✓', 'success')
   }
@@ -146,14 +149,14 @@ export default function AnalyticsArea() {
     return list.sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 12)
   }, [ws.students, ws.examScoresByStudent, ws.absenceStreaks, ws.settings, isArabic])
 
-  const periodLabel = periodDays === 30 ? 'آخر ٣٠ يوم' : periodDays === 90 ? 'آخر ٩٠ يوم' : 'كل الفترات'
+  const periodLabel = periodDays === 'week' ? 'هذا الأسبوع (الجمعة → الخميس)' : periodDays === 30 ? 'آخر ٣٠ يوم' : periodDays === 90 ? 'آخر ٩٠ يوم' : 'كل الفترات'
 
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-lg font-black m-0">{isArabic ? 'التحليلات' : 'Analytics'}</h1>
         <div className="flex flex-wrap items-center gap-1.5">
-          {[30, 90, 0].map((d) => (
+          {['week', 30, 90, 0].map((d) => (
             <button
               key={d}
               className="rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold"
@@ -163,7 +166,7 @@ export default function AnalyticsArea() {
               onClick={() => setPeriodDays(d)}
               aria-pressed={periodDays === d}
             >
-              {d === 30 ? 'آخر ٣٠ يوم' : d === 90 ? 'آخر ٩٠ يوم' : 'الكل'}
+              {d === 'week' ? 'هذا الأسبوع' : d === 30 ? 'آخر ٣٠ يوم' : d === 90 ? 'آخر ٩٠ يوم' : 'الكل'}
             </button>
           ))}
         </div>

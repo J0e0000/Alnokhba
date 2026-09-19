@@ -1,55 +1,45 @@
-import { useState } from 'react'
 import { useWorkspace } from '../../store/WorkspaceStore'
 import { usePublishBar } from '../WorkflowBar'
-import { studentsNeedPhrase } from '../../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// REVIEW TAB (rule 13 + update brief §4/§5) — pre-finish checkpoint.
-// Rows reflect REAL saved records. Attendance is informational: unrecorded
-// students never block (server-side finalize applies the existing
-// unrecorded→absent rule). Interaction / homework / exams DO block advancing
-// to the report, with a one-click jump to the responsible stage.
+// REVIEW TAB (rule 13) — lightweight pre-finish checkpoint.
+// Detects incomplete work and routes the teacher back to the right tab.
+// Does NOT block finishing (the existing finalize RPC is the gate).
+// The next-step action lives in the persistent workflow bar.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo, blockers = [], onBar }) {
+export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo, onGoNext, onGoPrev, onBar }) {
   const ws = useWorkspace()
   const { isArabic } = ws
-  const [showBlockers, setShowBlockers] = useState(false)
 
-  // Persistent workflow bar (UX round): the pre-finish continue action lives
-  // here, always visible without scrolling. Blocked advances open the
-  // missing-students panel (same gating as production).
-  // `blockers` arrives DEDUPED: [{student, kinds: [...]}] — unique students.
+  // Persistent workflow bar — next step lives here, always visible.
   const barData = {
     ariaLabel: isArabic ? 'إجراءات المراجعة' : 'Review actions',
     primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →', disabled: false }],
     secondary: [
-      { key: 'exams', label: isArabic ? '→ الامتحانات' : '← Exams', disabled: false },
-      { key: 'attendance', label: isArabic ? '→ الحضور' : '← Attendance', disabled: false },
+      { key: 'prev', label: isArabic ? '→ السابق — الامتحانات' : '← Previous — Exams', disabled: !onGoPrev },
     ],
-    meta: blockers.length
-      ? studentsNeedPhrase(blockers.length, isArabic, 'إكمال')
+    meta: issues.length
+      ? (isArabic ? `${issues.length} ملاحظة قبل الإنهاء` : `${issues.length} item(s) to check`)
       : (isArabic ? 'كل شيء مكتمل ✓' : 'All complete ✓'),
   }
   usePublishBar(onBar, barData, {
-    next: () => { if (blockers.length > 0) setShowBlockers(true); else onGoTo?.('report') },
-    exams: () => onGoTo?.('exams'),
-    attendance: () => onGoTo?.('attendance'),
+    next: () => onGoTo?.('report'),
+    prev: () => onGoPrev?.(),
   })
 
   const rows = [
     {
       key: 'attendance', label: isArabic ? 'الحضور' : 'Attendance',
-      value: `${counts.present} ${isArabic ? 'حاضر' : 'present'} · ${counts.absent} ${isArabic ? 'غائب' : 'absent'}${counts.unrecorded ? ` · ${counts.unrecorded} ${isArabic ? 'لم يُرصد (مسموح)' : 'unrecorded (allowed)'}` : ''}`,
+      value: `${counts.present} ${isArabic ? 'حاضر' : 'present'} · ${counts.absent} ${isArabic ? 'غائب' : 'absent'}`,
       progress: counts.total ? (counts.present + counts.absent) / counts.total : 0,
-      ok: true, // attendance NEVER blocks the workflow (brief §4)
-      optional: counts.unrecorded > 0,
+      ok: counts.unrecorded === 0,
       tab: 'attendance',
     },
     {
       key: 'interaction', label: isArabic ? 'التفاعل' : 'Interaction',
       value: `${interactionCount} / ${counts.present}`,
       progress: counts.present ? interactionCount / counts.present : 0,
-      ok: interactionCount >= counts.present,
+      ok: interactionCount > 0,
       tab: 'interaction',
     },
     {
@@ -68,10 +58,6 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
     },
   ]
 
-  const kindLabel = (kind) => kind === 'interaction'
-    ? (isArabic ? 'تفاعل' : 'interaction')
-    : kind === 'hw' ? (isArabic ? 'رصد واجب' : 'homework') : (isArabic ? 'إدخال درجة' : 'grade')
-
   return (
     <div>
       <div className="grid gap-2.5 mb-4">
@@ -82,11 +68,7 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
               <small>{r.value}</small>
               <span className="nk-bar mt-1.5 block"><span style={{ width: `${Math.round(r.progress * 100)}%` }} /></span>
             </span>
-            <span className={`nk-pill ${r.ok ? (r.optional ? 'nk-pill-neutral' : 'nk-pill-live') : 'nk-pill-pending'}`}>
-              {r.ok
-                ? (r.optional ? `◌ ${isArabic ? 'اختياري' : 'Optional'}` : `✓ ${isArabic ? 'مكتمل' : 'Done'}`)
-                : `! ${isArabic ? 'ناقص' : 'Incomplete'}`}
-            </span>
+            <span className={`nk-pill ${r.ok ? 'nk-pill-live' : 'nk-pill-pending'}`}>{r.ok ? `✓ ${isArabic ? 'مكتمل' : 'Done'}` : `! ${isArabic ? 'ناقص' : 'Incomplete'}`}</span>
           </button>
         ))}
       </div>
@@ -106,34 +88,6 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
           {lessonOpen ? `● ${isArabic ? 'قيد التنفيذ — التقرير هو مكان الإنهاء' : 'In progress — finish from the Report tab'}` : `✓ ${isArabic ? 'منتهية ومحفوظة' : 'Completed & saved'}`}
         </span>
       </div>
-
-      {showBlockers && blockers.length > 0 && (
-        <div className="nk-block mt-3" role="alert">
-          <b>
-            {studentsNeedPhrase(blockers.length, isArabic, blockers.flatMap((b) => b.kinds).map(kindLabel).join(' / '))}.
-          </b>
-          <ul className="nk-block__list">
-            {blockers.slice(0, 6).map(({ student, kinds }) => (
-              <li key={student.id}><b>{student.name}</b> — {kinds.map(kindLabel).join(' + ')}</li>
-            ))}
-            {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
-          </ul>
-          <div className="flex flex-wrap gap-2 mt-2">
-            <button
-              className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
-              onClick={() => {
-                const target = blockers.some((b) => b.kinds.includes('exam')) ? 'exams' : 'interaction'
-                onGoTo(target, target === 'exams' ? 'exams' : 'missing')
-              }}
-            >
-              {isArabic ? `عرض الطلاب الناقصين (${blockers.length})` : `Show missing students (${blockers.length})`}
-            </button>
-            <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={() => setShowBlockers(false)}>
-              {isArabic ? 'إغلاق' : 'Dismiss'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

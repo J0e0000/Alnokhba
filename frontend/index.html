@@ -10,11 +10,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="النخبة" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#f4f7fb" />
     <meta name="description" content="النخبة منصة عربية لإدارة الحصص والطلاب والحضور والامتحانات والنتائج وتقارير أولياء الأمور ببساطة." />
     <meta property="og:title" content="النخبة — كل شغل المدرس في مكان واحد" />
     <meta property="og:description" content="حضور وامتحانات وتقارير أولياء الأمور ببساطة تامة." />
@@ -29,10 +26,11 @@
     <meta name="twitter:description" content="حضور وامتحانات وتقارير أولياء الأمور ببساطة تامة." />
     <meta name="twitter:image" content="https://al-nokhbba.vercel.app/logo-512.png" />
     <title>النخبة — كل شغل المدرس في مكان واحد</title>
-    <!-- PERF (performance round): fonts used to load via a Google-Fonts
-         @import INSIDE the built CSS (serial waterfall: built CSS → fonts
-         CSS → woff2). Now: preconnect + a single Cairo variable-font
-         stylesheet (one file covers weights 400-900). -->
+    <!-- PERF (performance round): fonts used to load via TWO duplicated
+         Google-Fonts @imports INSIDE the built CSS (a serial waterfall:
+         built CSS → fonts CSS → woff2) and pulled the full Material Symbols
+         variable font for exactly ONE icon. Now: preconnect + a single
+         Cairo variable-font stylesheet (one file covers weights 400-900). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400..900&display=swap" />
@@ -130,6 +128,7 @@
          ══════════════════════════════════════════════════════════════════ */
       (function () {
         var NB_BUST_KEY = 'nb-bust-once'
+
         function paintLoader() {
           if (document.getElementById('nokhba-boot')) return
           var wrap = document.createElement('div')

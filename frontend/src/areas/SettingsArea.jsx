@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
+import { useLanguage } from '../context/LanguageContext'
 import SettingsModal from '../components/SettingsModal'
 import TemplatesModal from '../components/TemplatesModal'
 import BrandingModal from '../components/BrandingModal'
@@ -18,6 +20,8 @@ export default function SettingsArea() {
   const ws = useWorkspace()
   const ui = useUI()
   const { profile, isAssistant, ownerProfile, signOut } = useAuth()
+  const { isDark, toggleTheme } = useTheme()
+  const { lang, toggleLang } = useLanguage()
   const { isArabic } = ws
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
@@ -28,6 +32,27 @@ export default function SettingsArea() {
     <div>
       <h1 className="text-lg font-black m-0 mb-1">{isArabic ? 'الإعدادات' : 'Settings'}</h1>
       <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'المجموعات، الجدول الأسبوعي، النقاط والرتب، والقوالب.' : 'Groups, weekly schedule, points & ranks, templates.'}</p>
+
+      {/* FREQUENCY-BASED UI (spec 5, 34): theme / language / undo / history
+          are low-frequency — they live HERE on mobile (the header keeps them
+          on desktop only). Account controls incl. logout stay below. */}
+      <section className="glass-card p-4 mb-4">
+        <h3 className="text-[.85rem] font-extrabold mt-0 mb-3">{isArabic ? 'المظهر واللغة وأدوات التطبيق' : 'Appearance, language & tools'}</h3>
+        <div className="flex flex-wrap gap-2">
+          <button className="nk-wf-ghost" onClick={toggleTheme}>
+            {isDark ? '☀' : '☾'} {isDark ? (isArabic ? 'الوضع الفاتح' : 'Light mode') : (isArabic ? 'الوضع الليلي' : 'Dark mode')}
+          </button>
+          <button className="nk-wf-ghost" onClick={toggleLang}>
+            {lang === 'ar' ? 'English' : 'العربية'}
+          </button>
+          <button className="nk-wf-ghost" onClick={() => ws.handleUndo()} title={isArabic ? 'تراجع عن آخر عملية' : 'Undo the last action'}>
+            ↺ {isArabic ? 'تراجع' : 'Undo'}
+          </button>
+          <button className="nk-wf-ghost" onClick={() => ui.setHistoryOpen(true)} title={isArabic ? 'سجل العمليات' : 'Action history'}>
+            ⧖ {isArabic ? 'سجل العمليات' : 'History'}
+          </button>
+        </div>
+      </section>
 
       {/* Groups & schedule */}
       <section className="glass-card p-4 mb-4">

@@ -1,20 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
-import StudentProfileModal from '../components/StudentProfileModal'
 import StudentQRModal from '../components/StudentQRModal'
 import { SkeletonTableRows } from '../components/Skeleton'
-import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, copyToClipboard } from '../lib/helpers'
-import { getOrCreateStudentToken, buildStudentQRLink } from '../lib/qrPdfWhatsApp'
+import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — rebuilt around fast operations:
 //  • search + filters (name / code / phone / stage / group / status)
 //  • single add/edit (existing StudentModal logic)
 //  • BULK ADD: multi-row grid → validate all → review → save all (rule 19)
-//  • bulk selection: WhatsApp queue (attendance/homework ONLY in the session workspace — rule 21/43)
+//  • bulk selection: attendance, points, group move, WhatsApp queue
+//  • WhatsApp + Call per student (existing wa.me behavior preserved)
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentsArea() {
   const ws = useWorkspace()
@@ -27,19 +25,8 @@ export default function StudentsArea() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [selected, setSelected] = useState(new Set())
   const [studentModal, setStudentModal] = useState({ open: false, student: null })
-  const [profileModal, setProfileModal] = useState({ open: false, student: null })
-  const [bulkAddOpen, setBulkAddOpen] = useState(false)
   const [qrModal, setQrModal] = useState({ open: false, student: null })
-  const [copyBusy, setCopyBusy] = useState(null)
-
-  // Deep link from global search: pre-filter to the focused student (brief §16).
-  useEffect(() => {
-    if (ui.focusStudentId) {
-      const s = ws.students.find((x) => x.id === ui.focusStudentId)
-      if (s) setSearch(s.name)
-      ui.setFocusStudentId(null)
-    }
-  }, [ui, ws.students])
+  const [bulkAddOpen, setBulkAddOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -64,30 +51,16 @@ export default function StudentsArea() {
 
   const sendWhatsApp = (student, message) => {
     const phone = normalizeEgyptianPhone(student.phone)
-    if (!phone) { ws.showToast?.('لا يوجد رقم هاتف صحيح', 'error'); return }
+    if (!phone) { ws.showToast ? null : null; return }
     const url = buildWhatsAppUrl(phone, message)
     openWhatsAppUrl(url)
   }
 
-  // QR button opens the StudentQRModal: the ONE surface where the portal link
-  // is visible, copyable, shareable, downloadable — and the WhatsApp message
-  // ALWAYS carries the link (buildQRMessage appends it when {link} is missing).
-  const openQrModal = (student) => setQrModal({ open: true, student })
-
-  // Copy the student's portal link straight to the clipboard — no WhatsApp,
-  // no modal, the raw https://.../qr/<token> ready to paste anywhere.
-  const copyStudentLink = async (student) => {
-    setCopyBusy(student.id)
-    try {
-      const token = await getOrCreateStudentToken(student.id)
-      if (!token) { ws.showToast?.('تعذر إنشاء رابط الطالب', 'error'); return }
-      const ok = await copyToClipboard(buildStudentQRLink(token))
-      ws.showToast?.(
-        ok ? '✅ تم نسخ رابط البوابة — الصقه في أي مكان' : 'تعذر النسخ — جرّب من ملف الطالب',
-        ok ? 'success' : 'error',
-      )
-    } finally { setCopyBusy(null) }
-  }
+  // QR button → opens the link card (visible link + copy + WhatsApp + QR download).
+  // The actual WhatsApp send lives in StudentQRModal and ALWAYS appends the link
+  // (buildQRMessage) — the old direct-send here dropped it when the saved
+  // template had no {link} placeholder ("اللينك ما بيتباعش").
+  const openStudentQR = (student) => setQrModal({ open: true, student })
 
   const bulkMessage = () => {
     const items = [...selected].map((id) => ws.students.find((s) => s.id === id)).filter((s) => s && s.phone && isValidPhone(s.phone))
@@ -149,13 +122,14 @@ export default function StudentsArea() {
       {selected.size > 0 && (
         <div className="glass-card p-3 mb-3 flex flex-wrap items-center gap-2 animate-slide-up">
           <span className="nk-pill nk-pill-gold">{selected.size} {isArabic ? 'محدد' : 'selected'}</span>
+          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkPresent}>✓ {isArabic ? 'حاضر' : 'Present'}</button>
+          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkAbsent}>✗ {isArabic ? 'غائب' : 'Absent'}</button>
           <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkMessage}>✆ {isArabic ? 'رسالة جماعية' : 'Bulk message'}</button>
           <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={() => setSelected(new Set())}>{isArabic ? 'إلغاء التحديد' : 'Clear'}</button>
         </div>
       )}
 
-      {/* Student cards/rows — clicking the NAME opens the profile,
-          clicking anywhere else on the row toggles selection. */}
+      {/* Student cards/rows */}
       <div className="grid gap-2">
         {filtered.map((s) => {
           const rank = getStudentRank(s.points || 0, ws.ranks)
@@ -164,26 +138,26 @@ export default function StudentsArea() {
           return (
             <div
               key={s.id}
-              className="nk-row !flex-wrap"
-              style={isSel ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)', cursor: 'pointer' } : { cursor: 'pointer' }}
-              onClick={() => toggleSelect(s.id)}
+              className="nk-row !flex-wrap cursor-pointer select-none"
+              style={isSel ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}
+              onClick={(e) => {
+                // Name → profile; anything else on the row → select.
+                // Buttons/checkbox/links keep their own behavior.
+                if (e.target.closest('button, input, a, label')) return
+                toggleSelect(s.id)
+              }}
             >
-              <label
-                className="flex items-center gap-2 min-w-0 cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input type="checkbox" className="w-4 h-4 accent-[var(--brand-gold)]" checked={isSel} onChange={() => toggleSelect(s.id)} aria-label={`تحديد ${s.name}`} />
-                <span className="min-w-0">
-                  <button
-                    type="button"
-                    className="font-black truncate bg-transparent border-0 p-0 text-fg cursor-pointer hover:underline"
-                    style={{ fontSize: 'inherit' }}
-                    title={isArabic ? 'فتح ملف الطالب' : 'Open profile'}
-                    onClick={(e) => { e.stopPropagation(); setProfileModal({ open: true, student: s }) }}
-                  >{s.name}{isSavingRow ? '…' : ''}</button>
-                  <small>{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.stage ? ` · ${s.stage}` : ''}</small>
-                </span>
-              </label>
+              <span className="flex items-center gap-2 min-w-0">
+                <input type="checkbox" className="w-4 h-4 accent-[var(--brand-gold)] cursor-pointer" checked={isSel} onChange={() => toggleSelect(s.id)} onClick={(e) => e.stopPropagation()} aria-label={`تحديد ${s.name}`} />
+                <button
+                  className="bg-transparent border-0 p-0 m-0 text-right min-w-0 cursor-pointer font-[inherit] hover:underline underline-offset-4 decoration-2"
+                  onClick={(e) => { e.stopPropagation(); ui.openStudentHistory(s.id) }}
+                  title={isArabic ? 'فتح سجل الطالب' : 'Open student history'}
+                >
+                  <b className="truncate block" style={{ color: 'var(--fg)' }}>{s.name} {isSavingRow ? '…' : ''}</b>
+                  <small className="block">{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.stage ? ` · ${s.stage}` : ''}</small>
+                </button>
+              </span>
               <span className="flex flex-wrap items-center gap-1.5">
                 <span className={`nk-pill ${s.attendance_status === 'حاضر' ? 'nk-pill-live' : s.attendance_status === 'غائب' ? 'nk-pill-danger' : 'nk-pill-neutral'}`}>
                   {s.attendance_status === 'حاضر' ? '✓ حاضر' : s.attendance_status === 'غائب' ? '✗ غائب' : 'لم يُرصد'}
@@ -191,7 +165,10 @@ export default function StudentsArea() {
                 <span className="nk-pill nk-pill-gold">{rank} · {s.points || 0}</span>
                 {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
               </span>
-              <span className="flex flex-wrap items-center gap-1.5 ms-auto" onClick={(e) => e.stopPropagation()}>
+              <span className="flex flex-wrap items-center gap-1.5 ms-auto">
+                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.setAttendance(s.id, 'حاضر')}>ح</button>
+                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.setAttendance(s.id, 'غائب')}>غ</button>
+                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" disabled={isSavingRow} onClick={() => ws.updateHW(s.id, 'مكتمل')}>و✓</button>
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
@@ -201,15 +178,8 @@ export default function StudentsArea() {
                 <button
                   className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                   style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
-                  onClick={() => copyStudentLink(s)}
-                  disabled={copyBusy === s.id}
-                  title={isArabic ? 'نسخ رابط البوابة' : 'Copy portal link'}
-                >{copyBusy === s.id ? '…' : '📋'}</button>
-                <button
-                  className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
-                  style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
-                  onClick={() => openQrModal(s)}
-                  title={isArabic ? 'رابط البوابة و QR' : 'Portal link & QR'}
+                  onClick={() => openStudentQR(s)}
+                  title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
                 >QR</button>
                 <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
                 <button
@@ -239,16 +209,6 @@ export default function StudentsArea() {
           if (result?.ok) setStudentModal({ open: false, student: null })
         }}
         isSaving={wsMeta.isSaving}
-      />
-
-      <StudentProfileModal
-        open={profileModal.open}
-        student={profileModal.student}
-        onClose={() => setProfileModal({ open: false, student: null })}
-        onEdit={(student) => setStudentModal({ open: true, student })}
-        showToast={ws.showToast}
-        isArabic={isArabic}
-        ranks={ws.ranks}
       />
 
       <StudentQRModal

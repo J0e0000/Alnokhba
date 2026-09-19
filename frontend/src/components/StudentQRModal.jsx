@@ -33,9 +33,9 @@ export default function StudentQRModal({ open, student, template, onClose, showT
         const url = buildStudentQRLink(token)
         setLink(url)
         return makeQR(url, {
-          width: 512, margin: 4,
-          color: { dark: '#111111', light: '#FFFFFF' },
-          errorCorrectionLevel: 'H',
+          width: 320, margin: 4,
+          color: { dark: '#0E2954', light: '#FFFFFF' },
+          errorCorrectionLevel: 'M',
         }).then((dataUrl) => { if (alive) { setQrDataUrl(dataUrl); setStatus('ready') } })
       })
       .catch(() => { if (alive) setStatus('error') })
@@ -65,9 +65,6 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     if (!phone) { showToast?.(isArabic ? 'لا يوجد رقم هاتف صحيح لهذا الطالب' : 'No valid phone for this student', 'error'); return }
     setSending(true)
     try {
-      if (!(template || '').trim()) {
-        showToast?.(isArabic ? 'مفيش قالب محفوظ — هيتإرسال رسالة افتراضية مع الرابط' : 'No saved template — a default message with the link will be sent', 'info')
-      }
       // buildQRMessage ALWAYS appends the link when the template lacks {link}
       const message = buildQRMessage(student?.name || '', link, template || '')
       const url = buildWhatsAppUrl(phone, message)
@@ -95,7 +92,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
           <p className="text-sm font-extrabold mb-3" style={{ color: 'var(--danger-strong)' }}>
             {isArabic ? 'تعذر إنشاء رابط الطالب. حاول تاني.' : 'Could not create the student link. Try again.'}
           </p>
-          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); makeQR(u, { width: 512, margin: 4, color: { dark: '#111111', light: '#FFFFFF' }, errorCorrectionLevel: 'H' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
+          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); makeQR(u, { width: 320, margin: 4, color: { dark: '#0E2954', light: '#FFFFFF' }, errorCorrectionLevel: 'M' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
             {isArabic ? 'إعادة المحاولة' : 'Retry'}
           </button>
         </div>

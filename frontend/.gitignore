@@ -29,5 +29,14 @@ dist-ssr
 .vercel
 .env*
 
-# Next.js build output (was accidentally committed)
-.next/
+# Agent/QA working dirs — not part of the app (perf round: ~102MB untracked)
+skills/
+download/
+tool-results/
+upload/
+perf-results/
+deploy-clone/
+scripts/pdf_pages/
+worklog.md
+scripts/env.bak
+.prod-deploy

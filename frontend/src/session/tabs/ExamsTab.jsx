@@ -1,66 +1,83 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
 import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EXAMS / GRADES TAB (rule 12)
+// EXAMS / GRADES TAB (rule 12 + closed-session exam support + draft autosave)
 // Two operations are kept STRICTLY separate:
 //   A) Change exam maximum score  → rpc update_exam_max_score (never rescales
 //      stored student scores — 32 stays 32 when the max goes 40 → 50)
 //   B) Change individual student score → rpc update_student_exam_score
 // Absent students: excluded from the default grading list (PRESENT filter),
 // never graded, never penalized — same server rule as production.
-// CLOSED SESSIONS (user round): exams CAN be added/graded on a completed or
-// not-open session — the server (exams insert + both RPCs) has no
-// session-status guard, so the old client lock was removed. The only
-// impossible case is a day with NO saved session row at all (nothing to
-// attach the exam to) — shown as a notice, not a dead end.
+//
+// CLOSED SESSIONS: adding an exam to a completed session is ALLOWED — the
+// server already accepts exams linked to any lesson (insert-only path), so
+// the old frontend-only block was removed (user request).
+//
+// EXAM DRAFT AUTOSAVE: every grade mutation is mirrored to localStorage
+// (nokhba_exam_draft_v1_<lessonId>) the moment it happens — a reload / app
+// switch / lock screen mid-grading restores the ENTIRE draft (setup + rows
+// + the grading view). Cleared only on a successful server save. Saved
+// server exams remain the source of truth.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, onBar, onAdvance, missingCount, onGoPrev }) {
+const examDraftKey = (lessonId) => `nokhba_exam_draft_v1_${lessonId || 'none'}`
+
+function readExamDraft(lessonId) {
+  try {
+    const raw = localStorage.getItem(examDraftKey(lessonId))
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    return draft && draft.setup && draft.lessonId === lessonId ? draft : null
+  } catch { return null }
+}
+
+function writeExamDraft(lessonId, setup, rows) {
+  try {
+    localStorage.setItem(examDraftKey(lessonId), JSON.stringify({ lessonId, setup, rows, savedAt: new Date().toISOString() }))
+  } catch { /* storage blocked — in-memory state still works this session */ }
+}
+
+function clearExamDraft(lessonId) {
+  try { localStorage.removeItem(examDraftKey(lessonId)) } catch { /* ignore */ }
+}
+
+export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext, onGoPrev, onBar }) {
   const ws = useWorkspace()
   const { isArabic } = ws
-  const [view, setView] = useState('list') // list | setup | grade
-  const [setup, setSetup] = useState(null)
+  // Draft recovery: an interrupted grading flow resumes EXACTLY where it was
+  // (setup + entered scores + the grade view itself).
+  const [view, setView] = useState(() => (readExamDraft(lessonId) ? 'grade' : 'list')) // list | setup | grade
+  const [setup, setSetup] = useState(() => readExamDraft(lessonId)?.setup || null)
 
   const sessionExams = useMemo(
     () => ws.examsList.filter((e) => e.lesson_session_id === lessonId),
     [ws.examsList, lessonId],
   )
 
-  // Persistent workflow bar — only on the exams home view (setup / grade
+  // Persistent workflow bar — only on the exams home view (the setup / grade
   // sub-flows carry their own actions → bar hidden, state-based interface).
   const barData = view === 'list' ? {
     ariaLabel: isArabic ? 'إجراءات الامتحانات' : 'Exams actions',
-    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — المراجعة ←' : 'Next — Review →', disabled: !onAdvance }],
+    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — المراجعة ←' : 'Next — Review →', disabled: !onGoNext }],
     secondary: [
       { key: 'prev', label: isArabic ? '→ السابق — التفاعل والواجب' : '← Previous — Interaction', disabled: !onGoPrev },
     ],
-    meta: sessionExams.length === 0
-      ? (isArabic ? 'الامتحانات اختيارية — تخطّيها لا يوقف المسار' : 'Exams are optional — skipping never blocks the pipeline')
-      : missingCount > 0
-        ? (isArabic ? `${missingCount} طالب لم تُرصد درجته` : `${missingCount} student(s) ungraded`)
-        : '',
+    meta: isArabic ? 'الامتحانات اختيارية — تخطّيها لا يوقف المسار' : 'Exams are optional — skipping never blocks the pipeline',
   } : null
-  usePublishBar(onBar, barData, { next: () => onAdvance?.(), prev: () => onGoPrev?.() })
+  usePublishBar(onBar, barData, { next: () => onGoNext?.(), prev: () => onGoPrev?.() })
 
-  // No saved session row at all (e.g. a past day with no session) — nothing
-  // to attach an exam to. Every other state (open / completed / not open)
-  // allows the full exams workflow.
-  if (!lessonId) {
-    return (
-      <div>
-        <div className="nk-notice">
-          {isArabic
-            ? 'لا توجد حصة محفوظة لهذا اليوم — افتح الحصة أو سجّلها الأول عشان تقدر ترفق امتحان بها.'
-            : 'No saved session for this day — open/record the session first to attach an exam to it.'}
-        </div>
-      </div>
-    )
-  }
+  // CLOSED SESSION SUPPORT: a completed session with no exams yet still gets
+  // the "New exam" action — the old frontend-only gate is removed.
 
   if (view === 'setup') {
-    return <ExamSetup setup={setup} setSetup={setSetup} onProceed={() => setView('grade')} onCancel={() => setView('list')} />
+    return <ExamSetup setup={setup} setSetup={setSetup} onProceed={(finalSetup) => {
+      // Entering the grade view starts/overwrites the draft — from here on,
+      // every score mutation is mirrored to localStorage (spec 24).
+      if (finalSetup) writeExamDraft(lessonId, finalSetup, {})
+      setView('grade')
+    }} onCancel={() => setView('list')} />
   }
   if (view === 'grade' && setup) {
     return (
@@ -68,33 +85,33 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, missingFocus, 
         setup={setup}
         groupId={groupId}
         lessonId={lessonId}
-        onDone={(saved) => { setView('list'); if (saved) setSetup(null) }}
+        onDone={(saved) => { setView('list'); if (saved) { setSetup(null); clearExamDraft(lessonId) } }}
         onCancel={() => setView('setup')}
       />
     )
   }
   return (
     <div>
-      {!lessonOpen && (
-        <div className="nk-notice mb-4">
-          {isArabic
-            ? 'الحصة مش مفتوحة — لكن تقدر تضيف امتحان وترصد الدرجات وتعدّلها عادي.'
-            : 'Session is not open — you can still add an exam and enter/edit grades normally.'}
-        </div>
-      )}
       <button
         className="btn-gold action-button !min-h-[3rem] mb-4"
         onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول', 'السؤال الثاني'], max: 20 }); setView('setup') }}
       >
         ＋ {isArabic ? 'امتحان جديد' : 'New exam'}
       </button>
+      {!lessonOpen && (
+        <div className="nk-notice mb-4">
+          {isArabic
+            ? 'الحصة منتهية — بإمكانك إضافة امتحان وربطه بها، وتظهر درجاته في السجل وبوابة الطالب كالمعتاد.'
+            : 'Session completed — you can still add an exam linked to it; grades appear in history and the student portal as usual.'}
+        </div>
+      )}
       {sessionExams.length === 0 ? (
         <p className="text-center py-6 text-sm text-fg-muted">
           {isArabic ? 'لا يوجد امتحان مرتبط بهذه الحصة (اختياري).' : 'No exam linked to this session (optional).'}
         </p>
       ) : (
         <div className="grid gap-3">
-          {sessionExams.map((exam) => <ExamCard key={exam.id} exam={exam} groupId={groupId} autoFilter={missingFocus ? 'ungraded' : null} />)}
+          {sessionExams.map((exam) => <ExamCard key={exam.id} exam={exam} groupId={groupId} />)}
         </div>
       )}
     </div>
@@ -113,9 +130,10 @@ function ExamSetup({ setup, setSetup, onProceed, onCancel }) {
     if (!setup.title.trim()) { setError(isArabic ? 'اكتب عنوان الامتحان' : 'Enter the exam title'); return }
     if (sections.length === 0) { setError(isArabic ? 'أضف قسمًا واحدًا على الأقل' : 'Add at least one section'); return }
     if (!Number.isFinite(max) || max <= 0) { setError(isArabic ? 'الدرجة النهائية لكل قسم غير صحيحة' : 'Invalid max score per section'); return }
-    setSetup({ ...setup, sections, max })
+    const finalSetup = { ...setup, sections, max }
+    setSetup(finalSetup)
     setError('')
-    onProceed()
+    onProceed(finalSetup)
   }
 
   const setSection = (i, value) => {
@@ -166,15 +184,26 @@ function ExamSetup({ setup, setSetup, onProceed, onCancel }) {
   )
 }
 
-// ── Grading grid (new exam) ─────────────────────────────────────────────────
+// ── Grading grid (new exam) — every mutation mirrors to the local draft ────
 function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('present') // present | absent | all | ungraded
-  const [rows, setRows] = useState({}) // studentId → {sectionScores, total}
+  const [filter, setFilter] = useState('present') // present | absent | all — default PRESENT (rule 12)
+  // EXAM DRAFT AUTOSAVE (spec 24): rows start from the persisted draft so a
+  // reload/app-switch/lock-screen mid-grading loses NOTHING.
+  const [rows, setRows] = useState(() => readExamDraft(lessonId)?.rows || {})
+  const [restored] = useState(() => {
+    const d = readExamDraft(lessonId)
+    return Boolean(d && d.rows && Object.keys(d.rows).length)
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // Mirror every draft mutation (setup is stable here; rows change per tap).
+  useEffect(() => {
+    writeExamDraft(lessonId, setup, rows)
+  }, [lessonId, setup, rows])
 
   const groupStudents = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
@@ -186,12 +215,11 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
       const st = statusOf(s)
       if (filter === 'present' && st !== 'حاضر') return false
       if (filter === 'absent' && st !== 'غائب') return false
-      if (filter === 'ungraded' && (st !== 'حاضر' || (rows[s.id] && Object.values(rows[s.id].sectionScores).some((v) => v !== '' && v != null)))) return false
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupStudents, search, filter, attendanceMap, lessonId, rows])
+  }, [groupStudents, search, filter, attendanceMap, lessonId])
 
   const setScore = (studentId, section, value) => {
     const max = Number(setup.max)
@@ -232,6 +260,11 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
 
   return (
     <div>
+      {restored && (
+        <div className="nk-notice mb-4" style={{ background: 'var(--info-bg)', borderColor: 'var(--info-border)', color: 'var(--info-strong)' }}>
+          {isArabic ? '↺ تم استرجاع الدرجات المُدخلة قبل انقطاع الجلسة — أكمل الرصد واحفظ.' : '↺ Recovered your in-progress grades — continue and save.'}
+        </div>
+      )}
       <div className="nk-notice mb-4">
         {isArabic
           ? `الغائبون (${absentCount}) لا يظهرون في القائمة الافتراضية ولا ياخدوا درجات ولا خصوم.`
@@ -240,7 +273,7 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[160px]" placeholder={isArabic ? '🔍 بحث...' : 'Search...'} value={search} onChange={(e) => setSearch(e.target.value)} />
         <div className="flex rounded-xl overflow-hidden border border-subtle">
-          {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['ungraded', isArabic ? 'غير المرصدون' : 'Ungraded'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
+          {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
             <button key={key} onClick={() => setFilter(key)} className="px-3 py-2 text-[.72rem] font-extrabold"
               style={filter === key ? { background: 'var(--brand-navy)', color: '#fff' } : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}>
               {label}
@@ -292,12 +325,12 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
 }
 
 // ── Existing exam card: A) max-score editor  B) per-student score editor ────
-function ExamCard({ exam, groupId, autoFilter }) {
+function ExamCard({ exam, groupId }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState(autoFilter === 'ungraded' ? 'ungraded' : 'present')
+  const [filter, setFilter] = useState('present')
   const [maxDraft, setMaxDraft] = useState(null)
   const [scoreDrafts, setScoreDrafts] = useState({}) // scoreId → value
   const [busy, setBusy] = useState(false)
@@ -326,7 +359,6 @@ function ExamCard({ exam, groupId, autoFilter }) {
       if (filter === 'present' && st !== 'حاضر') return false
       if (filter === 'absent' && st !== 'غائب') return false
       if (filter === 'graded' && !scoreByStudent[s.id]) return false
-      if (filter === 'ungraded' && (scoreByStudent[s.id] || st !== 'حاضر')) return false
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
@@ -410,7 +442,7 @@ function ExamCard({ exam, groupId, autoFilter }) {
             <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--accent-blue)' }}>ب · {isArabic ? 'تعديل درجة طالب' : 'B · Student scores'}</span>
             <input className="glass-input rounded-xl px-3 py-2 text-sm flex-1 min-w-[150px]" placeholder={isArabic ? '🔍 بحث...' : 'Search...'} value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['graded', isArabic ? 'المرصدون' : 'Graded'], ['ungraded', isArabic ? 'غير المرصدون' : 'Ungraded'], ['all', isArabic ? 'الكل' : 'All']].map(([key, label]) => (
+              {[['present', isArabic ? 'الحاضرون' : 'Present'], ['absent', isArabic ? 'الغائبون' : 'Absent'], ['graded', isArabic ? 'المرصدون' : 'Graded']].map(([key, label]) => (
                 <button key={key} onClick={() => setFilter(key)} className="px-2.5 py-2 text-[.68rem] font-extrabold"
                   style={filter === key ? { background: 'var(--brand-navy)', color: '#fff' } : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}>
                   {label}

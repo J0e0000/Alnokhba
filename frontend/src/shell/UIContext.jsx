@@ -1,52 +1,57 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { todayLocalISO } from '../lib/dateUtils'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UIContext — pure UI state of the new shell (rule 35: UI state ≠ server state).
 // Server state lives in WorkspaceStore; this only holds view/navigation state,
 // the confirm dialog promise bridge, and the WhatsApp message queue UI.
-//
-// RELOAD RESILIENCE ("لو الصفحة اتعملتها reload سيبني مكاني"): the route
-// (area + session params + selected day) persists in sessionStorage keyed by
-// teacher id. A refresh or crash reopens the SAME view — for teachers that
-// means the session workspace they were standing in, on the same tab (the
-// workspace itself persists its tab/position separately). Explicit logout
-// clears it (see AppShell). sessionStorage survives reloads and tab-crash
-// restore, but never leaks across browser restarts into a stale day.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UIContext = createContext(null)
 
 const QUEUE_KEY = (tid) => `nokhba_message_queue_${tid}`
-const ROUTE_KEY = (tid) => `nokhba_ui_route_${tid || 'anon'}`
-const ROUTE_AREAS = ['home', 'session', 'students', 'history', 'reports', 'analytics', 'settings', 'help']
+const NAV_KEY = (tid) => `nokhba_nav_state_${tid || 'anon'}`
 
-function readSavedRoute(teacherId) {
+// Reload-resilience (spec: "if the page reloaded make it leave me wherever I
+// am"): the active area + open session context persist in localStorage. A
+// stored SESSION context is only restored while fresh (12h) — never revive
+// yesterday's workspace into today, and never let it CREATE a new lesson.
+const SESSION_CONTEXT_TTL_MS = 12 * 60 * 60 * 1000
+
+function readNavState(teacherId) {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(ROUTE_KEY(teacherId)) || 'null')
-    if (!saved || !ROUTE_AREAS.includes(saved.area)) return null
-    if (saved.area === 'session' && !saved.sessionParams?.groupId) return null
-    return saved
-  } catch { return null }
+    const raw = localStorage.getItem(NAV_KEY(teacherId))
+    if (!raw) return { area: 'home', sessionParams: null }
+    const s = JSON.parse(raw)
+    if (s?.area === 'session') {
+      const fresh = s.savedAt && (Date.now() - new Date(s.savedAt).getTime()) < SESSION_CONTEXT_TTL_MS
+      if (!fresh || !s.sessionParams?.groupId) return { area: 'home', sessionParams: null }
+    }
+    return { area: s?.area || 'home', sessionParams: s?.sessionParams || null }
+  } catch { return { area: 'home', sessionParams: null } }
 }
 
 export function UIProvider({ teacherId, children }) {
-  // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings' | 'help'
-  const savedRoute = useMemo(() => readSavedRoute(teacherId), [teacherId])
-  const [area, setArea] = useState(() => savedRoute?.area || 'home')
-  const [sessionParams, setSessionParams] = useState(() => savedRoute?.sessionParams || null)
+  // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings'
+  const [area, setAreaState] = useState(() => readNavState(teacherId).area)
+  const [sessionParams, setSessionParams] = useState(() => readNavState(teacherId).sessionParams)
+  const [historyStudentId, setHistoryStudentId] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
-  // Day timeline: the selected day persists across navigation so returning from
-  // a session keeps the teacher's context (brief §2 "preserve current route").
-  const [selectedDay, setSelectedDay] = useState(() => savedRoute?.selectedDay || todayLocalISO())
-  // Global search (Ctrl/⌘+K) — modal state here so any surface can open it.
-  const [searchOpen, setSearchOpen] = useState(false)
-  // Cross-area focus targets (search/FAQ deep links).
-  const [focusStudentId, setFocusStudentId] = useState(null)
-  const [helpTopicId, setHelpTopicId] = useState(null)
   const [queue, setQueue] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(QUEUE_KEY(teacherId)) || 'null') || { open: false, items: [], index: 0 } } catch { return { open: false, items: [], index: 0 } }
   })
+
+  const persistNav = useCallback((a, sp) => {
+    try { localStorage.setItem(NAV_KEY(teacherId), JSON.stringify({ area: a, sessionParams: sp, savedAt: new Date().toISOString() })) } catch { /* ignore */ }
+  }, [teacherId])
+
+  const setArea = useCallback((a) => {
+    setAreaState(a)
+    if (a !== 'session') {
+      setSessionParams(null)
+      persistNav(a, null)
+    }
+  }, [persistNav])
 
   const persistQueue = useCallback((next) => {
     setQueue(next)
@@ -55,18 +60,24 @@ export function UIProvider({ teacherId, children }) {
 
   const openSession = useCallback((params) => {
     setSessionParams(params)
-    setArea('session')
-  }, [])
+    setAreaState('session')
+    persistNav('session', params)
+  }, [persistNav])
 
   const closeSession = useCallback(() => {
     setSessionParams(null)
-    setArea('home')
+    setAreaState('home')
+    persistNav('home', null)
+  }, [persistNav])
+
+  // Name-click on a student row jumps straight to their history profile.
+  // HistoryArea consumes the id once, then clears it (null = normal search view).
+  const openStudentHistory = useCallback((studentId) => {
+    setHistoryStudentId(studentId)
+    setArea('history')
   }, [])
 
-  // Persist the route whenever it changes (reload → same place).
-  useEffect(() => {
-    try { sessionStorage.setItem(ROUTE_KEY(teacherId), JSON.stringify({ area, sessionParams, selectedDay })) } catch { /* ignore */ }
-  }, [teacherId, area, sessionParams, selectedDay])
+  const clearHistoryStudent = useCallback(() => setHistoryStudentId(null), [])
 
   const askConfirm = useCallback((message, opts = {}) => new Promise((resolve) => {
     setConfirmState({ message, ...opts, resolve })
@@ -88,20 +99,12 @@ export function UIProvider({ teacherId, children }) {
 
   const closeQueue = useCallback(() => setQueue((prev) => ({ ...prev, open: false })), [])
 
-  const openSearch = useCallback(() => setSearchOpen(true), [])
-  const closeSearch = useCallback(() => setSearchOpen(false), [])
-  const openHelp = useCallback((topicId = null) => { setHelpTopicId(topicId); setArea('help') }, [])
-  const goToStudent = useCallback((id) => { setFocusStudentId(id); setArea('students') }, [])
-
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
     queue, startQueue, advanceQueue, closeQueue,
-    selectedDay, setSelectedDay,
-    searchOpen, openSearch, closeSearch,
-    focusStudentId, setFocusStudentId, goToStudent,
-    helpTopicId, setHelpTopicId, openHelp,
-  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue,
-    selectedDay, searchOpen, openSearch, closeSearch, focusStudentId, goToStudent, helpTopicId, openHelp])
+    historyStudentId, openStudentHistory, clearHistoryStudent,
+    historyOpen, setHistoryOpen,
+  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen])
 
   return (
     <UIContext.Provider value={value}>

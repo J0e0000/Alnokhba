@@ -16,7 +16,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { getStudentRank, isIOSBrowser, copyToClipboard } from '../lib/helpers'
+import { getStudentRank, isIOSBrowser } from '../lib/helpers'
 import { getPalette } from '../lib/palettes'
 import { generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { registerStudentPush } from '../lib/pushNotifications'
@@ -36,15 +36,12 @@ export default function PublicQRPage() {
   const [showQR, setShowQR] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [downloading, setDownloading] = useState(false)
-  const [copiedLink, setCopiedLink] = useState(false)
-  // Portal search — one box that filters sessions, homework, exams,
-  // announcements and notifications. Purely client-side, zero extra requests.
-  const [query, setQuery] = useState('')
   const [markingTaskId, setMarkingTaskId] = useState(null)
   const [notifExpanded, setNotifExpanded] = useState(true)
   const [parentPushEnabled, setParentPushEnabled] = useState(false)
   const [parentPushBusy, setParentPushBusy] = useState(false)
   const [parentPushMessage, setParentPushMessage] = useState('')
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const tokenRef = useRef('')
   // FIX (refresh race): a background poll that started BEFORE the parent tapped a
@@ -391,25 +388,23 @@ export default function PublicQRPage() {
   }, [scheduleInstantRefresh])
 
   // Generate QR image lazily, only when the section is expanded.
-  // FIX (QR content): the QR encodes the ACTUAL portal link (the current page
-  // URL, which already carries the token) — scanning it opens the portal.
-  // SCANNABILITY (must survive download / screenshot / on-screen scan):
-  //  • errorCorrectionLevel 'H' — tolerates 30% damage (glare, compression,
-  //    crumpled printouts, screenshots of screens)
-  //  • 640px source + 3-module quiet zone — the download stays razor-sharp
-  //    for print, and on-screen display scales down without blur
-  //  • near-black on pure white — maximum contrast for cheap scanners
+  // FIX (QR content): the QR now encodes the ACTUAL portal link (the current
+  // page URL, which already carries the token) instead of the raw student UUID.
+  // Previously scanning the downloaded QR produced a plain UUID text blob — not
+  // a link — so the parent could not open the portal from it.
+  // FIX (scanability): quiet zone raised 1 → 4 modules (spec default) so
+  // screenshots and printed copies scan reliably.
+  const portalLink = `${window.location.origin}${window.location.pathname}`
   useEffect(() => {
     if (!showQR || qrDataUrl || !portal?.student?.id) return
-    const portalLink = `${window.location.origin}${window.location.pathname}`
     // PERF: qrcode loads on demand — only when the parent expands the QR
     // section (it used to be a static import on the portal page).
     import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(portalLink, {
-      width: 640, margin: 3,
-      color: { dark: '#111111', light: '#FFFFFF' },
-      errorCorrectionLevel: 'H',
+      width: 320, margin: 4,
+      color: { dark: '#0E2954', light: '#FFFFFF' },
+      errorCorrectionLevel: 'M',
     })).then(setQrDataUrl).catch(() => {})
-  }, [showQR, qrDataUrl, portal])
+  }, [showQR, qrDataUrl, portal, portalLink])
 
   const handleDownloadQR = () => {
     if (!qrDataUrl) return
@@ -421,25 +416,33 @@ export default function PublicQRPage() {
     document.body.removeChild(a)
   }
 
-  // The canonical portal URL — shown as selectable text and shareable via
-  // the Web Share API (falls back to copy on browsers without it).
-  const portalUrl = `${window.location.origin}${window.location.pathname}`
-
-  const handleSharePortalLink = async () => {
-    if (navigator.share) {
-      try { await navigator.share({ title: 'بوابة الطالب — النخبة', url: portalUrl }); return } catch (e) { if (e?.name === 'AbortError') return }
+  // FIX (copy from the student side): the portal never showed its own URL and
+  // had no copy/share — the parent could only re-open the original WhatsApp
+  // message. Now the link is visible text with one-tap copy + native share.
+  const handleCopyLink = async () => {
+    if (!portalLink) return
+    let ok = false
+    try { await navigator.clipboard.writeText(portalLink); ok = true } catch {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = portalLink
+        ta.style.position = 'fixed'; ta.style.opacity = '0.01'
+        document.body.appendChild(ta); ta.select()
+        ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+      } catch { ok = false }
     }
-    const ok = await copyToClipboard(portalUrl)
-    setCopiedLink(ok)
-    if (ok) setTimeout(() => setCopiedLink(false), 2200)
+    setLinkCopied(ok)
+    setTimeout(() => setLinkCopied(false), 2200)
   }
 
-  // The parent/teacher can copy the raw portal link from HERE too —
-  // previously the link was impossible to copy from the student's portal.
-  const handleCopyPortalLink = async () => {
-    const ok = await copyToClipboard(portalUrl)
-    setCopiedLink(ok)
-    setTimeout(() => setCopiedLink(false), 2200)
+  const handleShareLink = async () => {
+    if (!portalLink) return
+    if (navigator.share) {
+      try { await navigator.share({ title: 'بوابة الطالب — النخبة', url: portalLink }) } catch { /* user cancelled */ }
+    } else {
+      handleCopyLink()
+    }
   }
 
   const handleDownloadReport = async () => {
@@ -587,20 +590,9 @@ export default function PublicQRPage() {
       </Shell>
     )
   }
-  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, announcements, activity, homework, examResults, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
+  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
   const rank = getStudentRank(student.points, ranks)
-  // Every session as its own separate card, newest first (no more 3-slot
-  // current/previous/next collapse — the parent sees the FULL history).
-  const sessionList = buildSessionList(lessonSessions, sessionToday, lessonAttendance)
-  // Client-side search across every list — one query, all sections.
-  const q = normalizePortalQuery(query)
-  const matches = (text) => !q || normalizePortalQuery(String(text || '')).includes(q)
-  const visibleSessions = sessionList.filter((l) => matches([l.lesson_topic, l.homework_text, formatDate(l.session_date), l.attendance_status, l.homework_status].join(' ')))
-  const visibleHomework = homework.filter((h) => matches(h.title))
-  const visibleExams = examResults.filter((e) => matches(e.title))
-  const visibleAnnouncements = announcements.filter((a) => matches([a.title, a.message].join(' ')))
-  const visibleNotifications = (portalNotifications || []).filter((n) => matches([n.title, n.body].join(' ')))
-  const searching = q.length > 0
+  const lessonTimeline = buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance)
 
   // Mark notification as read
   const handleMarkNotifRead = async (notifId) => {
@@ -676,69 +668,44 @@ export default function PublicQRPage() {
             <input
               readOnly
               dir="ltr"
-              value={portalUrl}
+              value={portalLink}
               onFocus={(e) => e.target.select()}
-              style={{
-                width: '100%', maxWidth: 420, padding: '10px 12px', textAlign: 'center',
-                fontSize: 13, borderRadius: 12, border: '1px solid rgba(148,163,184,0.45)',
-                background: 'rgba(255,255,255,0.9)', color: '#0F172A', userSelect: 'all', direction: 'ltr',
-              }}
               aria-label="رابط البوابة"
+              style={{ width: '100%', maxWidth: 360, textAlign: 'center', fontSize: 13, padding: '9px 10px', borderRadius: 12, border: '1px solid rgba(148,163,184,.4)', background: '#F8FAFC', color: '#0F172A', userSelect: 'all' }}
             />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-              <button onClick={handleCopyPortalLink} style={{ ...outlineBtn, padding: '10px' }}>
-                {copiedLink ? '✅ تم نسخ رابط البوابة' : '📋 نسخ رابط البوابة'}
-              </button>
-              <button onClick={handleSharePortalLink} style={{ ...goldBtn, padding: '10px' }}>مشاركة الرابط</button>
+              <button onClick={handleCopyLink} style={goldBtn}>{linkCopied ? '✓ تم نسخ الرابط' : 'نسخ الرابط'}</button>
+              <button onClick={handleShareLink} style={goldBtn}>مشاركة الرابط</button>
             </div>
             <button onClick={handleDownloadQR} style={goldBtn} disabled={!qrDataUrl}>تحميل QR Code</button>
+            <p style={{ margin: 0, fontSize: 12, color: '#64748B', textAlign: 'center' }}>
+              انسخ الرابط أو شاركه مع ولي الأمر — البوابة تفتح من غير تسجيل دخول.
+            </p>
           </div>
         )}
       </SectionCard>
 
-      {/* Search — filters sessions, homework, exams, announcements, notifications */}
-      <div style={{ width: '100%' }}>
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="🔍 ابحث في الحصص والواجبات والنتائج..."
-          style={searchInput}
-          aria-label="بحث في البوابة"
-        />
-      </div>
-
-      {/* Sessions — each session is its own separate, self-contained card */}
-      <SectionCard title={`الحصص${sessionList.length ? ` (${sessionList.length})` : ''}`}>
-        {visibleSessions.length === 0 && <EmptyLine text={searching ? 'لا توجد حصص مطابقة للبحث' : 'لا يوجد سجل حصة حتى الآن'} />}
-        {visibleSessions.map((lesson, idx) => (
-          <div key={lesson.id || `${lesson.session_date}-${idx}`} style={sessionCard}>
-            <div style={sessionCardHead}>
-              <strong style={{ color: NAVY, fontSize: 13.5 }}>
-                {lesson._isToday ? '📌 حصة اليوم' : `حصة ${formatDate(lesson.session_date)}`}
-              </strong>
-              <span style={{ ...statusBadge, ...attendanceBadgeStyle(lesson.attendance_status) }}>
-                {lesson.attendance_status || 'لم يرصد'}
-              </span>
+      {/* Session status */}
+      <SectionCard title="الحصص">
+        {lessonTimeline.length > 0 ? lessonTimeline.map(({ key, label, lesson }) => (
+          <div key={key} style={{ padding: '10px 0', borderBottom: '1px solid rgba(148,163,184,.16)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+              <strong style={{ color: '#0F172A' }}>{label}</strong>
+              <span style={{ color: '#64748B', fontSize: 12 }}>{formatDate(lesson.session_date)}</span>
             </div>
-            <div style={sessionCardRow}>
-              <span style={{ ...statusBadge, ...homeworkBadgeStyle(lesson.homework_status) }}>
-                الواجب: {lesson.homework_status || 'لم يرصد'}
-              </span>
-            </div>
-            {lesson.lesson_topic && <p style={sessionTopic}><b>الدرس:</b> {lesson.lesson_topic}</p>}
-            {lesson.homework_text && <p style={sessionTopic}><b>الواجب المطلوب:</b> {lesson.homework_text}</p>}
-            {lesson.video_link && (
-              <a href={lesson.video_link} target="_blank" rel="noreferrer" style={{ ...goldBtn, display: 'inline-block', textDecoration: 'none', textAlign: 'center', marginTop: 8, padding: '9px 20px' }}>🎥 مشاهدة فيديو الحصة</a>
-            )}
+            <InfoLine label="حالة الحضور النهائية" value={lesson.attendance_status || 'لم يرصد'} />
+            <InfoLine label="حالة الواجب النهائية" value={lesson.homework_status || 'لم يرصد'} />
+            {lesson.lesson_topic && <InfoLine label="موضوع الدرس" value={lesson.lesson_topic} />}
+            {lesson.homework_text && <InfoLine label="الواجب" value={lesson.homework_text} />}
+            {lesson.video_link && <a href={lesson.video_link} target="_blank" rel="noreferrer" style={{ ...goldBtn, display: 'inline-block', textDecoration: 'none', textAlign: 'center', marginTop: 8 }}>🎥 مشاهدة فيديو الحصة</a>}
           </div>
-        ))}
+        )) : <EmptyLine text="لا يوجد سجل حصة حتى الآن" />}
       </SectionCard>
 
       {/* Announcements */}
-      <SectionCard title={`الإعلانات${visibleAnnouncements.length ? ` (${visibleAnnouncements.length})` : ''}`}>
-        {visibleAnnouncements.length === 0 && <EmptyLine text={searching ? 'لا توجد إعلانات مطابقة' : 'لا توجد إعلانات حالياً'} />}
-        {visibleAnnouncements.map((a) => (
+      <SectionCard title={`الإعلانات${announcements.length ? ` (${announcements.length})` : ''}`}>
+        {announcements.length === 0 && <EmptyLine text="لا توجد إعلانات حالياً" />}
+        {announcements.map((a) => (
           <div key={a.id} style={feedItem}>
             <p style={feedTitle}>{a.title}</p>
             <p style={feedMsg}>{a.message}</p>
@@ -749,8 +716,8 @@ export default function PublicQRPage() {
 
       {/* Homework */}
       <SectionCard title="الواجبات">
-        {visibleHomework.length === 0 && <EmptyLine text={searching ? 'لا توجد واجبات مطابقة' : 'لا توجد واجبات مسجلة'} />}
-        {visibleHomework.map((h) => (
+        {homework.length === 0 && <EmptyLine text="لا توجد واجبات مسجلة" />}
+        {homework.map((h) => (
           <div key={h.id} style={hwRow}>
             <div style={{ flex: 1 }}>
               <p style={hwTitle}>{h.title}</p>
@@ -773,8 +740,8 @@ export default function PublicQRPage() {
 
       {/* Exam results */}
       <SectionCard title="نتائج الامتحانات">
-        {visibleExams.length === 0 && <EmptyLine text={searching ? 'لا توجد نتائج مطابقة' : 'لا توجد نتائج امتحانات بعد'} />}
-        {visibleExams.map((e) => (
+        {examResults.length === 0 && <EmptyLine text="لا توجد نتائج امتحانات بعد" />}
+        {examResults.map((e) => (
           <div key={e.id} style={feedItem}>
             <p style={feedTitle}>{e.title}</p>
             <p style={feedMsg}>{e.total} / {e.max}</p>
@@ -838,8 +805,8 @@ export default function PublicQRPage() {
                 قراءة الكل
               </button>
             )}
-            {(visibleNotifications).length === 0 && <EmptyLine text={searching ? 'لا توجد تنبيهات مطابقة' : 'لا توجد تنبيهات'} />}
-            {(visibleNotifications).slice(0, 10).map((n) => (
+            {(portalNotifications || []).length === 0 && <EmptyLine text="لا توجد تنبيهات" />}
+            {(portalNotifications || []).slice(0, 10).map((n) => (
               <div
                 key={n.id}
                 onClick={() => !n.is_read && handleMarkNotifRead(n.id)}
@@ -912,27 +879,7 @@ function rawAccessFallbackSession(access) {
   return access.sessionToday || access.session_today || null
 }
 
-/**
- * Normalize an Arabic/English search string for the portal search box:
- * lowercase, strip tashkeel/tatweel, unify alef/yaa/taa-marbuta variants.
- */
-function normalizePortalQuery(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\u064B-\u065F\u0640]/g, '')
-    .replace(/[أإآٱ]/g, 'ا')
-    .replace(/[ىي]/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/\s+/g, ' ')
-}
-
-/**
- * Build the FULL session list shown on the portal: one entry per session,
- * newest first, with today's session flagged. Replaces the old 3-slot
- * (current/previous/next) timeline so every session is visible separately.
- */
-function buildSessionList(lessonSessions, sessionToday, lessonAttendance = []) {
+function buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance = []) {
   const dateKey = (value) => {
     if (!value) return ''
     if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10)
@@ -966,24 +913,19 @@ function buildSessionList(lessonSessions, sessionToday, lessonAttendance = []) {
     })
   }
   if (sessionToday?.session_date && !records.some((lesson) => lesson.id === sessionToday.id)) records.push(sessionToday)
-  // Deduplicate by id (a lesson can arrive from both lists).
-  const seen = new Set()
-  const unique = records.filter((lesson) => {
-    const key = lesson.id || lesson.session_date
-    if (!key || seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-  // A lesson with real content (topic/homework/marks) outranks an empty stub
-  // inside the same day; otherwise strictly newest first.
+  // A lesson with real content (topic/homework/marks) always outranks an empty
+  // stub when both fall in the same slot.
   const hasData = (lesson) => Boolean(lesson.lesson_topic || lesson.homework_text || (lesson.attendance_status && lesson.attendance_status !== 'لم يرصد') || (lesson.homework_status && lesson.homework_status !== 'لم يرصد'))
-  unique.sort((a, b) => {
-    const byDate = dateKey(b.session_date).localeCompare(dateKey(a.session_date))
-    if (byDate !== 0) return byDate
-    return Number(hasData(b)) - Number(hasData(a)) || new Date(b.started_at || b.created_at || 0) - new Date(a.started_at || a.created_at || 0)
-  })
-  for (const lesson of unique) lesson._isToday = dateKey(lesson.session_date) === today
-  return unique
+  const current = records.filter((lesson) => dateKey(lesson.session_date) === today).sort((a, b) => Number(hasData(b)) - Number(hasData(a)) || new Date(b.started_at || b.created_at || 0) - new Date(a.started_at || a.created_at || 0))[0]
+  const previous = records.filter((lesson) => dateKey(lesson.session_date) < today).sort((a, b) => Number(hasData(b)) - Number(hasData(a)) || dateKey(b.session_date).localeCompare(dateKey(a.session_date)) || new Date(b.started_at || b.created_at || 0) - new Date(a.started_at || a.created_at || 0))[0]
+  const nextRecorded = records.filter((lesson) => dateKey(lesson.session_date) > today).sort((a, b) => dateKey(a.session_date).localeCompare(dateKey(b.session_date)) || new Date(a.started_at || a.created_at || 0) - new Date(b.started_at || b.created_at || 0))[0]
+  const nextScheduledDate = (upcomingSessions || []).map(dateKey).find((key) => key > today)
+  const next = nextRecorded || (nextScheduledDate ? { session_date: nextScheduledDate, status: 'scheduled', attendance_status: 'لم يرصد', homework_status: 'لم يرصد' } : null)
+  return [
+    current && { key: `current-${current.id || current.session_date}`, label: 'الحصة الحالية', lesson: current },
+    previous && { key: `previous-${previous.id || previous.session_date}`, label: 'الحصة السابقة', lesson: previous },
+    next && { key: `next-${next.id || next.session_date}`, label: 'الحصة القادمة', lesson: next },
+  ].filter(Boolean)
 }
 
 function buildActivityFeed(attendance, behavior) {
@@ -1225,48 +1167,9 @@ const activityText = { fontSize: '13px', color: NAVY, margin: 0 }
 
 const qrBorder = {
   border: `3px solid ${GOLD}`, borderRadius: '14px', padding: '12px',
-  display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#FFFFFF',
+  display: 'flex', justifyContent: 'center', alignItems: 'center', background: WHITE,
 }
-// imageRendering 'pixelated' keeps QR module edges razor-sharp when the
-// 640px source is displayed at ~220px — sharper edges = faster, more
-// reliable scans from every screen/camera.
-const qrImage = { width: '220px', height: '220px', display: 'block', imageRendering: 'pixelated' }
-
-// ── Portal search + per-session cards ─────────────────────────
-const searchInput = {
-  width: '100%', padding: '12px 16px', fontSize: '14px', fontWeight: 600,
-  borderRadius: '14px', border: '1.5px solid rgba(148,163,184,0.35)',
-  background: '#FFFFFF', color: NAVY, fontFamily: "'Cairo', sans-serif",
-  outline: 'none', boxSizing: 'border-box',
-}
-
-const sessionCard = {
-  border: '1px solid rgba(148,163,184,0.3)', borderRadius: '14px',
-  padding: '12px 14px', background: '#FBFDFE',
-  display: 'flex', flexDirection: 'column', gap: 6,
-}
-const sessionCardHead = {
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  gap: 8, flexWrap: 'wrap', paddingBottom: 6, borderBottom: '1px dashed rgba(148,163,184,0.35)',
-}
-const sessionCardRow = { display: 'flex', gap: 6, flexWrap: 'wrap' }
-const sessionTopic = { fontSize: '12.5px', color: '#334155', margin: 0, lineHeight: 1.55 }
-
-const statusBadge = {
-  display: 'inline-block', fontSize: '11px', fontWeight: 800,
-  padding: '3px 10px', borderRadius: '20px', whiteSpace: 'nowrap',
-}
-function attendanceBadgeStyle(status) {
-  if (status === 'حاضر') return { background: 'rgba(34,197,94,0.14)', color: '#15803D' }
-  if (status === 'غائب') return { background: 'rgba(239,68,68,0.12)', color: '#B91C1C' }
-  return { background: 'rgba(148,163,184,0.16)', color: '#475569' }
-}
-function homeworkBadgeStyle(status) {
-  if (status === 'تم' || status === 'تم تمامًا') return { background: 'rgba(34,197,94,0.14)', color: '#15803D' }
-  if (status === 'ناقص' || status === 'جزئي') return { background: 'rgba(245,158,11,0.16)', color: '#B45309' }
-  if (status === 'لم يتم') return { background: 'rgba(239,68,68,0.12)', color: '#B91C1C' }
-  return { background: 'rgba(148,163,184,0.16)', color: '#475569' }
-}
+const qrImage = { width: '220px', height: '220px', display: 'block' }
 
 const goldBtn = {
   background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_HOVER} 100%)`,

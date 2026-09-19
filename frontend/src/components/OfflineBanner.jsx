@@ -25,19 +25,16 @@ export default function OfflineBanner({ isOnline, pending, syncing, onManualSync
   let bgClass, text, icon
 
   if (!isOnline) {
-    // Calm + reassuring (user round): the alarming full-red banner read like
-    // an error. Offline is SAFE here — every mark is queued on-device and
-    // syncs automatically — so the banner says exactly that, in amber.
-    bgClass = 'bg-amber-500/90 border-amber-400/60 text-brand-navy'
-    text = 'أنت غير متصل بالإنترنت — كل تغييراتك محفوظة على جهازك وهتتزامن تلقائيًا أول ما النت يرجع'
-    icon = '📴'
+    bgClass = 'bg-rose-600/90 border-rose-500/60'
+    text = 'أنت غير متصل بالإنترنت — التغييرات هتتزامن لما الرجوع أونلاين'
+    icon = '⚠️'
   } else if (syncing) {
     bgClass = 'bg-brand-gold/90 border-brand-gold/60 text-brand-navy'
     text = 'جاري مزامنة البيانات...'
     icon = '🔄'
   } else if (pending > 0) {
     bgClass = 'bg-amber-500/90 border-amber-400/60 text-brand-navy'
-    text = `${pending} تغيير محفوظ على جهازك — هيتزامن تلقائيًا`
+    text = `${pending} عمليات معلّقة — اضغط للمزامنة الآن`
     icon = '📡'
   } else return null
 

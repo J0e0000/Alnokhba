@@ -1,33 +1,24 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
 import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from './UIContext'
+import NotificationBell from '../components/NotificationBell'
+import TeacherNotificationCenter from '../components/TeacherNotificationCenter'
 import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
 import HistoryModal from '../components/HistoryModal'
 import MessageQueueModal from '../components/MessageQueueModal'
-import GlobalSearch from '../components/GlobalSearch'
-import Tutorial, { TOUR_DONE, markTourDone } from '../components/Tutorial'
-import { BackToTop } from '../components/ScrollFloat'
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
 import HomePage from '../home/HomePage'
-
-// ═══════════════════════════════════════════════════════════════════════════
-// APP SHELL — top bar + sidebar/bottom nav + area switch.
-// Performance: secondary areas are code-split (React.lazy) so the initial
-// bundle carries only Home + the shell; the workspace chunk loads on demand.
-// A11y (brief §17/§35): skip-to-content link, main landmark, focus-visible.
-// ═══════════════════════════════════════════════════════════════════════════
-
-const SessionWorkspace = lazy(() => import('../session/SessionWorkspace'))
-const StudentsArea = lazy(() => import('../areas/StudentsArea'))
-const HistoryArea = lazy(() => import('../areas/HistoryArea'))
-const ReportsArea = lazy(() => import('../areas/ReportsArea'))
-const AnalyticsArea = lazy(() => import('../areas/AnalyticsArea'))
-const SettingsArea = lazy(() => import('../areas/SettingsArea'))
-const HelpArea = lazy(() => import('../areas/HelpArea'))
+import SessionWorkspace from '../session/SessionWorkspace'
+import StudentsArea from '../areas/StudentsArea'
+import HistoryArea from '../areas/HistoryArea'
+import ReportsArea from '../areas/ReportsArea'
+import AnalyticsArea from '../areas/AnalyticsArea'
+import SettingsArea from '../areas/SettingsArea'
+import useIsMobile from './useIsMobile'
 
 const IS_DEMO = Boolean(typeof window !== 'undefined' && window.__NOKHBA_DEMO__)
 
@@ -40,18 +31,9 @@ const NAV = [
   { key: 'history', label: 'سجل الطالب', labelEn: 'Student History', icon: '◷' },
   { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
   { key: 'analytics', label: 'التحليلات', labelEn: 'Analytics', icon: '⌁' },
-  { key: 'help', label: 'المساعدة', labelEn: 'Help', icon: '؟' },
   { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
 ]
-const MOBILE_NAV = NAV.filter((n) => ['home', 'students', 'history'].includes(n.key))
-const MORE_NAV = NAV.filter((n) => ['reports', 'analytics', 'settings'].includes(n.key))
-
-const AreaFallback = () => (
-  <div className="pt-2">
-    <div className="nk-skeleton h-20 w-full mb-4" />
-    <div className="nk-skeleton h-40 w-full" />
-  </div>
-)
+const MOBILE_NAV = NAV.filter((n) => n.key !== 'analytics')
 
 export default function AppShell({ onOpenAdmin }) {
   const { profile, signOut, isAssistant, ownerProfile } = useAuth()
@@ -60,12 +42,24 @@ export default function AppShell({ onOpenAdmin }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const ui = useUI()
+  const isMobile = useIsMobile()
 
-  const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyCount, setHistoryCount] = useState(getHistoryCount())
-  const [tourOpen, setTourOpen] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(false)
+  // FOCUS MODE (mobile UX restructure): while the teacher is inside a session
+  // task on a phone, the global chrome (top bar with theme/lang/account, the
+  // bottom navigation, the sidebar) does NOT render at all — it is a real
+  // unmount, not a CSS hide — so nothing competes with the current task and
+  // nothing keeps re-rendering behind it. "Exit Focus" (in the workspace's
+  // focused header) leaves the task back to Home; it is NEVER logout.
+  const focusActive = isMobile && ui.area === 'session'
+
   const [accountOpen, setAccountOpen] = useState(false)
+  const [notifCenterOpen, setNotifCenterOpen] = useState(false)
+  const historyOpen = ui.historyOpen
+  const setHistoryOpen = ui.setHistoryOpen
+  const [historyCount, setHistoryCount] = useState(getHistoryCount())
+  const [dismissedBroadcasts, setDismissedBroadcasts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('dismissedBroadcasts') || '[]') } catch { return [] }
+  })
 
   useEffect(() => {
     const refresh = () => setHistoryCount(getHistoryCount())
@@ -73,46 +67,21 @@ export default function AppShell({ onOpenAdmin }) {
     return () => window.clearInterval(timer)
   }, [])
 
-  // Guided tour: auto-runs once per device on first entry, restartable via
-  // the Help Center / floating help button (brief §19–§21, §27).
-  useEffect(() => {
-    const start = () => setTourOpen(true)
-    window.addEventListener('nk:start-tour', start)
-    if (!TOUR_DONE()) {
-      const t = window.setTimeout(start, 900)
-      return () => { window.clearTimeout(t); window.removeEventListener('nk:start-tour', start) }
-    }
-    return () => window.removeEventListener('nk:start-tour', start)
-  }, [])
-
-  const closeTour = () => { markTourDone(); setTourOpen(false) }
-
-  // Global search: Ctrl/⌘+K (brief §16).
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
-        e.preventDefault()
-        if (ui.searchOpen) ui.closeSearch()
-        else ui.openSearch()
-      }
-      if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) {
-        e.preventDefault()
-        ui.openSearch()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [ui])
+  const dismissBroadcast = (id) => {
+    const next = [...dismissedBroadcasts, id]
+    setDismissedBroadcasts(next)
+    localStorage.setItem('dismissedBroadcasts', JSON.stringify(next))
+  }
 
   const dateLabel = useMemo(() => (isArabic ? AR_DATE : EN_DATE).format(new Date()), [isArabic])
+  const brandName = ws.settings ? null : null
+  void brandName
 
   const activeNav = ui.area === 'session' ? 'home' : ui.area
 
-  // LOGOUT SAFETY (UX round): logout lives ONLY in the account menu (under
-  // the user's name) and in Settings — never in the bottom navigation, the
-  // More sheet, or next to workflow actions — and always asks for
-  // confirmation first (session-aware wording). Signing out also clears the
-  // persisted route/position keys so the next login starts fresh.
+  // LOGOUT SAFETY (UX restructure): logout lives ONLY in the account menu
+  // (under the user's name) and in Settings — never in the bottom navigation
+  // or next to workflow actions — and always asks for confirmation first.
   const handleSignOut = async () => {
     setAccountOpen(false)
     const ok = await ui.askConfirm(
@@ -123,15 +92,7 @@ export default function AppShell({ onOpenAdmin }) {
         : (isArabic ? 'تسجيل الخروج من حسابك؟' : 'Sign out of your account?'),
       { title: isArabic ? 'تسجيل الخروج' : 'Sign out', confirmLabel: isArabic ? 'تسجيل الخروج' : 'Sign out', danger: true },
     )
-    if (ok) {
-      try {
-        sessionStorage.removeItem(`nokhba_ui_route_${profile?.id || 'anon'}`)
-        sessionStorage.removeItem('nokhba_ws_tab')
-        sessionStorage.removeItem('nokhba_ws_att_pos')
-        sessionStorage.removeItem('nokhba_ws_int_pos')
-      } catch { /* ignore */ }
-      await signOut()
-    }
+    if (ok) await signOut()
   }
 
   const roleLabel = profile?.is_admin
@@ -164,13 +125,9 @@ export default function AppShell({ onOpenAdmin }) {
   )
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--app-bg)' }}>
-      {/* Skip-to-content (brief §17): first focusable element, jumps to <main> */}
-      <a href="#main-content" className="nk-skip-link">
-        {isArabic ? 'تخطَّ إلى المحتوى الرئيسي' : 'Skip to content'}
-      </a>
-
-      {/* ── Top bar ─────────────────────────────────────────────── */}
+    <div className={`min-h-screen flex flex-col${focusActive ? ' nk-focus' : ''}`} style={{ background: 'var(--app-bg)' }}>
+      {/* ── Top bar — unmounted during mobile Focus Mode ────────── */}
+      {!focusActive && (
       <header
         className="sticky top-0 z-40 border-b border-subtle"
         style={{ background: 'var(--surface)', backdropFilter: 'none' }}
@@ -197,22 +154,12 @@ export default function AppShell({ onOpenAdmin }) {
           )}
 
           <div className="flex items-center gap-1.5 ms-auto">
+            <OfflineBanner isOnline={ws.isOnline} pending={0} syncing={false} onManualSync={ws.syncPendingSaves} />
+            {/* FREQUENCY-BASED UI: theme / language / undo / history are
+                low-frequency controls — the desktop header keeps them, mobile
+                reaches them from Settings → Appearance & tools (spec 5, 34). */}
             <button
-              className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
-              onClick={ui.openSearch}
-              title={isArabic ? 'البحث الشامل (Ctrl+K)' : 'Search (Ctrl+K)'}
-              aria-label={isArabic ? 'البحث الشامل' : 'Global search'}
-            >
-              ⌕
-            </button>
-            <OfflineBanner
-              isOnline={ws.isOnline}
-              pending={wsMeta.pendingOps}
-              syncing={wsMeta.opsSyncing}
-              onManualSync={wsMeta.syncPendingOps}
-            />
-            <button
-              className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+              className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
               onClick={toggleTheme}
               title={isDark ? 'الوضع الفاتح' : 'الوضع الليلي'}
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -220,11 +167,29 @@ export default function AppShell({ onOpenAdmin }) {
               {isDark ? '☀' : '☾'}
             </button>
             <button
-              className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg text-[.7rem] font-black"
+              className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg text-[.7rem] font-black"
               onClick={toggleLang}
               title="العربية / English"
             >
               {lang === 'ar' ? 'EN' : 'ع'}
+            </button>
+            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} />
+            <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} />
+            <button
+              className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+              onClick={() => { ws.handleUndo(); }}
+              title="تراجع"
+              aria-label="تراجع"
+            >
+              ↺
+            </button>
+            <button
+              className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+              onClick={() => setHistoryOpen(true)}
+              title="سجل العمليات"
+              aria-label="سجل العمليات"
+            >
+              ⧖
             </button>
             {profile?.is_admin && !isAssistant && (
               <button
@@ -243,7 +208,6 @@ export default function AppShell({ onOpenAdmin }) {
                 title={profile?.full_name}
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
-                aria-label={isArabic ? 'قائمة الحساب' : 'Account menu'}
               >
                 {(profile?.full_name || 'ن').slice(0, 1)}
               </button>
@@ -251,95 +215,48 @@ export default function AppShell({ onOpenAdmin }) {
           </div>
         </div>
       </header>
+      )}
 
       {/* ── Body ────────────────────────────────────────────────── */}
-      <div className="mx-auto w-full max-w-[1180px] flex-1 px-4 pt-4 pb-24 lg:pb-8 flex gap-5 items-start">
+      <div
+        className={`mx-auto w-full flex-1 pt-4 flex gap-5 items-start ${focusActive ? 'max-w-[760px] px-2 pb-28' : 'max-w-[1180px] px-4 pb-24 lg:pb-8'}`}
+      >
         {/* Desktop sidebar (prototype: navy band) */}
         <aside className="hidden lg:block w-[215px] shrink-0 nk-sidebar" aria-label="التنقل الرئيسي">
           <h3>{isArabic ? 'مساحة المدرس' : 'Teacher Space'}</h3>
           <nav className="grid gap-2">{nav}</nav>
         </aside>
 
-        <main id="main-content" className="flex-1 min-w-0" tabIndex={-1}>
-          <Suspense fallback={<AreaFallback />}>
-            {ui.area === 'home' && <HomePage />}
-            {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
-            {ui.area === 'students' && <StudentsArea />}
-            {ui.area === 'history' && <HistoryArea />}
-            {ui.area === 'reports' && <ReportsArea />}
-            {ui.area === 'analytics' && <AnalyticsArea />}
-            {ui.area === 'settings' && <SettingsArea />}
-            {ui.area === 'help' && <HelpArea />}
-          </Suspense>
+        <main className="flex-1 min-w-0">
+          {ui.area === 'home' && <HomePage />}
+          {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
+          {ui.area === 'students' && <StudentsArea />}
+          {ui.area === 'history' && <HistoryArea />}
+          {ui.area === 'reports' && <ReportsArea />}
+          {ui.area === 'analytics' && <AnalyticsArea />}
+          {ui.area === 'settings' && <SettingsArea />}
         </main>
       </div>
 
-      {/* ── Mobile bottom nav (brief §11): primary tabs + a More sheet for
-          the rest — a real mobile menu, not a shrunken sidebar. ── */}
+      {/* ── Mobile bottom nav — navigation ONLY, hidden during Focus Mode:
+          the session task owns the screen. Logout lives in the account menu:
+          a stray tap here must never end the user's session. ─────────── */}
+      {!focusActive && (
       <nav className="nk-bottom-nav lg:hidden" aria-label="التنقل">
         {MOBILE_NAV.map((item) => (
           <button
             key={item.key}
             className={activeNav === item.key ? 'active' : ''}
-            onClick={() => { setMoreOpen(false); ui.setArea(item.key) }}
+            onClick={() => ui.setArea(item.key)}
           >
             <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>{item.icon}</span>
             <span>{isArabic ? item.label : item.labelEn}</span>
           </button>
         ))}
-        <button
-          className={MORE_NAV.some((n) => n.key === activeNav) ? 'active' : ''}
-          onClick={() => setMoreOpen(true)}
-          aria-expanded={moreOpen}
-          aria-haspopup="dialog"
-        >
-          <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>⋯</span>
-          <span>{isArabic ? 'المزيد' : 'More'}</span>
-        </button>
       </nav>
-
-      {moreOpen && (
-        <div
-          className="fixed inset-0 z-[92] lg:hidden"
-          style={{ background: 'rgba(4,10,22,.45)' }}
-          onClick={() => setMoreOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={isArabic ? 'المزيد من الأقسام' : 'More sections'}
-        >
-          <div
-            className="nk-more-sheet"
-            onClick={(e) => e.stopPropagation()}
-            role="menu"
-          >
-            {MORE_NAV.map((item) => (
-              <button
-                key={item.key}
-                role="menuitem"
-                className={`nk-more-sheet__item ${activeNav === item.key ? 'active' : ''}`}
-                onClick={() => { setMoreOpen(false); ui.setArea(item.key) }}
-              >
-                <span aria-hidden="true">{item.icon}</span>
-                <span>{isArabic ? item.label : item.labelEn}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       )}
 
-      {/* ── Floating actions (brief §27/§28): help + back-to-top only ── */}
-      <button
-        type="button"
-        className="nk-fab nk-fab--help"
-        onClick={() => ui.openHelp()}
-        aria-label={isArabic ? 'المساعدة' : 'Help'}
-        title={isArabic ? 'المساعدة والأسئلة الشائعة' : 'Help & FAQ'}
-      >
-        ؟
-      </button>
-      <BackToTop />
-
-      {/* ── Account menu (logout lives here — UX round) ─────────── */}
+      {/* ── Overlays ────────────────────────────────────────────── */}
       {accountOpen && profile && (
         <>
           <div className="nk-account-backdrop" onClick={() => setAccountOpen(false)} aria-hidden="true" />
@@ -372,10 +289,13 @@ export default function AppShell({ onOpenAdmin }) {
           </div>
         </>
       )}
-
-      {/* ── Overlays ────────────────────────────────────────────── */}
-      <GlobalSearch />
-      <Tutorial open={tourOpen} onClose={closeTour} />
+      {notifCenterOpen && (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 pt-16" onClick={() => setNotifCenterOpen(false)}>
+          <div className="glass-card w-full max-w-lg p-4 max-h-[75vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <TeacherNotificationCenter />
+          </div>
+        </div>
+      )}
       <HistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -402,5 +322,18 @@ export default function AppShell({ onOpenAdmin }) {
         historyCount={historyCount}
       />
     </div>
+  )
+}
+
+function TeacherNotificationCenterLauncher({ onOpen }) {
+  return (
+    <button
+      className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+      onClick={onOpen}
+      title="مركز الإشعارات"
+      aria-label="مركز الإشعارات"
+    >
+      ◔
+    </button>
   )
 }

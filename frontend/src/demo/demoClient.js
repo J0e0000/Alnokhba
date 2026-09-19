@@ -107,7 +107,7 @@ function seed() {
     msg_report_template: '', report_fields: ['rank', 'position', 'points', 'warnings', 'attendance', 'homework', 'session', 'logs'],
     insight_config: { attendance_warning_threshold: 75, performance_warning_threshold: 60, repeated_absence_count: 3 },
     notification_preferences: { attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true },
-    whatsapp_number: '201000000000', qr_message_template: 'مرحباً {studentName}\nرابط متابعة الطالب: {link}',
+    whatsapp_number: '201000000000', qr_message_template: 'مرحباً {studentName}\nرابط متابعة الطالب:',
     absence_warning_threshold: 2, absence_attention_threshold: 3,
   }
   const branding = {

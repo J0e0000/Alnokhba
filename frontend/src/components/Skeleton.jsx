@@ -1,6 +1,5 @@
 export function SkeletonBar({ w = 'w-full', h = 'h-4' }) {
-  // Theme-var background: correct in light AND dark (was hardcoded slate).
-  return <div className={`${w} ${h} rounded-md animate-pulse`} style={{ background: 'var(--surface-container-high)' }} />
+  return <div className={`${w} ${h} rounded-md bg-slate-200 animate-pulse`} />
 }
 
 export function SkeletonCard() {

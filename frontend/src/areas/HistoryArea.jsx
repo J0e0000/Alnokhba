@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react'
 import { useEffect } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import FirstHint from '../components/FirstHint'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, getStudentRankPosition, normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, checkAcademicWarning } from '../lib/helpers'
+import { weeklyAttendanceForStudent, WEEKLY_STATUS_LABEL } from '../lib/week'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENT HISTORY (rule 21) — quick reference, deliberately NOT a dashboard.
@@ -19,6 +19,16 @@ export default function HistoryArea() {
   const [selectedId, setSelectedId] = useState(null)
   const [behaviorLogs, setBehaviorLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
+
+  // Deep-open support: clicking a student's NAME anywhere (e.g. Students tab)
+  // jumps here and opens that student's profile directly (read-only surface).
+  useEffect(() => {
+    if (ui.historyStudentId) {
+      setSelectedId(ui.historyStudentId)
+      ui.clearHistoryStudent()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ui.historyStudentId])
 
   const matches = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -49,14 +59,6 @@ export default function HistoryArea() {
   if (!student) {
     return (
       <div>
-        <FirstHint
-          id="history-search"
-          isArabic={isArabic}
-          title={isArabic ? 'ابحث عن طالب لعرض سجله' : 'Search a student to view their record'}
-          body={isArabic
-            ? 'اكتب الاسم أو الكود أو الهاتف — السجل يعرض الحضور والدرجات والنقاط، مع أزرار تواصل مباشرة.'
-            : 'Type a name, code or phone — the record shows attendance, grades and points, with direct contact buttons.'}
-        />
         <h1 className="text-lg font-black mb-1">{isArabic ? 'سجل الطالب' : 'Student history'}</h1>
         <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'ابحث بالاسم أو الكود أو الهاتف لعرض السجل السريع.' : 'Search by name, code, or phone for a quick history view.'}</p>
         <input
@@ -93,14 +95,6 @@ export default function HistoryArea() {
 
   return (
     <div>
-      <FirstHint
-        id="history-surface"
-        isArabic={isArabic}
-        title={isArabic ? 'سجل الطالب — للمراجعة والتواصل فقط' : 'Student History — review & contact only'}
-        body={isArabic
-          ? 'هنا تراجع تاريخ الطالب وتتواصل مع ولي أمره. تعديل بيانات الحصة (حضور، واجب، درجات) يتم من داخل مساحة الحصة فقط.'
-          : 'Review a student\'s history and contact their parent here. Session data (attendance, homework, grades) is edited inside the Session Workspace only.'}
-      />
       <button className="btn-ghost rounded-xl px-4 py-2 text-[.75rem] font-extrabold mb-4" onClick={() => { setSelectedId(null); setSearch('') }}>
         → {isArabic ? 'بحث آخر' : 'New search'}
       </button>
@@ -131,6 +125,18 @@ export default function HistoryArea() {
           <span className="nk-pill nk-pill-neutral">{isArabic ? 'الترتيب' : 'Rank'}: {position}</span>
           {(student.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {isArabic ? 'إنذارات' : 'Warnings'}: {student.warnings}</span>}
           {attendancePct !== null && <span className={`nk-pill ${attendancePct >= 75 ? 'nk-pill-live' : 'nk-pill-pending'}`}>{isArabic ? 'نسبة الحضور' : 'Attendance'}: {attendancePct}%</span>}
+          {(() => {
+            // DERIVED weekly attendance (Friday → Thursday, spec 17–20): read
+            // straight from session attendance records — never stored, never
+            // overwrites session history. attended > absent > not recorded.
+            const weekly = weeklyAttendanceForStudent(ws.allAttendance || [], student.id)
+            const label = WEEKLY_STATUS_LABEL[weekly.status]
+            return (
+              <span className={`nk-pill ${weekly.status === 'attended' ? 'nk-pill-live' : weekly.status === 'absent' ? 'nk-pill-danger' : 'nk-pill-neutral'}`} title={isArabic ? `الأسبوع: ${weekly.weekStart} ← ${weekly.weekEnd}` : `Week: ${weekly.weekStart} → ${weekly.weekEnd}`}>
+                {isArabic ? label.ar : label.en}{weekly.recorded > 0 ? ` · ${weekly.present}/${weekly.recorded}` : ''}
+              </span>
+            )
+          })()}
           {academicWarning && <span className="nk-pill nk-pill-danger">⚠ {isArabic ? 'إنذار أكاديمي' : 'Academic warning'}</span>}
         </div>
       </div>

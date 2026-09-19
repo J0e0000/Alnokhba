@@ -1,82 +1,56 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
+import { buildTextReport } from '../../lib/qrPdfWhatsApp'
+import { isValidPhone } from '../../lib/helpers'
 import { usePublishBar } from '../WorkflowBar'
 
-// PERF (performance round): html5-qrcode (~230 KB minified) used to ship in
-// the first bundle on every page even though the scanner sits behind one
-// button. It is code-split now and streams in the first time the teacher
-// opens the scanner.
+// PERF (performance round): html5-qrcode (~230 KB minified) streams in the
+// first time the teacher actually opens the scanner — never up front.
 const QRSessionScanner = lazy(() => import('../QRSessionScanner'))
 const ScannerFallback = () => <div className="nk-row" style={{ opacity: 0.6 }}>…</div>
 
 const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم يرصد': 'لم يُرصد' }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ATTENDANCE TAB (rules 9–10 + UX restructure round)
-// - Attendance is SESSION-specific (lesson_session_id): two sessions of the
-//   same group in one week are two independent attendance events.
-// - Marks persist instantly through the same RPC as production
-//   (upsert_lesson_attendance) — no Save-then-continue step.
-// - SEQUENTIAL WORKFLOW (default): one student in focus, mark → التالي →
-//   next student. The persistent bottom bar is contextual:
-//     · unrecorded  → primary = حاضر / غائب
-//     · recorded    → primary = التالي (activated by recording)
-//     · last student→ primary = متابعة إلى المرحلة التالية
-//   Position and progress ("٧ من ٢٤") stay visible at all times.
-// - LIST VIEW stays available (search / filters / bulk / QR) as the
-//   secondary view — progressive disclosure, nothing removed.
+// ATTENDANCE TAB — COMPACT LIST (mobile UX restructure, spec 6–13, 30–32)
 //
-// SPEED + RELOAD (user round): focus mode has its own search-to-jump
-// (type a name → tap the chip → that student opens), and the position
-// (studentId + mode) persists in sessionStorage per group — a refresh or
-// crash resumes on the SAME student, not back at the first one.
+// The sequential student-by-student wizard is REMOVED. Attendance is ONE
+// compact list the teacher scans and marks directly:
+//
+//   [Exit Focus]  Attendance  [status]
+//   [🔍 search ……………………]  [⛶ QR]
+//   student row  [حاضر] [غائب]
+//   student row  [حاضر] [غائب]
+//   …
+//   ── Complete Attendance ──   ← explicit stage completion (spec 13)
+//
+// - Search is INTEGRATED: type → the list filters in place → keep the
+//   keyboard open → mark directly from the results → clear → next. With
+//   `interactive-widget=resizes-content` the whole flow stays above the
+//   keyboard (spec 9–10). No separate search screen, no scrolling hunt.
+// - Marks persist INSTANTLY through the production RPC (upsert_lesson_attendance)
+//   — every tap is already autosave (spec 25–26). Offline marks queue.
+// - "Complete Attendance" is an explicit teacher action — task progress is
+//   NOT derived from the percentage of marked students (spec 13).
+// - Session-level absent answer (spec 30–32): who was absent THIS session +
+//   absence reports, shown only when absentees exist (context before capability).
 // ═══════════════════════════════════════════════════════════════════════════
-export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) {
+export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, onBar }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const ui = useUI()
   const { isArabic } = ws
-  const [mode, setMode] = useState('focus') // focus (sequential) | list
   const [search, setSearch] = useState('')
-  const [focusSearch, setFocusSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
+  const counts = ws.countsForLesson(groupId)
+  const markedCount = counts.present + counts.absent
 
-  // Sequential position: resume at the first unrecorded student, or at the
-  // SAVED student after a reload/crash (restore runs once per group).
   const statusOf = (s) => attendanceMap[s.id]?.status || 'لم يرصد'
-  const [idx, setIdx] = useState(0)
-  const restoredRef = useRef('')
-  useEffect(() => {
-    if (!students.length) return
-    if (restoredRef.current === groupId) return
-    restoredRef.current = groupId
-    let target = -1
-    try {
-      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_att_pos') || 'null')
-      if (saved?.groupId === groupId && saved.studentId) target = students.findIndex((s) => s.id === saved.studentId)
-      if (saved?.groupId === groupId && saved.mode) setMode(saved.mode)
-    } catch { /* ignore */ }
-    if (target < 0) target = students.findIndex((s) => statusOf(s) === 'لم يرصد')
-    setIdx(target >= 0 ? target : 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, students.length])
-
-  // Persist position (studentId — survives roster reshuffles better than index).
-  useEffect(() => {
-    const currentId = students[idx]?.id || null
-    try { sessionStorage.setItem('nokhba_ws_att_pos', JSON.stringify({ groupId, studentId: currentId, mode })) } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, idx, mode, students.length])
-
-  // Clamp if the roster shrinks (defensive).
-  useEffect(() => {
-    if (idx > 0 && idx >= students.length) setIdx(Math.max(0, students.length - 1))
-  }, [students.length, idx])
 
   const visible = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -91,10 +65,67 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [students, search, filter, attendanceMap])
 
-  const counts = ws.countsForLesson(groupId)
-  const markedCount = counts.present + counts.absent
+  // ── Session-level absentees (spec 31) + WhatsApp absence reports (spec 30).
+  // Report text uses the SAME production template as the report queue.
+  const absentStudents = useMemo(
+    () => students.filter((s) => statusOf(s) === 'غائب'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [students, attendanceMap],
+  )
 
-  // ── Read-only view (completed session) — unchanged behavior ──────────────
+  const buildAbsenceQueue = () => {
+    const ranks = ws.ranks
+    const all = ws.students
+    const lesson = ws.activeLesson
+    const items = []
+    for (const s of absentStudents) {
+      if (!s.phone || !isValidPhone(s.phone)) continue
+      const session = {
+        lesson_topic: lesson?.lesson_topic || '',
+        homework_text: lesson?.homework_text || '',
+        video_link: lesson?.video_link || '',
+        attendance: 'غائب',
+      }
+      const reportStudent = { ...s, attendance_status: 'غائب', hw_status: attendanceMap[s.id]?.homework_status || s.hw_status }
+      const text = buildTextReport(reportStudent, { ranks, allStudents: all, session, examScores: ws.examScoresByStudent[s.id] || [] })
+      items.push({ student: reportStudent, phone: s.phone, message: text, lessonId: lesson?.id })
+    }
+    if (items.length === 0) {
+      ws.showToast?.(isArabic ? 'لا يوجد غائبون لديهم أرقام صحيحة' : 'No absent students with valid phone numbers', 'error')
+      return
+    }
+    ui.startQueue(items)
+  }
+
+  // ── Workflow bar — published UNCONDITIONALLY (the usePublishBar hook must
+  // run on every render), with a null spec for the read-only view. ────────
+  const savingAny = wsMeta.savingIds.size > 0
+  const barData = lessonOpen ? {
+    ariaLabel: isArabic ? 'إجراءات الحضور' : 'Attendance actions',
+    primary: [{
+      key: 'completeStage',
+      kind: 'gold',
+      label: isArabic ? '✓ إتمام الحضور والمتابعة ←' : '✓ Complete attendance →',
+      disabled: !onCompleteStage,
+    }],
+    secondary: [
+      { key: 'bulkPresent', label: `✓ ${isArabic ? 'الكل حاضر' : 'All present'}`, title: isArabic ? 'رصد كل الطلاب حاضر دفعة واحدة' : 'Mark everyone present in one tap' },
+      { key: 'bulkAbsent', label: `✗ ${isArabic ? 'رصد الباقي غائبًا' : 'Mark rest absent'}`, title: isArabic ? 'رصد غير المرصد غائبًا (سيرفر)' : 'Server-side mark remaining as absent' },
+      { key: 'openQR', label: '⛶ QR', title: isArabic ? 'مسح QR الطالب' : 'Scan student QR' },
+    ],
+    meta: savingAny
+      ? `… ${isArabic ? 'جاري الحفظ' : 'Saving'}`
+      : (isArabic ? `حاضر ${counts.present} · غائب ${counts.absent} · ${counts.unrecorded} لم يُرصد` : `${counts.present} present · ${counts.absent} absent · ${counts.unrecorded} unmarked`),
+  } : null
+  const barHandlers = {
+    completeStage: () => onCompleteStage?.(),
+    bulkPresent: () => ws.markAllPresent(groupId, ws.activeLessonId),
+    bulkAbsent: () => ws.markGroupAbsences(ws.activeLessonId),
+    openQR: () => setQrOpen(true),
+  }
+  usePublishBar(lessonOpen ? onBar : null, barData, barHandlers)
+
+  // ── Read-only view (completed session) — same compact list, no controls ──
   if (!lessonOpen) {
     return (
       <div>
@@ -103,14 +134,21 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
             ? 'هذه الحصة منتهية ومحفوظة — الحضور للعرض فقط. افتح حصة جديدة من التقرير أو الرئيسية للرصد.'
             : 'This session is completed and locked — attendance is read-only. Open a new session to record.'}
         </div>
+        <input
+          className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full mb-3"
+          placeholder={isArabic ? '🔍 بحث بالاسم أو الكود...' : 'Search name / code...'}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label={isArabic ? 'بحث سريع' : 'Quick search'}
+        />
         <div className="grid gap-2">
-          {students.map((s) => {
+          {visible.map((s) => {
             const status = attendanceMap[s.id]?.status || s.attendance_status
             return (
-              <div key={s.id} className="nk-row">
-                <span className="min-w-0">
+              <div key={s.id} className="nk-att-row">
+                <span className="nk-att-row__name">
                   <b className="truncate">{s.name}</b>
-                  <small>حالة الحضور: {STATUS_LABEL[status] || status}</small>
+                  <small>{STATUS_LABEL[status] || status}</small>
                 </span>
                 <span className={`nk-pill ${status === 'حاضر' ? 'nk-pill-live' : status === 'غائب' ? 'nk-pill-danger' : 'nk-pill-neutral'}`}>
                   {STATUS_LABEL[status] || status}
@@ -118,287 +156,122 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
               </div>
             )
           })}
-          {students.length === 0 && <p className="text-sm text-fg-muted text-center py-6">{isArabic ? 'لا يوجد طلاب في هذه المجموعة' : 'No students in this group'}</p>}
+          {visible.length === 0 && <p className="text-sm text-fg-muted text-center py-6">{isArabic ? (search ? 'لا نتائج مطابقة' : 'لا يوجد طلاب في هذه المجموعة') : (search ? 'No matching students' : 'No students in this group')}</p>}
         </div>
       </div>
     )
   }
 
-  // ── Sequential (focus) mode ───────────────────────────────────────────────
-  const total = students.length
-  const current = students[idx] || null
-  const currentStatus = current ? statusOf(current) : null
-  const recorded = Boolean(current) && currentStatus !== 'لم يرصد'
-  const saving = Boolean(current) && wsMeta.savingIds.has(current.id)
-  const saved = Boolean(current) && wsMeta.savedIds.has(current.id)
-  const isLast = idx >= total - 1
-
-  const mark = (st) => { if (current) ws.setAttendance(current.id, st, ws.activeLessonId) }
-  const goNext = () => { if (!isLast) setIdx((i) => Math.min(total - 1, i + 1)) }
-  const goPrev = () => { setIdx((i) => Math.max(0, i - 1)) }
-  const jumpToStudent = (studentId) => {
-    const i = students.findIndex((s) => s.id === studentId)
-    if (i >= 0) { setIdx(i); setFocusSearch(''); return true }
-    return false
-  }
-
-  const focusMatches = useMemo(() => {
-    const q = normalizeArabicSearch(focusSearch)
-    if (!q) return []
-    return students
-      .filter((s) => normalizeArabicSearch([s.name, s.code, s.phone].filter(Boolean).join(' ')).includes(q))
-      .slice(0, 5)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusSearch, students, attendanceMap])
-
-  const progressMeta = `${isArabic ? `الطالب ${idx + 1} من ${total}` : `Student ${idx + 1} of ${total}`} · ${
-    saving
-      ? (isArabic ? '… جاري الحفظ' : 'Saving…')
-      : saved || recorded
-        ? `✓ ${isArabic ? 'محفوظ تلقائيًا' : 'Saved'}`
-        : (isArabic ? 'الحفظ فوري بعد الرصد' : 'Auto-saves on mark')
-  }`
-
-  // ── Bar spec (serializable) + handlers — published to the workspace root
-  const barData = mode === 'focus'
-    ? {
-        ariaLabel: isArabic ? 'إجراءات الحضور' : 'Attendance actions',
-        primary: !recorded
-          ? [
-              { key: 'present', kind: 'present', label: `✓ ${isArabic ? 'حاضر' : 'Present'}`, disabled: !current || saving },
-              { key: 'absent', kind: 'absent', label: `✗ ${isArabic ? 'غائب' : 'Absent'}`, disabled: !current || saving },
-            ]
-          : isLast
-            ? [{ key: 'nextStep', kind: 'gold', label: isArabic ? 'متابعة — التفاعل والواجب ←' : 'Continue — Interaction & homework →', disabled: !onGoNext }]
-            : [{ key: 'nextStudent', kind: 'gold', label: isArabic ? 'التالي ←' : 'Next →', disabled: false }],
-        secondary: [
-          { key: 'prevStudent', label: isArabic ? '→ السابق' : '← Previous', disabled: idx === 0, title: isArabic ? 'الطالب السابق' : 'Previous student' },
-          ...(recorded && !isLast
-            ? [{ key: 'clear', label: `⟲ ${isArabic ? 'مسح' : 'Clear'}`, disabled: saving, title: isArabic ? 'مسح الرصد' : 'Clear mark' }]
-            : []),
-          { key: 'openList', label: isArabic ? '☰ القائمة' : '☰ List', disabled: false, title: isArabic ? 'عرض القائمة الكاملة — بحث وفلترة وأدوات جماعية' : 'Full list — search, filters, bulk tools' },
-          { key: 'openQR', label: '⛶ QR', disabled: false, title: isArabic ? 'مسح QR الطالب' : 'Scan student QR' },
-        ],
-        meta: progressMeta,
-      }
-    : {
-        ariaLabel: isArabic ? 'إجراءات الحضور' : 'Attendance actions',
-        primary: [{ key: 'nextStep', kind: 'gold', label: isArabic ? 'متابعة — التفاعل والواجب ←' : 'Continue — Interaction & homework →', disabled: !onGoNext }],
-        secondary: [
-          { key: 'saveSync', label: `💾 ${isArabic ? 'حفظ' : 'Save'}`, disabled: false, title: isArabic ? 'تأكيد المزامنة — كل علامة بتتحفظ فورًا' : 'Confirm sync — every mark persists instantly' },
-          { key: 'openFocus', label: `⚡ ${isArabic ? 'الرصد التسلسلي' : 'Sequential mode'}`, disabled: false, title: isArabic ? 'رصد طالب بطالب — أسرع للمجموعات الكبيرة' : 'Student-by-student entry — faster for big groups' },
-        ],
-        meta: progressMeta,
-      }
-
-  const barHandlers = {
-    present: () => mark('حاضر'),
-    absent: () => mark('غائب'),
-    clear: () => mark('لم يرصد'),
-    nextStudent: goNext,
-    prevStudent: goPrev,
-    openList: () => setMode('list'),
-    openFocus: () => {
-      const first = students.findIndex((s) => statusOf(s) === 'لم يرصد')
-      setIdx(first >= 0 ? first : 0)
-      setMode('focus')
-    },
-    openQR: () => setQrOpen(true),
-    saveSync: () => ws.syncPendingSaves(),
-    nextStep: () => onGoNext?.(),
-  }
-  usePublishBar(lessonOpen ? onBar : null, lessonOpen ? barData : null, barHandlers)
+  // ── Active session: the compact list IS the attendance UI ─────────────────
 
   return (
     <div>
-      {mode === 'focus' && current && (
-        <>
-          {/* Focus card — ONE student, ONE goal */}
-          <div className="nk-focus-card" aria-live="polite">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="nk-focus-muted text-[.7rem] font-black tracking-wide">
-                {isArabic ? `الطالب ${idx + 1} من ${total}` : `Student ${idx + 1} of ${total}`}
-              </span>
-              <span className={`nk-focus-state ${currentStatus === 'حاضر' ? 'nk-focus-state--present' : currentStatus === 'غائب' ? 'nk-focus-state--absent' : 'nk-focus-state--none'}`}>
-                {currentStatus === 'حاضر' ? `✓ ${isArabic ? 'حاضر' : 'Present'}` : currentStatus === 'غائب' ? `✗ ${isArabic ? 'غائب' : 'Absent'}` : (isArabic ? 'لم يُرصد بعد' : 'Not marked yet')}
-              </span>
-            </div>
-            <div className="nk-focus-name">{current.name}</div>
-            <small className="nk-focus-muted text-[.72rem] block">
-              {[current.code, current.stage].filter(Boolean).join(' · ')}
-            </small>
-            <div className="flex items-center gap-2 mt-3">
-              <span className="nk-bar flex-1"><span style={{ width: `${total ? Math.round((markedCount / total) * 100) : 0}%` }} /></span>
-              <span className="nk-focus-muted text-[.66rem] font-extrabold shrink-0">
-                {isArabic ? `تم رصد ${markedCount}/${total}` : `${markedCount}/${total} marked`}
-              </span>
-            </div>
-            <div className="flex items-center gap-3 mt-2 min-h-[1.1rem]">
-              {saving && <span className="nk-focus-muted text-[.68rem] font-extrabold">{isArabic ? '… جاري الحفظ' : 'Saving…'}</span>}
-              {!saving && saved && <span className="nk-focus-saved">✓ {isArabic ? 'تم الحفظ' : 'Saved'}</span>}
-              {!saving && !saved && recorded && <span className="nk-focus-saved">✓ {isArabic ? `تم الرصد: ${STATUS_LABEL[currentStatus] || currentStatus}` : `Recorded: ${STATUS_LABEL[currentStatus] || currentStatus}`}</span>}
-              {!recorded && <span className="nk-focus-muted text-[.68rem]">{isArabic ? 'رصد الحالة يُفعّل زر «التالي»' : 'Marking activates Next'}</span>}
-            </div>
+      {/* Sticky tools — search stays reachable while the list scrolls; with
+          resizes-content the results remain visible ABOVE the keyboard. */}
+      <div className="nk-att-tools">
+        <input
+          className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-0"
+          placeholder={isArabic ? '🔍 اكتب اسم الطالب...' : 'Type a student name...'}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          enterKeyHint="search"
+          autoComplete="off"
+          aria-label={isArabic ? 'بحث سريع عن طالب' : 'Quick student search'}
+        />
+        <button className="nk-wf-ghost shrink-0" onClick={() => setQrOpen(true)} title={isArabic ? 'مسح QR الطالب' : 'Scan student QR'}>
+          ⛶ QR
+        </button>
+      </div>
 
-            {/* Jump tools: search by name/code/phone — one tap to jump */}
-            <div className="mt-3">
-              <input
-                className="glass-input rounded-xl px-3 py-2 text-[.8rem] w-full"
-                placeholder={isArabic ? '🔍 اكتب اسم الطالب للانتقال السريع...' : 'Type a student name to jump...'}
-                value={focusSearch}
-                onChange={(e) => setFocusSearch(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && focusMatches[0]) jumpToStudent(focusMatches[0].id) }}
-                aria-label={isArabic ? 'انتقال سريع لطالب' : 'Quick jump to student'}
-              />
-              {focusMatches.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {focusMatches.map((s) => {
-                    const st = statusOf(s)
-                    return (
-                      <button
-                        key={s.id}
-                        className="nk-pill nk-pill-gold cursor-pointer border-0 px-3 py-1.5 text-[.7rem] font-extrabold"
-                        onClick={() => jumpToStudent(s.id)}
-                      >
-                        {s.name}{st !== 'لم يرصد' ? ' ✓' : ''}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+      {/* Filter chips + live counts — compact, horizontally scrollable */}
+      <div className="nk-att-chips" role="group" aria-label={isArabic ? 'فلترة القائمة' : 'Filter list'}>
+        {[
+          ['all', isArabic ? `الكل (${counts.total})` : `All (${counts.total})`],
+          ['unrecorded', isArabic ? `لم يُرصد (${counts.unrecorded})` : `Unmarked (${counts.unrecorded})`],
+          ['present', isArabic ? `حاضر (${counts.present})` : `Present (${counts.present})`],
+          ['absent', isArabic ? `غائب (${counts.absent})` : `Absent (${counts.absent})`],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            aria-pressed={filter === key}
+            className={filter === key ? 'nk-att-chip nk-att-chip--on' : 'nk-att-chip'}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-          {/* Counters — live, small, non-interactive */}
-          <div className="flex flex-wrap gap-2 mt-3 text-[.68rem] font-extrabold">
-            <span className="nk-pill nk-pill-live">{isArabic ? 'حاضر' : 'Present'}: {counts.present}</span>
-            <span className="nk-pill nk-pill-danger">{isArabic ? 'غائب' : 'Absent'}: {counts.absent}</span>
-            <span className="nk-pill nk-pill-pending">{isArabic ? 'لم يُرصد' : 'Unrecorded'}: {counts.unrecorded}</span>
-          </div>
-        </>
+      {/* Session-level absent block (spec 30–32): answers "who was absent in
+          THIS session" right here — actions appear ONLY when absentees exist. */}
+      {markedCount > 0 && absentStudents.length > 0 && (
+        <div className="nk-att-absent">
+          <span className="nk-att-absent__text">
+            <b>{isArabic ? `الغائبون في هذه الحصة: ${absentStudents.length}` : `Absent in this session: ${absentStudents.length}`}</b>
+            <small className="truncate">{absentStudents.slice(0, 6).map((s) => s.name).join(' · ')}{absentStudents.length > 6 ? ' …' : ''}</small>
+          </span>
+          <span className="nk-att-absent__actions">
+            <button className="nk-wf-ghost" onClick={() => { setFilter('absent'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+              {isArabic ? 'عرض الغائبين' : 'View absent'}
+            </button>
+            <button className="nk-wf-ghost nk-att-absent__send" onClick={buildAbsenceQueue}>
+              ↗ {isArabic ? 'تقارير الغياب' : 'Absence reports'}
+            </button>
+          </span>
+        </div>
       )}
 
-      {mode === 'list' && (
-        <>
-          <div className="nk-notice mb-4">
-            {isArabic
-              ? 'الحضور مستقل لكل حصة — حصة الأحد وحصة الأربعاء حدثان منفصلان. الغائبون لا يظهرون في مرحلة الدرجات ولا يحصلون على صفر تلقائيًا. رصد كل طالب ليس إلزاميًا: عدم رصد طالب لا يمنع التقدم.'
-              : 'Attendance is session-specific — Sunday and Wednesday are independent events. Absent students are excluded from grading and never auto-zeroed. Marking every student is not required: unrecorded students never block progress.'}
-          </div>
-
-          {/* Toolbar: search + filters + bulk + QR + sequential toggle */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <input
-              className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[180px]"
-              placeholder={isArabic ? '🔍 بحث بالاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label={isArabic ? 'بحث سريع' : 'Quick search'}
-            />
-            <div className="flex rounded-xl overflow-hidden border border-subtle">
-              {[
-                ['all', isArabic ? 'الكل' : 'All'],
-                ['unrecorded', isArabic ? 'لم يُرصد' : 'Unrecorded'],
-                ['present', isArabic ? 'حاضر' : 'Present'],
-                ['absent', isArabic ? 'غائب' : 'Absent'],
-              ].map(([key, label]) => (
+      {/* The list — compact rows, direct Present/Absent taps, one tap per mark */}
+      <div className="grid gap-1.5 nk-att-list">
+        {visible.map((s) => {
+          const status = statusOf(s)
+          const savingRow = wsMeta.savingIds.has(s.id)
+          const savedRow = wsMeta.savedIds.has(s.id)
+          return (
+            <div key={s.id} className={`nk-att-row${status === 'حاضر' ? ' nk-att-row--present' : status === 'غائب' ? ' nk-att-row--absent' : ''}`}>
+              <span className="nk-att-row__name">
+                <b className="truncate">{s.name}{savingRow ? ' …' : ''}</b>
+                <small>
+                  {savedRow ? `✓ ${isArabic ? 'تم الحفظ' : 'Saved'}` : [s.code, s.stage].filter(Boolean).join(' · ') || (STATUS_LABEL[status] || status)}
+                </small>
+              </span>
+              <span className="nk-seg nk-seg--att" role="group" aria-label={`${s.name} attendance`}>
                 <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className="px-3 py-2 text-[.72rem] font-extrabold"
-                  style={filter === key
-                    ? { background: 'var(--brand-navy)', color: '#fff' }
-                    : { background: 'var(--surface-container)', color: 'var(--fg-muted)' }}
+                  className={status === 'حاضر' ? 'nk-on-present' : ''}
+                  aria-pressed={status === 'حاضر'}
+                  disabled={savingRow}
+                  onClick={() => ws.setAttendance(s.id, 'حاضر', ws.activeLessonId)}
                 >
-                  {label}
+                  {isArabic ? 'حاضر' : 'Present'}
                 </button>
-              ))}
-            </div>
-            <button className="btn-ghost rounded-xl px-3 py-2.5 text-[.78rem] font-extrabold" onClick={() => setQrOpen(true)}>
-              ⛶ {isArabic ? 'مسح QR' : 'Scan QR'}
-            </button>
-            <button className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => ws.markAllPresent(groupId, ws.activeLessonId)}>
-              ✓ {isArabic ? 'الكل حاضر' : 'All present'}
-            </button>
-            <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => ws.markGroupAbsences(ws.activeLessonId)}>
-              ✗ {isArabic ? 'رصد الغائبين' : 'Mark absences'}
-            </button>
-          </div>
-
-          {/* Counts strip */}
-          <div className="flex flex-wrap gap-2 mb-4 text-[.7rem] font-extrabold">
-            <span className="nk-pill nk-pill-neutral">{isArabic ? 'الطلاب' : 'Students'}: {counts.total}</span>
-            <span className="nk-pill nk-pill-live">{isArabic ? 'حاضر' : 'Present'}: {counts.present}</span>
-            <span className="nk-pill nk-pill-danger">{isArabic ? 'غائب' : 'Absent'}: {counts.absent}</span>
-            <span className="nk-pill nk-pill-pending">{isArabic ? 'لم يُرصد' : 'Unrecorded'}: {counts.unrecorded}</span>
-          </div>
-
-          {/* Rows — Present / Absent / Clear(neutral). Tap the row (not a button)
-              to jump into the sequential flow at that student. */}
-          <div className="grid gap-2">
-            {visible.map((s) => {
-              const row = attendanceMap[s.id]
-              const status = row?.status || 'لم يرصد'
-              const savingRow = wsMeta.savingIds.has(s.id)
-              const savedRow = wsMeta.savedIds.has(s.id)
-              const listIdx = students.findIndex((x) => x.id === s.id)
-              return (
-                <div
-                  key={s.id}
-                  className="nk-row cursor-pointer"
-                  onClick={(e) => {
-                    if (e.target.closest('button')) return
-                    setIdx(listIdx >= 0 ? listIdx : 0)
-                    setMode('focus')
-                  }}
-                  title={isArabic ? 'اضغط لرصد هذا الطالب بالتسلسل' : 'Open this student in sequential mode'}
+                <button
+                  className={status === 'غائب' ? 'nk-on-absent' : ''}
+                  aria-pressed={status === 'غائب'}
+                  disabled={savingRow}
+                  onClick={() => ws.setAttendance(s.id, 'غائب', ws.activeLessonId)}
                 >
-                  <span className="min-w-0">
-                    <b className="truncate">{s.name}{savingRow ? ' …' : ''}</b>
-                    <small>
-                      حالة الحضور: {STATUS_LABEL[status] || status}
-                      {savedRow ? ' · ✓ تم الحفظ' : ''}
-                    </small>
-                  </span>
-                  <span className="nk-seg" role="group" aria-label={`${s.name} attendance`}>
-                    <button
-                      className={status === 'حاضر' ? 'nk-on-present' : ''}
-                      aria-pressed={status === 'حاضر'}
-                      disabled={savingRow}
-                      onClick={() => ws.setAttendance(s.id, 'حاضر', ws.activeLessonId)}
-                    >
-                      {isArabic ? 'حاضر' : 'Present'}
-                    </button>
-                    <button
-                      className={status === 'غائب' ? 'nk-on-absent' : ''}
-                      aria-pressed={status === 'غائب'}
-                      disabled={savingRow}
-                      onClick={() => ws.setAttendance(s.id, 'غائب', ws.activeLessonId)}
-                    >
-                      {isArabic ? 'غائب' : 'Absent'}
-                    </button>
-                    <button
-                      className={status === 'لم يرصد' ? 'nk-on-neutral' : ''}
-                      aria-pressed={status === 'لم يرصد'}
-                      title={isArabic ? 'مسح الرصد (neutral)' : 'Clear to neutral'}
-                      disabled={savingRow || status === 'لم يرصد'}
-                      onClick={() => ws.setAttendance(s.id, 'لم يرصد', ws.activeLessonId)}
-                    >
-                      ⟲
-                    </button>
-                  </span>
-                </div>
-              )
-            })}
-            {visible.length === 0 && (
-              <p className="text-center py-6 text-sm text-fg-muted">{isArabic ? 'لا نتائج مطابقة' : 'No matching students'}</p>
-            )}
-          </div>
-        </>
-      )}
+                  {isArabic ? 'غائب' : 'Absent'}
+                </button>
+                <button
+                  className={status === 'لم يرصد' ? 'nk-on-neutral' : ''}
+                  aria-pressed={status === 'لم يرصد'}
+                  title={isArabic ? 'مسح الرصد' : 'Clear mark'}
+                  disabled={savingRow || status === 'لم يرصد'}
+                  onClick={() => ws.setAttendance(s.id, 'لم يرصد', ws.activeLessonId)}
+                >
+                  ⟲
+                </button>
+              </span>
+            </div>
+          )
+        })}
+        {visible.length === 0 && (
+          <p className="text-center py-6 text-sm text-fg-muted">{isArabic ? 'لا نتائج مطابقة' : 'No matching students'}</p>
+        )}
+      </div>
 
       {/* The persistent contextual workflow bar is published to the workspace
-          root (see usePublishBar) — one primary action per state. */}
+          root (see usePublishBar) — Complete Attendance is the primary action. */}
 
       <Suspense fallback={qrOpen ? <ScannerFallback /> : null}>
         <QRSessionScanner
@@ -406,12 +279,12 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
           onClose={() => setQrOpen(false)}
           students={ws.students}
           activeLessonId={ws.activeLessonId}
-        markPresent={async (studentId) => {
-          try {
-            await ws.setAttendance(studentId, 'حاضر', ws.activeLessonId)
-            return true
-          } catch { return false }
-        }}
+          markPresent={async (studentId) => {
+            try {
+              await ws.setAttendance(studentId, 'حاضر', ws.activeLessonId)
+              return true
+            } catch { return false }
+          }}
         />
       </Suspense>
     </div>

@@ -322,23 +322,15 @@ export async function getStudentPortalLink(studentId) {
 
 /**
  * Generate a QR code data URL encoding the student's unique QR page URL.
- *
- * SCANNABILITY CONTRACT (must survive every real-world capture):
- *  • errorCorrectionLevel 'H' — recovers from 30% damage: screen glare,
- *    WhatsApp image compression, crumpled printouts, screenshots.
- *  • 512px source + 3-module quiet zone — phone cameras and cheap handheld
- *    scanners need the white border and the sharp module edges.
- *  • near-black on pure white — maximum contrast for low-end scanners
- *    (colored QRs fail on budget devices).
  * @param {string} qrUrl - The full URL to encode (e.g. https://.../qr/TOKEN)
  */
 export async function generateStudentQR(qrUrl) {
   try {
     const QRCode = await loadQRCode()
     return await QRCode.toDataURL(qrUrl, {
-      width: 512, margin: 4,
-      color: { dark: '#111111', light: '#FFFFFF' },
-      errorCorrectionLevel: 'H',
+      width: 200, margin: 4,
+      color: { dark: '#0E2954', light: '#FFFFFF' },
+      errorCorrectionLevel: 'M',
     })
   } catch (err) {
     console.error('QR generation failed:', err)

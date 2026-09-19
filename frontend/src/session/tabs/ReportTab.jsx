@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
 import { buildTextReport } from '../../lib/qrPdfWhatsApp'
@@ -11,23 +11,71 @@ import { usePublishBar } from '../WorkflowBar'
 // Pipeline ends here: Review → Session Report → FINISH SESSION → Home.
 // SAVE (lesson details) and FINISH SESSION are two separate actions, and
 // finishing uses the production finalize RPC + final notifications, unchanged.
+//
+// REPORT AUTOSAVE: every field edit mirrors to localStorage immediately
+// (crash-safe) and pushes to the server with a 900ms debounce. Recovery is
+// deterministic: the local mirror is used ONLY when newer than the server
+// row (savedAt > lesson.updated_at) — the server stays source of truth.
+//
+// REPORT SCOPING: the parent-report queue can be built for ALL students,
+// PRESENT students only, or ABSENT students only (spec 30).
 // ═══════════════════════════════════════════════════════════════════════════
+const reportDraftKey = (lessonId) => `nokhba_report_draft_v1_${lessonId || 'none'}`
+
 export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName, onBar }) {
   const ws = useWorkspace()
   const ui = useUI()
   const { isArabic } = ws
-  const [draft, setDraft] = useState(() => ({
-    lesson_topic: lesson?.lesson_topic || '', homework_text: lesson?.homework_text || '', video_link: lesson?.video_link || '',
-  }))
-  const [dirty, setDirty] = useState(false)
+  const restoredRef = useRef(false)
+  const [draft, setDraft] = useState(() => {
+    const base = { lesson_topic: lesson?.lesson_topic || '', homework_text: lesson?.homework_text || '', video_link: lesson?.video_link || '' }
+    try {
+      const raw = lesson?.id ? localStorage.getItem(reportDraftKey(lesson.id)) : null
+      if (raw) {
+        const stored = JSON.parse(raw)
+        const serverUpdatedAt = lesson?.updated_at ? new Date(lesson.updated_at).getTime() : 0
+        // Deterministic reconciliation: local mirror wins ONLY when newer.
+        if (stored?.draft && stored?.savedAt && new Date(stored.savedAt).getTime() > serverUpdatedAt) {
+          restoredRef.current = true
+          return { ...base, ...stored.draft }
+        }
+      }
+    } catch { /* storage blocked */ }
+    return base
+  })
+  const [dirty, setDirty] = useState(restoredRef.current)
   const [saving, setSaving] = useState(false)
   const [finishing, setFinishing] = useState(false)
+  const [queueScope, setQueueScope] = useState('all') // all | present | absent
 
   useEffect(() => {
+    restoredRef.current = false
     setDraft({ lesson_topic: lesson?.lesson_topic || '', homework_text: lesson?.homework_text || '', video_link: lesson?.video_link || '' })
     setDirty(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lesson?.id])
+
+  // Mutation-mirrored draft: local mirror FIRST (crash-safe), then a debounced
+  // server save — text-heavy fields get a reasonable debounce (spec 26).
+  const updateDraft = (patch) => {
+    const next = { ...draft, ...patch }
+    setDraft(next)
+    setDirty(true)
+    try { if (lesson?.id) localStorage.setItem(reportDraftKey(lesson.id), JSON.stringify({ draft: next, savedAt: new Date().toISOString() })) } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (!dirty || !lessonOpen || !lesson?.id) return undefined
+    const t = setTimeout(async () => {
+      const ok = await ws.saveSessionContent(lesson.id, draft)
+      if (ok) {
+        setDirty(false)
+        try { localStorage.removeItem(reportDraftKey(lesson.id)) } catch { /* ignore */ }
+      }
+    }, 900)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, dirty, lessonOpen, lesson?.id])
 
   const groupStudents = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
@@ -36,7 +84,10 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
     setSaving(true)
     const ok = await ws.saveSessionContent(lesson?.id, draft)
     setSaving(false)
-    if (ok) setDirty(false)
+    if (ok) {
+      setDirty(false)
+      try { if (lesson?.id) localStorage.removeItem(reportDraftKey(lesson.id)) } catch { /* ignore */ }
+    }
   }
 
   // Report queue (existing production flow): requires a COMPLETED session.
@@ -47,6 +98,8 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
     for (const s of groupStudents) {
       const row = attendanceMap[s.id]
       const finalAttendance = row?.status || 'لم يرصد'
+      if (queueScope === 'present' && finalAttendance !== 'حاضر') continue
+      if (queueScope === 'absent' && finalAttendance !== 'غائب') continue
       const session = {
         lesson_topic: lesson?.lesson_topic || '',
         homework_text: lesson?.homework_text || '',
@@ -59,7 +112,7 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
       if (s.phone && isValidPhone(s.phone)) items.push({ student: reportStudent, phone: s.phone, message: text, lessonId: lesson?.id })
     }
     if (items.length === 0) {
-      ws.showToast?.(isArabic ? 'لا يوجد طلاب لديهم أرقام صحيحة في هذه المجموعة' : 'No students with valid phone numbers', 'error')
+      ws.showToast?.(isArabic ? 'لا يوجد طلاب مطابقون للنطاق المحدد لديهم أرقام صحيحة' : 'No matching students with valid phone numbers', 'error')
       return
     }
     ui.startQueue(items)
@@ -141,15 +194,15 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
         <div className="grid gap-3 mb-5">
           <label className="block">
             <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'درس اليوم' : "Today's lesson"}</span>
-            <input className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={draft.lesson_topic} onChange={(e) => { setDraft({ ...draft, lesson_topic: e.target.value }); setDirty(true) }} placeholder={isArabic ? 'موضوع الحصة...' : 'Lesson topic...'} />
+            <input className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={draft.lesson_topic} onChange={(e) => updateDraft({ lesson_topic: e.target.value })} placeholder={isArabic ? 'موضوع الحصة...' : 'Lesson topic...'} />
           </label>
           <label className="block">
             <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'تفاصيل الواجب' : 'Homework details'}</span>
-            <textarea className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full min-h-[64px]" value={draft.homework_text} onChange={(e) => { setDraft({ ...draft, homework_text: e.target.value }); setDirty(true) }} placeholder={isArabic ? 'الواجب المطلوب...' : 'Homework...'} />
+            <textarea className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full min-h-[64px]" value={draft.homework_text} onChange={(e) => updateDraft({ homework_text: e.target.value })} placeholder={isArabic ? 'الواجب المطلوب...' : 'Homework...'} />
           </label>
           <label className="block">
             <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'رابط فيديو الشرح' : 'Lesson video link'}</span>
-            <input dir="ltr" className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={draft.video_link} onChange={(e) => { setDraft({ ...draft, video_link: e.target.value }); setDirty(true) }} placeholder="https://..." />
+            <input dir="ltr" className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={draft.video_link} onChange={(e) => updateDraft({ video_link: e.target.value })} placeholder="https://..." />
           </label>
           <div className="flex flex-wrap gap-2 items-center">
             <button className="btn-gold action-button !min-h-[3rem]" disabled={saving || !dirty} onClick={save}>
@@ -173,14 +226,31 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
         </div>
       )}
 
-      {/* Reports queue — completed sessions only (existing business rule) */}
+      {/* Reports queue — completed sessions only (existing business rule).
+          Scope selector (spec 30): all / present-only / absent-only. */}
       <div className="rounded-2xl p-4 mb-5" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
         <b className="block mb-1 text-[.8rem]">{isArabic ? 'تقارير أولياء الأمور (WhatsApp)' : 'Parent reports (WhatsApp)'}</b>
         <p className="text-[.7rem] text-fg-muted m-0 mb-3">
           {lessonCompleted
-            ? (isArabic ? 'ابنِ قائمة الإرسال لطلاب المجموعة — يفتح واتساب لكل طالب على حدة كما هو متاح دائمًا.' : 'Build the send queue — WhatsApp opens per student exactly like production.')
+            ? (isArabic ? 'اختر نطاق التقارير ثم ابنِ قائمة الإرسال — يفتح واتساب لكل طالب على حدة.' : 'Pick the report scope, then build the send queue — WhatsApp opens per student.')
             : (isArabic ? 'أنهِ الحصة أولًا لتفعيل التقارير (قاعدة النظام الحالية).' : 'Finish the session first to enable reports (existing rule).')}
         </p>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {[
+            ['all', isArabic ? `الكل (${counts.total})` : `All (${counts.total})`],
+            ['present', isArabic ? `الحاضرون (${counts.present})` : `Present (${counts.present})`],
+            ['absent', isArabic ? `الغائبون (${counts.absent})` : `Absent (${counts.absent})`],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setQueueScope(key)}
+              aria-pressed={queueScope === key}
+              className={queueScope === key ? 'nk-att-chip nk-att-chip--on' : 'nk-att-chip'}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <button
           className="btn-navy action-button !min-h-[3rem]"
           disabled={!lessonCompleted}

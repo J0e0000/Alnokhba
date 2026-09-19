@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { useWorkspace } from '../store/WorkspaceStore'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
-import { todayLocalISO } from '../lib/dateUtils'
-import { studentsNeedPhrase, dedupeBlockersByStudent } from '../lib/helpers'
-import FirstHint from '../components/FirstHint'
+import useIsMobile from '../shell/useIsMobile'
+import { useStageState, readStageState } from './useStageState'
 import AttendanceTab from './tabs/AttendanceTab'
 import InteractionHomeworkTab from './tabs/InteractionHomeworkTab'
 import ExamsTab from './tabs/ExamsTab'
@@ -13,18 +12,11 @@ import ReportTab from './tabs/ReportTab'
 import WorkflowBar from './WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SESSION WORKSPACE — the core experience (rules 5–14 + update brief §4–6).
+// SESSION WORKSPACE — the core experience (rules 5–14).
 // ONE unified workspace per session: persistent summary + pipeline tabs.
 // The pipeline is NOT a wizard: any tab can be visited in any order, work is
 // saved explicitly (SAVE) and the session is closed explicitly (FINISH).
-//
-// GATING (brief §4–5, §30–31): the CONTINUE action validates completeness of
-// the current stage before advancing. ATTENDANCE IS EXEMPT — unrecorded
-// students never block progress (the finalize RPC applies the existing
-// unrecorded→absent server rule). Interaction / homework / exams DO block
-// with an explicit "N students still need …" panel + a one-click shortcut
-// that filters the list to exactly those students. No data is ever written
-// automatically — the teacher performs every required action explicitly.
+// Session state is always server-authoritative — resume = refetch.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const TABS = [
@@ -35,55 +27,65 @@ const TABS = [
   { key: 'report', n: 5, title: 'التقرير', sub: 'التقرير وإنهاء الحصة', titleEn: 'Report', subEn: 'Report & finish' },
 ]
 
-const NEXT_TAB = { attendance: 'interaction', interaction: 'exams', exams: 'review', review: 'report' }
-
 export default function SessionWorkspace({ params }) {
   const ws = useWorkspace()
+  const wsMeta = useWorkspaceMeta()
   const ui = useUI()
   const { isArabic } = ws
   const { profile } = useAuth()
+  const isMobile = useIsMobile()
   const groupId = params?.groupId || ''
-  const openedForDate = params?.date || null // set when reviewing a past day
 
-  // Reload resilience ("سيبني مكاني"): the last visited tab of THIS group is
-  // restored after a refresh/crash, so the teacher lands exactly where they
-  // were instead of back at attendance.
-  const [tab, setTab] = useState(() => {
-    if (params?.tab) return params.tab
-    try {
-      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_tab') || 'null')
-      if (saved?.groupId === (params?.groupId || '') && saved.tab) return saved.tab
-    } catch { /* ignore */ }
-    return 'attendance'
-  })
+  const [tab, setTab] = useState('attendance')
   const [opening, setOpening] = useState(true)
-  const [missingFocus, setMissingFocus] = useState(null) // 'interaction' | 'exams' | null → pre-filters a tab to missing students
-  const [showBlockers, setShowBlockers] = useState({})   // per-tab blocking panel visibility
 
-  // PERSISTENT WORKFLOW BAR (UX round) — rendered at the workspace ROOT, not
-  // inside the tab panel: a sticky element can never rise above the top of
-  // its containing block, so the bar must live in a container that starts
-  // near the top of the page. Tabs publish serializable specs via
-  // usePublishBar (republish only on real changes — no re-render loops).
+  // TASK STATE (spec 13 + reload-resilience): which stage the teacher
+  // EXPLICITLY completed and which tab they were on — persisted per lesson so
+  // a reload/backgrounding returns them exactly where they were. Server data
+  // (attendance rows, homework, grades) is NOT stored here — refetch wins.
+  const [stageState, markStageComplete, setStageTab] = useStageState(ws.activeLessonId)
+
+  // Tab restore + publish. RESTORE uses the render-phase adjustment pattern
+  // (React docs: "adjusting state when a prop changes"): the moment the
+  // lesson id appears/changes, the tab is set synchronously DURING RENDER —
+  // before any effect runs, so no publish can clobber the stored value
+  // (StrictMode's double effect pass included). The publish effect then only
+  // mirrors USER-initiated tab switches (it skips the restore commit).
+  const VALID_TABS = ['attendance', 'interaction', 'exams', 'review', 'report']
+  const [restoredLesson, setRestoredLesson] = useState('')
+  if (ws.activeLessonId !== restoredLesson) {
+    setRestoredLesson(ws.activeLessonId)
+    const saved = readStageState(ws.activeLessonId).tab
+    setTab(saved && VALID_TABS.includes(saved) ? saved : 'attendance')
+  }
+  const skipPublishRef = useRef(true)
+  useEffect(() => {
+    if (skipPublishRef.current) { skipPublishRef.current = false; return }
+    if (ws.activeLessonId) setStageTab(tab)
+  }, [tab, ws.activeLessonId, setStageTab])
+
+  // PERSISTENT WORKFLOW BAR — rendered HERE at the workspace root (not inside
+  // the tab panel) on purpose: a sticky element can never rise above the top
+  // of its containing block, so the bar must live in a container that starts
+  // near the top of the page. Tabs publish a serializable bar spec + handlers
+  // (published only when the spec actually changes — no re-render loops).
   const [bar, setBar] = useState(null) // { data, handlers }
   const publishBar = useCallback((spec) => setBar(spec), [])
 
   // Resolve the session for this group — server-authoritative open-or-reuse.
-  // Past-day review resolves the lesson for THAT date (view-only via existing
-  // completed-lesson write guards — no new permissions).
+  // MUST wait for the store's initial load: calling openLessonForGroup with
+  // an empty lessonSessions cache would create a DUPLICATE lesson for the
+  // group (open-or-create sees "no lesson today" while the fetch is still
+  // in flight). Reload-restore depends on this being correct.
   useEffect(() => {
     let alive = true
-    setOpening(true)
     if (!groupId) { setOpening(false); return }
-    const done = () => { if (alive) setOpening(false) }
-    if (openedForDate) {
-      ws.openLessonForDate(groupId, openedForDate, { silent: true }).finally(done)
-    } else {
-      ws.openLessonForGroup(groupId, { silent: true }).finally(done)
-    }
+    if (ws.loading) return undefined
+    setOpening(true)
+    ws.openLessonForGroup(groupId, { silent: true }).finally(() => { if (alive) setOpening(false) })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, openedForDate])
+  }, [groupId, ws.loading])
 
   const lesson = ws.activeLesson
   const lessonOpen = lesson?.status === 'open'
@@ -96,118 +98,25 @@ export default function SessionWorkspace({ params }) {
     () => ws.examsList.filter((e) => e.lesson_session_id === ws.activeLessonId).map((e) => e.id),
     [ws.examsList, ws.activeLessonId],
   )
-  const gradedSet = useMemo(() => {
+  const gradedStudents = useMemo(() => {
+    if (!sessionExamIds.length) return 0
     const set = new Set()
-    if (!sessionExamIds.length) return set
     Object.values(ws.examScoresByStudent).forEach((list) => list.forEach((s) => { if (sessionExamIds.includes(s.exam_id)) set.add(s.student_id) }))
-    return set
+    return set.size
   }, [sessionExamIds, ws.examScoresByStudent])
-  const gradedStudents = gradedSet.size
 
-  // ── Completeness per required stage (brief §4/§6) ────────────────────────
-  // Interaction = positive interaction log for PRESENT students.
-  // Homework = explicit homework state for every applicable (non-absent) student.
-  // Exams = only required when an exam is actually linked to this session.
-  const missingInteraction = useMemo(() => (
-    lessonOpen
-      ? groupStudents.filter((s) => s.attendance_status === 'حاضر'
-        && !(ws.todayLogsByStudent[s.id] || []).some((l) => l.points_delta > 0 && /تفاعل|ذهبية|مساعدة|نقاط/.test(l.note || '')))
-      : []
-  ), [lessonOpen, groupStudents, ws.todayLogsByStudent])
-
-  const missingHW = useMemo(() => (
-    lessonOpen
-      ? groupStudents.filter((s) => s.attendance_status !== 'غائب' && (s.hw_status === 'لم يرصد' || !s.hw_status))
-      : []
-  ), [lessonOpen, groupStudents])
-
-  const missingExams = useMemo(() => (
-    lessonOpen && sessionExamIds.length
-      ? groupStudents.filter((s) => s.attendance_status === 'حاضر' && !gradedSet.has(s.id))
-      : []
-  ), [lessonOpen, sessionExamIds, groupStudents, gradedSet])
-
-  // Stage fractions from REAL saved records (never arbitrary numbers).
-  const progress = useMemo(() => {
-    const attendancePct = counts.total ? (counts.present + counts.absent) / counts.total : 0
-    const interactionPct = counts.present ? (counts.present - missingInteraction.length) / counts.present : 0
-    const hwPct = counts.hwApplicable ? counts.hwDone / counts.hwApplicable : 0
-    const examPct = sessionExamIds.length ? (counts.present ? gradedSet.size / counts.present : 0) : null
-    const required = examPct === null ? [interactionPct, hwPct] : [interactionPct, hwPct, examPct]
-    const overall = required.reduce((a, b) => a + b, 0) / required.length
-    return { attendancePct, interactionPct, hwPct, examPct, overall }
-  }, [counts, missingInteraction, sessionExamIds, gradedSet])
-
-  // Blockers for the CONTINUE action of each source tab (attendance exempt).
-  // RAW list may contain the same student twice (missing interaction AND
-  // missing homework) — studentsBlockersFor() dedupes to UNIQUE students so
-  // the count/panel never claims "10 students" in a 6-student group.
-  const blockersFor = useCallback((fromTab) => {
-    if (!lessonOpen) return []
-    if (fromTab === 'attendance') return [] // attendance NEVER blocks (brief §4)
-    if (fromTab === 'interaction') {
-      return [
-        ...missingInteraction.map((s) => ({ student: s, kind: 'interaction' })),
-        ...missingHW.map((s) => ({ student: s, kind: 'hw' })),
-      ]
-    }
-    if (fromTab === 'exams') return missingExams.map((s) => ({ student: s, kind: 'exam' }))
-    if (fromTab === 'review') {
-      return [
-        ...missingInteraction.map((s) => ({ student: s, kind: 'interaction' })),
-        ...missingHW.map((s) => ({ student: s, kind: 'hw' })),
-        ...missingExams.map((s) => ({ student: s, kind: 'exam' })),
-      ]
-    }
-    return []
-  }, [lessonOpen, missingInteraction, missingHW, missingExams])
-
-  const studentsBlockersFor = useCallback(
-    (fromTab) => dedupeBlockersByStudent(blockersFor(fromTab)),
-    [blockersFor],
-  )
-
-  const goToTab = useCallback((key, focus = null) => {
-    setMissingFocus(focus)
-    setTab(key)
-    setShowBlockers({})
-  }, [])
-
-  // Gated advance for the sticky workflow bar: a blocked advance opens the
-  // missing-students panel instead of moving on (brief §5 — never silent).
-  // Gating counts UNIQUE students, not raw items.
-  const tryAdvance = useCallback((fromTab) => {
-    const next = NEXT_TAB[fromTab]
-    if (!next) return
-    if (studentsBlockersFor(fromTab).length > 0) { setShowBlockers((p) => ({ ...p, [fromTab]: true })); return }
-    goToTab(next)
-  }, [studentsBlockersFor, goToTab])
-
-  // Persist the active tab per group (reload → same tab).
-  useEffect(() => {
-    try { sessionStorage.setItem('nokhba_ws_tab', JSON.stringify({ groupId, tab })) } catch { /* ignore */ }
-  }, [groupId, tab])
-
-  // Restored-route guard: if the persisted group no longer exists (deleted
-  // while away), return home instead of letting openLesson create a stray
-  // session for a non-existent group. Waits for settings so a not-yet-loaded
-  // roster never produces a false positive.
-  const groupsList = ws.settings?.groups
-  const groupsCheckedRef = useRef(false)
-  useEffect(() => {
-    if (!groupId || groupsCheckedRef.current) return
-    if (!Array.isArray(groupsList)) return // settings not loaded yet
-    groupsCheckedRef.current = true
-    if (groupsList.length === 0 || !groupsList.includes(groupId)) {
-      try { sessionStorage.removeItem('nokhba_ws_tab') } catch { /* ignore */ }
-      ui.closeSession()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, groupsList])
+  const interactionCount = useMemo(() => {
+    let n = 0
+    groupStudents.forEach((s) => {
+      const logs = ws.todayLogsByStudent[s.id] || []
+      if (logs.some((l) => l.points_delta > 0 && /تفاعل|مساعدة|نقاط/.test(l.note || ''))) n++
+    })
+    return n
+  }, [groupStudents, ws.todayLogsByStudent])
 
   const issues = useMemo(() => {
     const list = []
-    if (lessonOpen && counts.unrecorded > 0) list.push(isArabic ? `${counts.unrecorded} طالب لم يُرصد حضورهم (مسموح — لا يمنع التقدم)` : `${counts.unrecorded} students unrecorded (allowed — does not block)`)
+    if (lessonOpen && counts.unrecorded > 0) list.push(isArabic ? `${counts.unrecorded} طالب لم يُرصد حضورهم` : `${counts.unrecorded} students unrecorded`)
     if (lessonOpen && counts.hwApplicable > counts.hwDone) list.push(isArabic ? `الواجب مكتمل لـ ${counts.hwDone} من ${counts.hwApplicable}` : `Homework done for ${counts.hwDone}/${counts.hwApplicable}`)
     if (!sessionExamIds.length) list.push(isArabic ? 'لا يوجد امتحان مرتبط بهذه الحصة (اختياري)' : 'No exam linked to this session (optional)')
     return list
@@ -216,37 +125,39 @@ export default function SessionWorkspace({ params }) {
   const stepState = useCallback((key) => {
     if (lessonCompleted && key !== 'review') {
       if (key === 'attendance' || key === 'report') return 'done'
-      if (key === 'interaction') return 'done'
+      if (key === 'interaction') return counts.hwApplicable > 0 && counts.hwDone >= counts.hwApplicable ? 'done' : 'done'
       if (key === 'exams') return sessionExamIds.length ? 'done' : 'active'
     }
     if (key === 'attendance') {
+      // EXPLICIT stage completion (spec 13) — completing the stage is a
+      // teacher action, not a percentage of marked students.
+      if (stageState.attendanceComplete) return 'done'
       if (counts.unrecorded > 0 && (counts.present || counts.absent)) return 'attention'
       if (counts.unrecorded === 0 && counts.total > 0) return 'done'
       return 'active'
     }
     if (key === 'interaction') {
-      if (counts.hwApplicable === 0) return missingInteraction.length ? 'attention' : 'active'
-      if (missingInteraction.length === 0 && missingHW.length === 0) return 'done'
-      if (counts.hwDone > 0 || counts.present > missingInteraction.length) return 'attention'
+      if (counts.hwApplicable === 0) return 'active'
+      if (counts.hwDone >= counts.hwApplicable) return 'done'
+      if (counts.hwDone > 0) return 'attention'
       return 'active'
     }
-    if (key === 'exams') return sessionExamIds.length ? (missingExams.length === 0 ? 'done' : 'attention') : 'active'
+    if (key === 'exams') return sessionExamIds.length ? 'done' : 'active'
     if (key === 'review') return 'active'
     if (key === 'report') return lessonCompleted ? 'done' : 'active'
     return 'active'
-  }, [lessonCompleted, counts, sessionExamIds, missingInteraction, missingHW, missingExams])
-
-  // Tab badge: real fractions per stage (brief §6).
-  const tabBadge = useCallback((key) => {
-    if (key === 'attendance') return `${counts.present + counts.absent}/${counts.total}`
-    if (key === 'interaction') return `${counts.present - missingInteraction.length}/${counts.present}`
-    if (key === 'exams') return sessionExamIds.length ? `${gradedSet.size}/${counts.present}` : null
-    if (key === 'review') return null
-    if (key === 'report') return null
-    return null
-  }, [counts, missingInteraction, sessionExamIds, gradedSet])
+  }, [lessonCompleted, counts, sessionExamIds, stageState.attendanceComplete])
 
   const activeTab = TABS.find((t) => t.key === tab) || TABS[0]
+
+  // EXPLICIT stage completion (spec 13): the teacher decides — "complete" is
+  // an action, never a percentage. Marks the stage done, then advances to the
+  // natural next stage (interaction when someone is present).
+  // (Hook MUST live above the early returns below — unconditional hooks.)
+  const completeAttendanceStage = useCallback(() => {
+    markStageComplete('attendance')
+    setTab(counts.present > 0 ? 'interaction' : 'review')
+  }, [markStageComplete, counts.present])
 
   if (opening) {
     return (
@@ -279,73 +190,50 @@ export default function SessionWorkspace({ params }) {
     return `${h12}:${String(m || 0).padStart(2, '0')} ${period}`
   })()
 
-  const isPastReview = Boolean(openedForDate) && openedForDate !== todayLocalISO()
-  const overallPct = Math.round(progress.overall * 100)
-
-  // ── Missing-students panel (brief §5) — opened by a gated advance from the
-  // sticky workflow bar; the teacher stays on the tab and sees exactly who
-  // still needs what, with a one-click filtered shortcut.
-  const kindLabel = (kind) => kind === 'interaction'
-    ? (isArabic ? 'تفاعل' : 'interaction')
-    : kind === 'hw' ? (isArabic ? 'رصد واجب' : 'homework') : (isArabic ? 'إدخال درجة' : 'grade')
-
-  const renderBlockersPanel = (fromTab) => {
-    if (!lessonOpen || fromTab === 'review') return null
-    const blockers = studentsBlockersFor(fromTab) // unique students
-    if (!showBlockers[fromTab] || blockers.length === 0) return null
-    const allKinds = [...new Set(blockers.flatMap((b) => b.kinds))]
-    return (
-      <div className="nk-block mt-3" role="alert">
-        <b>
-          {studentsNeedPhrase(blockers.length, isArabic, allKinds.map(kindLabel).join(isArabic ? ' / ' : ' / '))}.
-        </b>
-        <ul className="nk-block__list">
-          {blockers.slice(0, 6).map(({ student, kinds }) => (
-            <li key={student.id}>
-              <b>{student.name}</b> — {kinds.map(kindLabel).join(isArabic ? ' + ' : ' + ')}
-            </li>
-          ))}
-          {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
-        </ul>
-        <div className="flex flex-wrap gap-2 mt-2">
-          <button
-            className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
-            onClick={() => {
-              const targetTab = blockers.some((b) => b.kinds.includes('interaction')) ? 'interaction'
-                : blockers.some((b) => b.kinds.includes('exam')) ? 'exams' : 'interaction'
-              goToTab(targetTab, blockers.some((b) => b.kinds.includes('exam')) && targetTab === 'exams' ? 'exams' : 'missing')
-            }}
-          >
-            {isArabic ? `عرض الطلاب الناقصين (${blockers.length})` : `Show missing students (${blockers.length})`}
-          </button>
-          <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={() => setShowBlockers((p) => ({ ...p, [fromTab]: false }))}>
-            {isArabic ? 'إغلاق' : 'Dismiss'}
-          </button>
-        </div>
-      </div>
-    )
-  }
+  // Focus-header save indicator (spec 27 — subtle, no popups): the MetaCtx
+  // savingIds set tells us if any per-student write is in flight.
+  const savingNow = wsMeta.savingIds.size > 0 || wsMeta.isSaving
 
   return (
     <div className="flex flex-col gap-3">
+      {/* ── FOCUS HEADER (mobile only) — the compact task header. Exit = leave
+          the task (back to Home), NEVER logout. Replaces the full app chrome. */}
+      {isMobile && (
+        <div className="nk-focus-head" role="banner">
+          <button className="nk-focus-head__exit" onClick={ui.closeSession} aria-label={isArabic ? 'الخروج من المهمة والعودة للرئيسية' : 'Exit task, back to Home'}>
+            → {isArabic ? 'الرئيسية' : 'Home'}
+          </button>
+          <span className="nk-focus-head__task">
+            <b className="truncate">{isArabic ? activeTab.title : activeTab.titleEn}</b>
+            <small className="truncate">{groupId}</small>
+          </span>
+          <span className="nk-focus-head__status">
+            {savingNow && <small className="nk-focus-head__save">… {isArabic ? 'جاري الحفظ' : 'Saving'}</small>}
+            {!savingNow && <small className="nk-focus-head__save nk-focus-head__save--ok">✓ {isArabic ? 'محفوظ' : 'Saved'}</small>}
+            <span className={`nk-pill ${lessonOpen ? 'nk-pill-live' : lessonCompleted ? 'nk-pill-done' : 'nk-pill-pending'}`}>
+              {lessonOpen ? '●' : lessonCompleted ? '✓' : '○'}
+            </span>
+          </span>
+        </div>
+      )}
+
       {/* ── Workspace header: navy band + PERSISTENT summary ─────────── */}
       <section className="nk-ws-head">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <button
-              className="nk-pill nk-pill-gold mb-2 cursor-pointer border-0"
-              onClick={ui.closeSession}
-              aria-label={isArabic ? 'عودة للرئيسية' : 'Back'}
-            >
-              → {isArabic ? 'الرئيسية' : 'Home'}
-            </button>
-            <div className="nk-ws-muted text-[.62rem] font-black tracking-widest mb-1">
-              {isPastReview ? (isArabic ? 'مراجعة حصة سابقة' : 'PAST SESSION REVIEW') : 'SESSION WORKSPACE'}
-            </div>
+            {!isMobile && (
+              <button
+                className="nk-pill nk-pill-gold mb-2 cursor-pointer border-0"
+                onClick={ui.closeSession}
+                aria-label={isArabic ? 'عودة للرئيسية' : 'Back'}
+              >
+                → {isArabic ? 'الرئيسية' : 'Home'}
+              </button>
+            )}
+            <div className="nk-ws-muted text-[.62rem] font-black tracking-widest mb-1">SESSION WORKSPACE</div>
             <h2 className="text-[1.15rem] sm:text-[1.3rem] font-black m-0 leading-snug break-words">{groupId}</h2>
             <p className="nk-ws-muted text-[.72rem] mt-1 mb-0">
               {lesson?.stage ? `${lesson.stage} · ` : ''}{timeLabel ? `${timeLabel} · ` : ''}
-              {isPastReview ? `${openedForDate} · ` : ''}
               {lessonOpen ? (isArabic ? 'جارية الآن · الحصة الحالية' : 'In progress') : lessonCompleted ? (isArabic ? 'منتهية · محفوظة في السجل' : 'Completed & logged') : (isArabic ? 'لم تبدأ' : 'Not started')}
             </p>
           </div>
@@ -353,7 +241,7 @@ export default function SessionWorkspace({ params }) {
             {lessonOpen ? `● ${isArabic ? 'جارية الآن' : 'In progress'}` : lessonCompleted ? `✓ ${isArabic ? 'منتهية' : 'Completed'}` : `○ ${isArabic ? 'لم تبدأ' : 'Not started'}`}
           </span>
         </div>
-        {lessonCompleted && !isPastReview && (
+        {lessonCompleted && (
           <div className="mt-3">
             <button
               className="btn-ghost rounded-xl px-4 py-2 text-[.72rem] font-extrabold"
@@ -380,39 +268,22 @@ export default function SessionWorkspace({ params }) {
         </div>
       </section>
 
-      {/* ── Sticky progress strip (brief §6 + §10) — slim, always visible ── */}
-      <section className="nk-ws-sticky" aria-label={isArabic ? 'تقدم الحصة' : 'Session progress'}>
-        <span className="nk-ws-sticky__name truncate">{groupId}</span>
-        <span className="nk-ws-sticky__bar" aria-hidden="true">
-          <span style={{ width: `${overallPct}%` }} />
-        </span>
-        <b className="nk-ws-sticky__pct" aria-label={`${isArabic ? 'الإنجاز' : 'Progress'}: ${overallPct}%`}>{overallPct}%</b>
-        <span className="nk-ws-sticky__chips" aria-hidden="true">
-          <span className="nk-chip">{isArabic ? 'حضور' : 'Att.'} {counts.present + counts.absent}/{counts.total}</span>
-          <span className={`nk-chip ${missingInteraction.length === 0 ? 'nk-chip--ok' : missingInteraction.length ? 'nk-chip--warn' : ''}`}>{isArabic ? 'تفاعل' : 'Int.'} {counts.present - missingInteraction.length}/{counts.present}</span>
-          <span className={`nk-chip ${counts.hwApplicable && missingHW.length === 0 ? 'nk-chip--ok' : missingHW.length ? 'nk-chip--warn' : ''}`}>{isArabic ? 'واجب' : 'HW'} {counts.hwDone}/{counts.hwApplicable}</span>
-          <span className={`nk-chip ${sessionExamIds.length ? (missingExams.length === 0 ? 'nk-chip--ok' : 'nk-chip--warn') : ''}`}>{isArabic ? 'امتحان' : 'Exam'} {sessionExamIds.length ? `${gradedSet.size}/${counts.present}` : '—'}</span>
-        </span>
-      </section>
-
-      {/* ── Pipeline tabs (not a wizard — free movement, gated advance) ── */}
+      {/* ── Pipeline tabs (not a wizard — free movement) ──────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2" role="tablist" aria-label={isArabic ? 'مراحل الحصة' : 'Session pipeline'}>
         {TABS.map((t) => {
           const state = t.key === tab ? 'active' : stepState(t.key)
           const mark = state === 'done' ? '✓' : state === 'attention' ? '!' : t.key === tab ? '●' : '○'
-          const badge = tabBadge(t.key)
           return (
             <button
               key={t.key}
               role="tab"
               aria-selected={t.key === tab}
               className={`nk-step ${t.key === tab ? 'nk-step--active' : state === 'done' ? 'nk-step--done' : state === 'attention' ? 'nk-step--attention' : ''}`}
-              onClick={() => goToTab(t.key)}
+              onClick={() => setTab(t.key)}
             >
               <b>
                 <span aria-hidden="true" className={state === 'attention' ? 'text-[.9rem]' : ''}>{mark}</span>
                 <span className="truncate">{t.n} · {isArabic ? t.title : t.titleEn}</span>
-                {badge && <span className="nk-step__badge">{badge}</span>}
                 <span className="nk-step__state" />
               </b>
               <small className="truncate">{isArabic ? t.sub : t.subEn}</small>
@@ -421,25 +292,18 @@ export default function SessionWorkspace({ params }) {
         })}
       </div>
 
-      {/* ── Tab content ───────────────────────────────────────────────── */}
-      <section className="nk-content" role="tabpanel" aria-label={isArabic ? activeTab.title : activeTab.titleEn}>
+      {/* ── Tab content — the persistent workflow bar lives inside each tab
+          (contextual per state); this container just holds the panel. ──── */}
+      <section className="nk-content pb-2" role="tabpanel" aria-label={isArabic ? activeTab.title : activeTab.titleEn}>
         <h3 className="text-[1rem] font-extrabold mt-0 mb-1">{isArabic ? activeTab.title : activeTab.titleEn}</h3>
         <p className="text-[.74rem] text-fg-muted mt-0 mb-4">{isArabic ? activeTab.sub : activeTab.subEn}</p>
-
-        <FirstHint
-          id="ws-overview"
-          isArabic={isArabic}
-          title={isArabic ? 'هنا تدير الحصة من البداية للنهاية' : 'This is where you manage the session'}
-          body={isArabic
-            ? 'كل مرحلة في تبويب، والحفظ فوري مع كل ضغطة. تذكّر: الحفظ لا ينهي الحصة — الإنهاء من تبويب التقرير فقط. والحضور اختياري: عدم رصد طالب لا يمنعك من المتابعة.'
-            : 'Each stage is a tab; every click saves instantly. Remember: Save does not finish the session — finish from the Report tab. Attendance is optional: unrecorded students never block you.'}
-        />
 
         {tab === 'attendance' && (
           <AttendanceTab
             groupId={groupId}
             lessonOpen={lessonOpen}
-            onGoNext={() => goToTab('interaction')}
+            onCompleteStage={completeAttendanceStage}
+            onGoNext={() => setTab(counts.present > 0 ? 'interaction' : 'review')}
             onBar={publishBar}
           />
         )}
@@ -447,12 +311,9 @@ export default function SessionWorkspace({ params }) {
           <InteractionHomeworkTab
             groupId={groupId}
             lessonOpen={lessonOpen}
-            missingFocus={missingFocus}
-            onClearFocus={() => setMissingFocus(null)}
+            onGoNext={() => setTab(counts.present > 0 ? 'exams' : 'review')}
+            onGoPrev={() => setTab('attendance')}
             onBar={publishBar}
-            onAdvance={() => tryAdvance('interaction')}
-            missingCount={studentsBlockersFor('interaction').length}
-            onGoPrev={() => goToTab('attendance')}
           />
         )}
         {tab === 'exams' && (
@@ -460,24 +321,22 @@ export default function SessionWorkspace({ params }) {
             groupId={groupId}
             lessonId={ws.activeLessonId}
             lessonOpen={lessonOpen}
-            missingFocus={missingFocus === 'exams'}
+            onGoNext={() => setTab('review')}
+            onGoPrev={() => setTab('interaction')}
             onBar={publishBar}
-            onAdvance={() => tryAdvance('exams')}
-            missingCount={studentsBlockersFor('exams').length}
-            onGoPrev={() => goToTab('interaction')}
           />
         )}
         {tab === 'review' && (
           <ReviewTab
             groupId={groupId}
             counts={counts}
-            interactionCount={counts.present - missingInteraction.length}
+            interactionCount={interactionCount}
             gradedStudents={gradedStudents}
             sessionExamCount={sessionExamIds.length}
             issues={issues}
             lessonOpen={lessonOpen}
-            onGoTo={(k, focus) => goToTab(k, focus)}
-            blockers={studentsBlockersFor('review')}
+            onGoTo={(k) => setTab(k)}
+            onGoPrev={() => setTab('exams')}
             onBar={publishBar}
           />
         )}
@@ -492,8 +351,6 @@ export default function SessionWorkspace({ params }) {
             onBar={publishBar}
           />
         )}
-
-        {renderBlockersPanel(tab)}
       </section>
 
       {/* ── Persistent contextual workflow bar (workspace root level) ─────── */}
@@ -505,9 +362,6 @@ export default function SessionWorkspace({ params }) {
           meta={bar.data.meta}
         />
       )}
-
-      {/* Mobile sticky save hint: attendance marks persist instantly; the
-          explicit Save lives inside each tab, Finish inside the Report tab. */}
     </div>
   )
 }
