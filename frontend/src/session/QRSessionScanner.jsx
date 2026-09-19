@@ -3,7 +3,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 import Modal from '../components/Modal'
 import { useLanguage } from '../context/LanguageContext'
 import { playFailureSound, playInfoSound, playSuccessSound } from '../lib/uiSounds'
-import { handleScannedPayload } from '../lib/qrAttendance'
+import { handleScannedPayload, resolveStudentByQr } from '../lib/qrAttendance'
 import { logAttendanceOp } from '../lib/attendanceDiagnostics'
 
 const CONFIG = { fps: 15, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 }
@@ -12,7 +12,13 @@ const FEEDBACK_MS = 2000
 // Session QR scanner — resolves codes SERVER-SIDE via resolve_student_by_qr
 // (portal URLs, raw tokens, and legacy UUID cards all work; QR codes and URLs
 // are never changed by this frontend).
-export default function QRSessionScanner({ open, onClose, students, activeLessonId, markPresent }) {
+//
+// Two modes:
+// - default (attendance): a scan MARKS the student present via markPresent().
+// - pickMode: a scan only JUMPS to the student via onPickStudent(id, name) —
+//   used by stages after attendance (interaction/homework) where scanning
+//   must never re-mark attendance. Same server-side resolution, no writes.
+export default function QRSessionScanner({ open, onClose, students, activeLessonId, markPresent, pickMode = false, onPickStudent }) {
   const { isArabic } = useLanguage()
   const scannerRef = useRef(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -44,6 +50,27 @@ export default function QRSessionScanner({ open, onClose, students, activeLesson
     lastTimeRef.current = now
     setIsProcessing(true)
     setHint(isArabic ? 'جاري معالجة الكود...' : 'Processing...')
+
+    // PICK MODE — resolve only, never write (no attendance, no payment gates).
+    if (pickMode) {
+      const resolution = await resolveStudentByQr(rawCode)
+      const result = resolution.err
+        ? { type: 'error', text: resolution.message }
+        : (() => {
+            const student = resolution.ok.student || {}
+            try { onPickStudent?.(student.id, student.name) } catch { /* handler errors must not crash the scanner */ }
+            return { type: 'success', text: isArabic ? `✓ تم الانتقال إلى: ${student.name || 'الطالب'}` : `✓ Jumped to: ${student.name || 'student'}` }
+          })()
+      logAttendanceOp({
+        action: 'qr_scan_pick',
+        result: result.type === 'success' ? 'ok' : 'error',
+        category: result.type === 'success' ? 'save_ok' : 'qr_unknown_format',
+        context: { decodedLength: rawCode.length, error: result.text?.slice(0, 120) },
+      })
+      showFeedback(result)
+      if (result.type === 'success') setScanCount((n) => n + 1)
+      return
+    }
 
     const result = await handleScannedPayload(rawCode, {
       students,
@@ -134,7 +161,11 @@ export default function QRSessionScanner({ open, onClose, students, activeLesson
           <div className="mt-4 flex flex-col items-center gap-2">
             <p className="text-sm font-bold" style={{ color: isProcessing ? 'var(--brand-gold)' : 'var(--fg-subtle)' }}>{hint}</p>
             <span className="text-xs font-bold" style={{ color: 'var(--ok)' }}>
-              {scanCount > 0 ? (isArabic ? `✅ تم تسجيل ${scanCount} طالب` : `✅ Registered ${scanCount} students`) : (isArabic ? 'لم يتم مسح أي كود بعد' : 'No code scanned yet')}
+              {scanCount > 0
+                ? (pickMode
+                  ? (isArabic ? `✓ تم اختيار ${scanCount} طالب` : `✓ Picked ${scanCount} students`)
+                  : (isArabic ? `✅ تم تسجيل ${scanCount} طالب` : `✅ Registered ${scanCount} students`))
+                : (isArabic ? (pickMode ? 'امسح كود الطالب للانتقال إليه' : 'لم يتم مسح أي كود بعد') : (pickMode ? 'Scan a student code to jump to them' : 'No code scanned yet'))}
             </span>
           </div>
         </>

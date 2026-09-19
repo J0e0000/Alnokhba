@@ -314,3 +314,34 @@ export async function copyToClipboard(text) {
     return ok
   } catch { return false }
 }
+
+/**
+ * Arabic-aware "N students still need X" phrase (fixes the item/student
+ * double-count confusion: blockers are now UNIQUE students, and the phrase
+ * follows Arabic number grammar — واحد/اثنان/طلاب/طالبًا).
+ * @param {number} n  unique student count
+ * @param {boolean} isArabic
+ * @param {string} suffix  e.g. 'إكمال' | 'تفاعل / واجب'
+ */
+export function studentsNeedPhrase(n, isArabic, suffix = 'إكمال') {
+  if (!isArabic) return `${n} student${n === 1 ? '' : 's'} still need ${suffix}`
+  if (n === 1) return `طالب واحد ما زال بحاجة إلى ${suffix}`
+  if (n === 2) return `طالبان ما زالا بحاجة إلى ${suffix}`
+  if (n <= 10) return `${n} طلاب ما زالوا بحاجة إلى ${suffix}`
+  return `${n} طالبًا ما زالوا بحاجة إلى ${suffix}`
+}
+
+/**
+ * Merge raw blocker entries [{student, kind}] into UNIQUE students with the
+ * kinds joined — one student = one row, no matter how many stages they miss.
+ */
+export function dedupeBlockersByStudent(blockers) {
+  const map = new Map()
+  for (const b of blockers || []) {
+    if (!b?.student?.id) continue
+    const cur = map.get(b.student.id)
+    if (cur) { if (!cur.kinds.includes(b.kind)) cur.kinds.push(b.kind) }
+    else map.set(b.student.id, { student: b.student, kinds: [b.kind] })
+  }
+  return [...map.values()]
+}

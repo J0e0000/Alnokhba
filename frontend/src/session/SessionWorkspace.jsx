@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
 import { todayLocalISO } from '../lib/dateUtils'
+import { studentsNeedPhrase, dedupeBlockersByStudent } from '../lib/helpers'
 import FirstHint from '../components/FirstHint'
 import AttendanceTab from './tabs/AttendanceTab'
 import InteractionHomeworkTab from './tabs/InteractionHomeworkTab'
@@ -44,7 +45,17 @@ export default function SessionWorkspace({ params }) {
   const groupId = params?.groupId || ''
   const openedForDate = params?.date || null // set when reviewing a past day
 
-  const [tab, setTab] = useState(params?.tab || 'attendance')
+  // Reload resilience ("سيبني مكاني"): the last visited tab of THIS group is
+  // restored after a refresh/crash, so the teacher lands exactly where they
+  // were instead of back at attendance.
+  const [tab, setTab] = useState(() => {
+    if (params?.tab) return params.tab
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_tab') || 'null')
+      if (saved?.groupId === (params?.groupId || '') && saved.tab) return saved.tab
+    } catch { /* ignore */ }
+    return 'attendance'
+  })
   const [opening, setOpening] = useState(true)
   const [missingFocus, setMissingFocus] = useState(null) // 'interaction' | 'exams' | null → pre-filters a tab to missing students
   const [showBlockers, setShowBlockers] = useState({})   // per-tab blocking panel visibility
@@ -128,6 +139,9 @@ export default function SessionWorkspace({ params }) {
   }, [counts, missingInteraction, sessionExamIds, gradedSet])
 
   // Blockers for the CONTINUE action of each source tab (attendance exempt).
+  // RAW list may contain the same student twice (missing interaction AND
+  // missing homework) — studentsBlockersFor() dedupes to UNIQUE students so
+  // the count/panel never claims "10 students" in a 6-student group.
   const blockersFor = useCallback((fromTab) => {
     if (!lessonOpen) return []
     if (fromTab === 'attendance') return [] // attendance NEVER blocks (brief §4)
@@ -148,6 +162,11 @@ export default function SessionWorkspace({ params }) {
     return []
   }, [lessonOpen, missingInteraction, missingHW, missingExams])
 
+  const studentsBlockersFor = useCallback(
+    (fromTab) => dedupeBlockersByStudent(blockersFor(fromTab)),
+    [blockersFor],
+  )
+
   const goToTab = useCallback((key, focus = null) => {
     setMissingFocus(focus)
     setTab(key)
@@ -156,12 +175,35 @@ export default function SessionWorkspace({ params }) {
 
   // Gated advance for the sticky workflow bar: a blocked advance opens the
   // missing-students panel instead of moving on (brief §5 — never silent).
+  // Gating counts UNIQUE students, not raw items.
   const tryAdvance = useCallback((fromTab) => {
     const next = NEXT_TAB[fromTab]
     if (!next) return
-    if (blockersFor(fromTab).length > 0) { setShowBlockers((p) => ({ ...p, [fromTab]: true })); return }
+    if (studentsBlockersFor(fromTab).length > 0) { setShowBlockers((p) => ({ ...p, [fromTab]: true })); return }
     goToTab(next)
-  }, [blockersFor, goToTab])
+  }, [studentsBlockersFor, goToTab])
+
+  // Persist the active tab per group (reload → same tab).
+  useEffect(() => {
+    try { sessionStorage.setItem('nokhba_ws_tab', JSON.stringify({ groupId, tab })) } catch { /* ignore */ }
+  }, [groupId, tab])
+
+  // Restored-route guard: if the persisted group no longer exists (deleted
+  // while away), return home instead of letting openLesson create a stray
+  // session for a non-existent group. Waits for settings so a not-yet-loaded
+  // roster never produces a false positive.
+  const groupsList = ws.settings?.groups
+  const groupsCheckedRef = useRef(false)
+  useEffect(() => {
+    if (!groupId || groupsCheckedRef.current) return
+    if (!Array.isArray(groupsList)) return // settings not loaded yet
+    groupsCheckedRef.current = true
+    if (groupsList.length === 0 || !groupsList.includes(groupId)) {
+      try { sessionStorage.removeItem('nokhba_ws_tab') } catch { /* ignore */ }
+      ui.closeSession()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, groupsList])
 
   const issues = useMemo(() => {
     const list = []
@@ -249,18 +291,18 @@ export default function SessionWorkspace({ params }) {
 
   const renderBlockersPanel = (fromTab) => {
     if (!lessonOpen || fromTab === 'review') return null
-    const blockers = blockersFor(fromTab)
+    const blockers = studentsBlockersFor(fromTab) // unique students
     if (!showBlockers[fromTab] || blockers.length === 0) return null
+    const allKinds = [...new Set(blockers.flatMap((b) => b.kinds))]
     return (
       <div className="nk-block mt-3" role="alert">
         <b>
-          {blockers.length} {isArabic ? 'طلاب ما زالوا بحاجة إلى' : 'students still need'}
-          {' '}{[...new Set(blockers.map((b) => kindLabel(b.kind)))].join(isArabic ? ' / ' : ' / ')}.
+          {studentsNeedPhrase(blockers.length, isArabic, allKinds.map(kindLabel).join(isArabic ? ' / ' : ' / '))}.
         </b>
         <ul className="nk-block__list">
-          {blockers.slice(0, 6).map(({ student, kind }) => (
-            <li key={`${student.id}-${kind}`}>
-              <b>{student.name}</b> — {kindLabel(kind)}
+          {blockers.slice(0, 6).map(({ student, kinds }) => (
+            <li key={student.id}>
+              <b>{student.name}</b> — {kinds.map(kindLabel).join(isArabic ? ' + ' : ' + ')}
             </li>
           ))}
           {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
@@ -269,9 +311,9 @@ export default function SessionWorkspace({ params }) {
           <button
             className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
             onClick={() => {
-              const targetTab = blockers.some((b) => b.kind === 'interaction') ? 'interaction'
-                : blockers.some((b) => b.kind === 'exam') ? 'exams' : 'interaction'
-              goToTab(targetTab, blockers.some((b) => b.kind === 'exam') && targetTab === 'exams' ? 'exams' : 'missing')
+              const targetTab = blockers.some((b) => b.kinds.includes('interaction')) ? 'interaction'
+                : blockers.some((b) => b.kinds.includes('exam')) ? 'exams' : 'interaction'
+              goToTab(targetTab, blockers.some((b) => b.kinds.includes('exam')) && targetTab === 'exams' ? 'exams' : 'missing')
             }}
           >
             {isArabic ? `عرض الطلاب الناقصين (${blockers.length})` : `Show missing students (${blockers.length})`}
@@ -409,7 +451,7 @@ export default function SessionWorkspace({ params }) {
             onClearFocus={() => setMissingFocus(null)}
             onBar={publishBar}
             onAdvance={() => tryAdvance('interaction')}
-            missingCount={blockersFor('interaction').length}
+            missingCount={studentsBlockersFor('interaction').length}
             onGoPrev={() => goToTab('attendance')}
           />
         )}
@@ -421,7 +463,7 @@ export default function SessionWorkspace({ params }) {
             missingFocus={missingFocus === 'exams'}
             onBar={publishBar}
             onAdvance={() => tryAdvance('exams')}
-            missingCount={blockersFor('exams').length}
+            missingCount={studentsBlockersFor('exams').length}
             onGoPrev={() => goToTab('interaction')}
           />
         )}
@@ -435,7 +477,7 @@ export default function SessionWorkspace({ params }) {
             issues={issues}
             lessonOpen={lessonOpen}
             onGoTo={(k, focus) => goToTab(k, focus)}
-            blockers={blockersFor('review')}
+            blockers={studentsBlockersFor('review')}
             onBar={publishBar}
           />
         )}

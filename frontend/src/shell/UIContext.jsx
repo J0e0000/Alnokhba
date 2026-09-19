@@ -1,24 +1,44 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { todayLocalISO } from '../lib/dateUtils'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UIContext — pure UI state of the new shell (rule 35: UI state ≠ server state).
 // Server state lives in WorkspaceStore; this only holds view/navigation state,
 // the confirm dialog promise bridge, and the WhatsApp message queue UI.
+//
+// RELOAD RESILIENCE ("لو الصفحة اتعملتها reload سيبني مكاني"): the route
+// (area + session params + selected day) persists in sessionStorage keyed by
+// teacher id. A refresh or crash reopens the SAME view — for teachers that
+// means the session workspace they were standing in, on the same tab (the
+// workspace itself persists its tab/position separately). Explicit logout
+// clears it (see AppShell). sessionStorage survives reloads and tab-crash
+// restore, but never leaks across browser restarts into a stale day.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UIContext = createContext(null)
 
 const QUEUE_KEY = (tid) => `nokhba_message_queue_${tid}`
+const ROUTE_KEY = (tid) => `nokhba_ui_route_${tid || 'anon'}`
+const ROUTE_AREAS = ['home', 'session', 'students', 'history', 'reports', 'analytics', 'settings', 'help']
+
+function readSavedRoute(teacherId) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(ROUTE_KEY(teacherId)) || 'null')
+    if (!saved || !ROUTE_AREAS.includes(saved.area)) return null
+    if (saved.area === 'session' && !saved.sessionParams?.groupId) return null
+    return saved
+  } catch { return null }
+}
 
 export function UIProvider({ teacherId, children }) {
   // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings' | 'help'
-  const [area, setArea] = useState('home')
-  const [sessionParams, setSessionParams] = useState(null)
+  const savedRoute = useMemo(() => readSavedRoute(teacherId), [teacherId])
+  const [area, setArea] = useState(() => savedRoute?.area || 'home')
+  const [sessionParams, setSessionParams] = useState(() => savedRoute?.sessionParams || null)
   const [confirmState, setConfirmState] = useState(null)
   // Day timeline: the selected day persists across navigation so returning from
   // a session keeps the teacher's context (brief §2 "preserve current route").
-  const [selectedDay, setSelectedDay] = useState(todayLocalISO)
+  const [selectedDay, setSelectedDay] = useState(() => savedRoute?.selectedDay || todayLocalISO())
   // Global search (Ctrl/⌘+K) — modal state here so any surface can open it.
   const [searchOpen, setSearchOpen] = useState(false)
   // Cross-area focus targets (search/FAQ deep links).
@@ -42,6 +62,11 @@ export function UIProvider({ teacherId, children }) {
     setSessionParams(null)
     setArea('home')
   }, [])
+
+  // Persist the route whenever it changes (reload → same place).
+  useEffect(() => {
+    try { sessionStorage.setItem(ROUTE_KEY(teacherId), JSON.stringify({ area, sessionParams, selectedDay })) } catch { /* ignore */ }
+  }, [teacherId, area, sessionParams, selectedDay])
 
   const askConfirm = useCallback((message, opts = {}) => new Promise((resolve) => {
     setConfirmState({ message, ...opts, resolve })

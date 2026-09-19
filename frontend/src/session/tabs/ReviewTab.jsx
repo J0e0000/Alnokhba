@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useWorkspace } from '../../store/WorkspaceStore'
 import { usePublishBar } from '../WorkflowBar'
+import { studentsNeedPhrase } from '../../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REVIEW TAB (rule 13 + update brief §4/§5) — pre-finish checkpoint.
@@ -17,6 +18,7 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
   // Persistent workflow bar (UX round): the pre-finish continue action lives
   // here, always visible without scrolling. Blocked advances open the
   // missing-students panel (same gating as production).
+  // `blockers` arrives DEDUPED: [{student, kinds: [...]}] — unique students.
   const barData = {
     ariaLabel: isArabic ? 'إجراءات المراجعة' : 'Review actions',
     primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →', disabled: false }],
@@ -25,7 +27,7 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
       { key: 'attendance', label: isArabic ? '→ الحضور' : '← Attendance', disabled: false },
     ],
     meta: blockers.length
-      ? (isArabic ? `${blockers.length} طالب ما زال بحاجة لإكمال` : `${blockers.length} student(s) still need input`)
+      ? studentsNeedPhrase(blockers.length, isArabic, 'إكمال')
       : (isArabic ? 'كل شيء مكتمل ✓' : 'All complete ✓'),
   }
   usePublishBar(onBar, barData, {
@@ -108,12 +110,11 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
       {showBlockers && blockers.length > 0 && (
         <div className="nk-block mt-3" role="alert">
           <b>
-            {blockers.length} {isArabic ? 'طلاب ما زالوا بحاجة إلى' : 'students still need'}
-            {' '}{[...new Set(blockers.map((b) => kindLabel(b.kind)))].join(' / ')}.
+            {studentsNeedPhrase(blockers.length, isArabic, blockers.flatMap((b) => b.kinds).map(kindLabel).join(' / '))}.
           </b>
           <ul className="nk-block__list">
-            {blockers.slice(0, 6).map(({ student, kind }) => (
-              <li key={`${student.id}-${kind}`}><b>{student.name}</b> — {kindLabel(kind)}</li>
+            {blockers.slice(0, 6).map(({ student, kinds }) => (
+              <li key={student.id}><b>{student.name}</b> — {kinds.map(kindLabel).join(' + ')}</li>
             ))}
             {blockers.length > 6 && <li>{isArabic ? `و ${blockers.length - 6} آخرون…` : `and ${blockers.length - 6} more…`}</li>}
           </ul>
@@ -121,7 +122,7 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
             <button
               className="btn-gold rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
               onClick={() => {
-                const target = blockers.some((b) => b.kind === 'exam') ? 'exams' : 'interaction'
+                const target = blockers.some((b) => b.kinds.includes('exam')) ? 'exams' : 'interaction'
                 onGoTo(target, target === 'exams' ? 'exams' : 'missing')
               }}
             >

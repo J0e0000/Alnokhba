@@ -81,7 +81,10 @@ export function WorkspaceProvider({ children }) {
   const [lastSavedAt, setLastSavedAt] = useState(null)
   const [undoSnackbar, setUndoSnackbar] = useState({ visible: false, message: '' })
   const [canRedoState, setCanRedoState] = useState(false)
-  const { isOnline } = useOfflineSync(supabase, showToast)
+  // pendingOps/opsSyncing: real offline-queue state (crash-safety UX) — the
+  // offline banner shows the TRUTH ("N changes saved on this device") instead
+  // of a hardcoded 0, and teachers can trigger/see the auto-sync.
+  const { isOnline, pending: pendingOps, syncing: opsSyncing, manualSync: syncPendingOps } = useOfflineSync(supabase, showToast)
 
   // PERF (performance round): refs mirroring the latest render's state, so
   // every action below can read live state WITHOUT being recreated. This
@@ -468,6 +471,10 @@ export function WorkspaceProvider({ children }) {
       if (!isOnline) {
         patchStudent(id, { points: newPoints }, { type: 'points', description: `${reason}: ${s.name}` })
         await addToQueue({ table: 'students', method: 'update', data: { points: newPoints, updated_at: new Date().toISOString() }, match: { id } })
+        // behavior_logs drive the interaction counter — offline must queue the
+        // insert AND mirror it locally so the interaction chip flips immediately.
+        await addToQueue({ table: 'behavior_logs', method: 'insert', data: { teacher_id: effectiveTeacherId, student_id: id, note: `${reason} (${amount > 0 ? '+' + amount : amount} نقطة)`, points_delta: amount } })
+        setTodayLogsByStudent((prev) => ({ ...prev, [id]: [...(prev[id] || []), { id: `local-${Date.now()}`, student_id: id, note: `${reason} (${amount > 0 ? '+' + amount : amount} نقطة)`, points_delta: amount, created_at: new Date().toISOString() }] }))
         setSaveStatus('saved_locally')
       } else {
         patchStudent(id, { points: newPoints }, { type: 'points', description: `${reason}: ${s.name}` })
@@ -521,6 +528,10 @@ export function WorkspaceProvider({ children }) {
         patchStudent(id, studentPatch, { type: 'attendance', description: `حضور ${s.name}: ${status}` })
         if (lessonId) {
           await addToQueue({ method: 'rpc', rpcName: 'upsert_lesson_attendance', rpcArgs: { p_lesson_session_id: lessonId, p_student_id: id, p_status: status } })
+          // Optimistic mirror of the RPC result — offline marks must show in
+          // the session focus card immediately (feedback rule: the teacher
+          // never wonders "did it record?"). Synced by the offline queue.
+          setLessonAttendanceByStudent((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), student_id: id, lesson_session_id: lessonId, status, homework_status: prev[id]?.homework_status || 'لم يرصد', recorded_at: new Date().toISOString() } }))
         } else {
           await addToQueue({ table: 'students', method: 'update', data: { attendance_status: status, points: newPoints, updated_at: new Date().toISOString() }, match: { id } })
           await addToQueue({ table: 'attendance_records', method: 'upsert', data: { teacher_id: effectiveTeacherId, student_id: id, status, homework_status: s.hw_status || 'لم يرصد' }, upsertOpts: { onConflict: 'teacher_id,student_id' } })
@@ -616,7 +627,11 @@ export function WorkspaceProvider({ children }) {
       if (!isOnline) {
         patchStudent(id, studentPatch, { type: 'homework', description: `واجب ${s.name}: ${status}` })
         await addToQueue({ table: 'students', method: 'update', data: { hw_status: status, updated_at: new Date().toISOString() }, match: { id } })
-        if (lessonId) await addToQueue({ method: 'rpc', rpcName: 'upsert_lesson_homework', rpcArgs: { p_lesson_session_id: lessonId, p_student_id: id, p_homework_status: status } })
+        if (lessonId) {
+          await addToQueue({ method: 'rpc', rpcName: 'upsert_lesson_homework', rpcArgs: { p_lesson_session_id: lessonId, p_student_id: id, p_homework_status: status } })
+          // Optimistic mirror of the RPC result — same feedback rule as attendance.
+          setLessonAttendanceByStudent((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), student_id: id, lesson_session_id: lessonId, homework_status: status, status: prev[id]?.status || 'لم يرصد', recorded_at: new Date().toISOString() } }))
+        }
         setSaveStatus('saved_locally')
       } else {
         patchStudent(id, studentPatch)
@@ -1228,13 +1243,20 @@ export function WorkspaceProvider({ children }) {
   const metaValue = useMemo(() => ({
     savingIds, savedIds, isSaving, saveStatus, lastSavedAt,
     undoSnackbar, setUndoSnackbar, canRedo: canRedoState,
-  }), [savingIds, savedIds, isSaving, saveStatus, lastSavedAt, undoSnackbar, canRedoState])
+    pendingOps, opsSyncing, syncPendingOps,
+  }), [savingIds, savedIds, isSaving, saveStatus, lastSavedAt, undoSnackbar, canRedoState, pendingOps, opsSyncing, syncPendingOps])
 
   const value = useMemo(() => ({
     // server state
     loading, students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
+    // network state — REGRESSION FIX (perf round dropped this field when the
+    // value became memoized): ws.isOnline was undefined → every write took
+    // the offline queue branch, behavior_logs were never written (interaction
+    // never counted), the offline banner showed permanently, and auto-sync
+    // never ran (queued marks never reached the server → lost on reload).
+    isOnline,
     // actions (stable — read refs internally)
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData, setActiveLessonId,
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
@@ -1248,7 +1270,7 @@ export function WorkspaceProvider({ children }) {
     isArabic, t,
   }), [loading, students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
-    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
+    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId, isOnline,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,
     openLessonForGroup, finishLesson, markGroupAbsences, validateBulkRows,
     sessionStudentsFor, countsForLesson, showToast, isArabic, t])

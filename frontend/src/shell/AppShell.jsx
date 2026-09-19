@@ -111,7 +111,8 @@ export default function AppShell({ onOpenAdmin }) {
   // LOGOUT SAFETY (UX round): logout lives ONLY in the account menu (under
   // the user's name) and in Settings — never in the bottom navigation, the
   // More sheet, or next to workflow actions — and always asks for
-  // confirmation first (session-aware wording).
+  // confirmation first (session-aware wording). Signing out also clears the
+  // persisted route/position keys so the next login starts fresh.
   const handleSignOut = async () => {
     setAccountOpen(false)
     const ok = await ui.askConfirm(
@@ -122,7 +123,15 @@ export default function AppShell({ onOpenAdmin }) {
         : (isArabic ? 'تسجيل الخروج من حسابك؟' : 'Sign out of your account?'),
       { title: isArabic ? 'تسجيل الخروج' : 'Sign out', confirmLabel: isArabic ? 'تسجيل الخروج' : 'Sign out', danger: true },
     )
-    if (ok) await signOut()
+    if (ok) {
+      try {
+        sessionStorage.removeItem(`nokhba_ui_route_${profile?.id || 'anon'}`)
+        sessionStorage.removeItem('nokhba_ws_tab')
+        sessionStorage.removeItem('nokhba_ws_att_pos')
+        sessionStorage.removeItem('nokhba_ws_int_pos')
+      } catch { /* ignore */ }
+      await signOut()
+    }
   }
 
   const roleLabel = profile?.is_admin
@@ -196,7 +205,12 @@ export default function AppShell({ onOpenAdmin }) {
             >
               ⌕
             </button>
-            <OfflineBanner isOnline={ws.isOnline} pending={0} syncing={false} onManualSync={ws.syncPendingSaves} />
+            <OfflineBanner
+              isOnline={ws.isOnline}
+              pending={wsMeta.pendingOps}
+              syncing={wsMeta.opsSyncing}
+              onManualSync={wsMeta.syncPendingOps}
+            />
             <button
               className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
               onClick={toggleTheme}

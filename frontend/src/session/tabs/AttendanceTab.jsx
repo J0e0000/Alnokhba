@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
 import { usePublishBar } from '../WorkflowBar'
@@ -26,6 +26,11 @@ const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم ي�
 //   Position and progress ("٧ من ٢٤") stay visible at all times.
 // - LIST VIEW stays available (search / filters / bulk / QR) as the
 //   secondary view — progressive disclosure, nothing removed.
+//
+// SPEED + RELOAD (user round): focus mode has its own search-to-jump
+// (type a name → tap the chip → that student opens), and the position
+// (studentId + mode) persists in sessionStorage per group — a refresh or
+// crash resumes on the SAME student, not back at the first one.
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) {
   const ws = useWorkspace()
@@ -34,25 +39,39 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
   const { isArabic } = ws
   const [mode, setMode] = useState('focus') // focus (sequential) | list
   const [search, setSearch] = useState('')
+  const [focusSearch, setFocusSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
 
-  // Sequential position: resume at the first unrecorded student.
+  // Sequential position: resume at the first unrecorded student, or at the
+  // SAVED student after a reload/crash (restore runs once per group).
   const statusOf = (s) => attendanceMap[s.id]?.status || 'لم يرصد'
-  const [idx, setIdx] = useState(() => {
-    const first = students.findIndex((s) => statusOf(s) === 'لم يرصد')
-    return first >= 0 ? first : 0
-  })
-
-  // Group switched → restart the sequential flow at the first unrecorded.
+  const [idx, setIdx] = useState(0)
+  const restoredRef = useRef('')
   useEffect(() => {
-    const first = students.findIndex((s) => statusOf(s) === 'لم يرصد')
-    setIdx(first >= 0 ? first : 0)
+    if (!students.length) return
+    if (restoredRef.current === groupId) return
+    restoredRef.current = groupId
+    let target = -1
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('nokhba_ws_att_pos') || 'null')
+      if (saved?.groupId === groupId && saved.studentId) target = students.findIndex((s) => s.id === saved.studentId)
+      if (saved?.groupId === groupId && saved.mode) setMode(saved.mode)
+    } catch { /* ignore */ }
+    if (target < 0) target = students.findIndex((s) => statusOf(s) === 'لم يرصد')
+    setIdx(target >= 0 ? target : 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId])
+  }, [groupId, students.length])
+
+  // Persist position (studentId — survives roster reshuffles better than index).
+  useEffect(() => {
+    const currentId = students[idx]?.id || null
+    try { sessionStorage.setItem('nokhba_ws_att_pos', JSON.stringify({ groupId, studentId: currentId, mode })) } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, idx, mode, students.length])
 
   // Clamp if the roster shrinks (defensive).
   useEffect(() => {
@@ -117,6 +136,20 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
   const mark = (st) => { if (current) ws.setAttendance(current.id, st, ws.activeLessonId) }
   const goNext = () => { if (!isLast) setIdx((i) => Math.min(total - 1, i + 1)) }
   const goPrev = () => { setIdx((i) => Math.max(0, i - 1)) }
+  const jumpToStudent = (studentId) => {
+    const i = students.findIndex((s) => s.id === studentId)
+    if (i >= 0) { setIdx(i); setFocusSearch(''); return true }
+    return false
+  }
+
+  const focusMatches = useMemo(() => {
+    const q = normalizeArabicSearch(focusSearch)
+    if (!q) return []
+    return students
+      .filter((s) => normalizeArabicSearch([s.name, s.code, s.phone].filter(Boolean).join(' ')).includes(q))
+      .slice(0, 5)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSearch, students, attendanceMap])
 
   const progressMeta = `${isArabic ? `الطالب ${idx + 1} من ${total}` : `Student ${idx + 1} of ${total}`} · ${
     saving
@@ -205,6 +238,34 @@ export default function AttendanceTab({ groupId, lessonOpen, onGoNext, onBar }) 
               {!saving && saved && <span className="nk-focus-saved">✓ {isArabic ? 'تم الحفظ' : 'Saved'}</span>}
               {!saving && !saved && recorded && <span className="nk-focus-saved">✓ {isArabic ? `تم الرصد: ${STATUS_LABEL[currentStatus] || currentStatus}` : `Recorded: ${STATUS_LABEL[currentStatus] || currentStatus}`}</span>}
               {!recorded && <span className="nk-focus-muted text-[.68rem]">{isArabic ? 'رصد الحالة يُفعّل زر «التالي»' : 'Marking activates Next'}</span>}
+            </div>
+
+            {/* Jump tools: search by name/code/phone — one tap to jump */}
+            <div className="mt-3">
+              <input
+                className="glass-input rounded-xl px-3 py-2 text-[.8rem] w-full"
+                placeholder={isArabic ? '🔍 اكتب اسم الطالب للانتقال السريع...' : 'Type a student name to jump...'}
+                value={focusSearch}
+                onChange={(e) => setFocusSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && focusMatches[0]) jumpToStudent(focusMatches[0].id) }}
+                aria-label={isArabic ? 'انتقال سريع لطالب' : 'Quick jump to student'}
+              />
+              {focusMatches.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {focusMatches.map((s) => {
+                    const st = statusOf(s)
+                    return (
+                      <button
+                        key={s.id}
+                        className="nk-pill nk-pill-gold cursor-pointer border-0 px-3 py-1.5 text-[.7rem] font-extrabold"
+                        onClick={() => jumpToStudent(s.id)}
+                      >
+                        {s.name}{st !== 'لم يرصد' ? ' ✓' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
