@@ -81,7 +81,13 @@ export function WorkspaceProvider({ children }) {
   const [lastSavedAt, setLastSavedAt] = useState(null)
   const [undoSnackbar, setUndoSnackbar] = useState({ visible: false, message: '' })
   const [canRedoState, setCanRedoState] = useState(false)
-  const { isOnline } = useOfflineSync(supabase, showToast)
+  // FIX (offline banner stuck): isOnline was dropped from the context value
+  // when the memoization refactor landed — AppShell read ws.isOnline ===
+  // undefined → OfflineBanner treated undefined as offline and showed the
+  // "أنت غير متصل" banner on EVERY load regardless of real connectivity.
+  // isOnline now flows through Ctx; the queue pending/syncing go through
+  // MetaCtx (UI-only) so the amber pending state works again too.
+  const { isOnline, pending: queuePending, syncing: queueSyncing } = useOfflineSync(supabase, showToast)
 
   // PERF (performance round): refs mirroring the latest render's state, so
   // every action below can read live state WITHOUT being recreated. This
@@ -1211,7 +1217,8 @@ export function WorkspaceProvider({ children }) {
   const metaValue = useMemo(() => ({
     savingIds, savedIds, isSaving, saveStatus, lastSavedAt,
     undoSnackbar, setUndoSnackbar, canRedo: canRedoState,
-  }), [savingIds, savedIds, isSaving, saveStatus, lastSavedAt, undoSnackbar, canRedoState])
+    queuePending, queueSyncing,
+  }), [savingIds, savedIds, isSaving, saveStatus, lastSavedAt, undoSnackbar, canRedoState, queuePending, queueSyncing])
 
   const value = useMemo(() => ({
     // server state
@@ -1229,12 +1236,13 @@ export function WorkspaceProvider({ children }) {
     sessionStudentsFor, countsForLesson, showToast,
     checkAcademicWarning: (sid) => checkAcademicWarning(examScoresByStudent[sid] || []),
     isArabic, t,
+    isOnline,
   }), [loading, students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,
     openLessonForGroup, finishLesson, markGroupAbsences, validateBulkRows,
-    sessionStudentsFor, countsForLesson, showToast, isArabic, t])
+    sessionStudentsFor, countsForLesson, showToast, isArabic, t, isOnline])
 
   // Dev/diagnostics handle: lets support tooling and E2E tests inspect live
   // server state without prop drilling. Not used by business logic.

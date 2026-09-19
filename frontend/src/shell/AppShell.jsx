@@ -154,7 +154,7 @@ export default function AppShell({ onOpenAdmin }) {
           )}
 
           <div className="flex items-center gap-1.5 ms-auto">
-            <OfflineBanner isOnline={ws.isOnline} pending={0} syncing={false} onManualSync={ws.syncPendingSaves} />
+            <OfflineBanner isOnline={ws.isOnline} pending={wsMeta.queuePending ?? 0} syncing={Boolean(wsMeta.queueSyncing)} onManualSync={ws.syncPendingSaves} />
             {/* FREQUENCY-BASED UI: theme / language / undo / history are
                 low-frequency controls — the desktop header keeps them, mobile
                 reaches them from Settings → Appearance & tools (spec 5, 34). */}
