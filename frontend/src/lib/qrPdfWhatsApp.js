@@ -799,6 +799,78 @@ export function buildTextReport(student, { ranks, allStudents, session, examScor
   return lines.join('\n')
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// PRESENT / ABSENT attendance messages (recipient-targeting round)
+//
+// The teacher-facing spec requires DIFFERENT messages for present vs absent
+// students, with the warning balance computed from REAL data — never
+// hardcoded. Templates are teacher-editable (teacher_settings:
+// msg_attendance_present / msg_attendance_absent via TemplatesModal); the
+// defaults below follow the app's approved communication style. The
+// consequence named in the absent default ("منع الدخول عبر البوابة") is the
+// ONLY automated consequence that exists in the system today (QR entry block
+// at warnings ≥ threshold, lib/qrAttendance.js) — no invented rules.
+// ═════════════════════════════════════════════════════════════════════════════
+
+export const DEFAULT_PRESENT_TEMPLATE = 'مرحبًا،\nنحب نبلغ حضرتك إن {studentName} حضر حصة {group} اليوم.\n{lessonLine}شكرًا لكم.'
+
+export const DEFAULT_ABSENT_TEMPLATE = 'مرحبًا،\n{studentName} لم يحضر حصة {group} اليوم.\n{lessonLine}رصيد الإنذارات الحالي: {warnings}.\nمتبقي {remainingWarnings} إنذار قبل منع الدخول مؤقتًا عبر بوابة الطالب.\nنشكر لكم المتابعة.'
+
+/**
+ * Interpolate an attendance template with real per-student values.
+ * Unknown/empty variables collapse their surrounding line instead of
+ * leaving dangling "{placeholder}" text.
+ */
+function interpolateAttendance(template, vars) {
+  let out = String(template || '')
+  for (const [key, value] of Object.entries(vars)) {
+    out = out.replaceAll(`{${key}}`, String(value ?? ''))
+  }
+  // Collapse the blank lines left behind by empty optional blocks
+  return out.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * Build the WhatsApp message for one student's attendance status.
+ * @param {object} student   - student row (name, group_name, stage, warnings)
+ * @param {object} opts
+ *   status           'حاضر' | 'غائب' (falls back to the full report text)
+ *   lesson           lesson_sessions row (lesson_topic, video_link, session_date)
+ *   settings         teacher_settings row (templates + insight_config)
+ *   groupName        override when the session group differs from the row
+ *   today            preformatted date string
+ * @returns {string} ready-to-send message
+ */
+export function buildAttendanceMessage(student, { status, lesson, settings, groupName, today } = {}) {
+  const s = student || {}
+  const isPresent = String(status || '').includes('حاضر')
+  const threshold = Number(settings?.insight_config?.max_warnings ?? 3)
+  const warnings = Number(s.warnings || 0)
+  const remaining = Math.max(0, threshold - warnings)
+  const lessonLine = lesson?.lesson_topic ? `موضوع الحصة: ${lesson.lesson_topic}\n` : ''
+  const videoLine = !isPresent && lesson?.video_link ? `\nرابط شرح الحصة: ${lesson.video_link}` : ''
+  const dateStr = today || (lesson?.session_date
+    ? new Date(lesson.session_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
+    : new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }))
+  const vars = {
+    studentName: s.name || '',
+    group: groupName || s.group_name || '',
+    date: dateStr,
+    lessonLine,
+    videoLink: lesson?.video_link || '',
+    homework: lesson?.homework_text || '',
+    warnings,
+    remainingWarnings: remaining,
+    warningsThreshold: threshold,
+  }
+  const template = isPresent
+    ? (settings?.msg_attendance_present || DEFAULT_PRESENT_TEMPLATE)
+    : (settings?.msg_attendance_absent || DEFAULT_ABSENT_TEMPLATE)
+  let text = interpolateAttendance(template, vars)
+  if (videoLine && !text.includes(lesson.video_link)) text += `\n${videoLine.trim()}`
+  return text
+}
+
 /**
  * Send a text report to WhatsApp.
  * Opens wa.me deep link with pre-filled message.

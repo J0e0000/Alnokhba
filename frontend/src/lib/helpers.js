@@ -10,6 +10,45 @@ export const GRADES_BY_STAGE = {
 
 export const CORE_GRADE_OPTIONS = Object.values(GRADES_BY_STAGE).flat()
 
+// ─── Stage normalization (student-creation UX round) ─────────────────────────
+// Legacy data is dirty: students.stage / group_meta.stage can hold a full
+// grade ("الثالث الإعدادي"), a bare category ("ثانوي"), or free text.
+// All stage/group compatibility checks go through CATEGORY matching so both
+// shapes compare correctly without any DB migration.
+
+/**
+ * Map any stored stage value to its category (ابتدائي | إعدادي | ثانوي).
+ * Tolerates hamza-less spellings (اعدادي) and legacy free text. Returns ''
+ * for empty/unrecognizable values.
+ */
+export function stageCategoryOf(stage) {
+  const s = String(stage || '').trim()
+  if (!s) return ''
+  for (const cat of STAGE_CATEGORIES) if (s.includes(cat)) return cat
+  if (/اعدادي/.test(s)) return 'إعدادي'
+  if (/ابتدائي/.test(s)) return 'ابتدائي'
+  if (/ثانوي/.test(s)) return 'ثانوي'
+  return ''
+}
+
+/**
+ * Complementary check used everywhere a student stage meets a group stage:
+ * empty on either side = compatible (no information to conflict).
+ */
+export function isStageCompatible(studentStage, groupStage) {
+  const a = stageCategoryOf(studentStage)
+  const b = stageCategoryOf(groupStage)
+  return !a || !b || a === b
+}
+
+/** Canonical grade list (ordered) for selects; falls back safely. */
+export const ALL_GRADE_OPTIONS = CORE_GRADE_OPTIONS
+
+/** First canonical grade of a category, or '' when unknown. */
+export function firstGradeOfCategory(category) {
+  return GRADES_BY_STAGE[category]?.[0] || ''
+}
+
 export function generateStudentCode() {
   return 'F-' + Math.floor(10000 + Math.random() * 90000)
 }

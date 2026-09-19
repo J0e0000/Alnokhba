@@ -978,6 +978,80 @@ export function WorkspaceProvider({ children }) {
     return { ok: true, students: data }
   }
 
+  // ══════════════════════════ BULK STUDENT OPERATIONS ════════════════════════
+  // Batch semantics (bulk-actions round): ONE round-trip per operation via
+  // .in('id', ids) — never per-student requests. Partial failures are counted
+  // and reported honestly ("تم N / فشل M"), never silently swallowed.
+
+  // Move selected students into one group. The group's stage is authoritative
+  // (group determines stage — spec rule 2): when the caller passes the group's
+  // stage, every moved student's stage is aligned to it in the SAME write so
+  // no student ends up in a conflicting stage/group combination.
+  const bulkAssignGroup = async (ids, groupName, groupStage) => {
+    const isArabic = isArabicRef.current
+    const idList = [...new Set(ids)].filter(Boolean)
+    if (!idList.length || !groupName) return { ok: 0, failed: 0 }
+    const prevRows = studentsRef.current.filter((s) => idList.includes(s.id))
+    const patch = { group_name: groupName }
+    if (groupStage) patch.stage = groupStage
+    // Optimistic local patch first (server stays source of truth via reload path)
+    setStudents((prev) => prev.map((s) => (idList.includes(s.id) ? { ...s, ...patch } : s)))
+    try {
+      const { error } = await supabase.from('students')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .in('id', idList)
+      if (error) throw error
+      pushAction({
+        type: 'bulk_assign_group', description: `نقل ${idList.length} طالب إلى ${groupName}`,
+        undoFn: async () => {
+          // Restore each student's previous stage/group in ONE transaction-ish loop
+          await Promise.all(prevRows.map((p) => supabase.from('students')
+            .update({ group_name: p.group_name, stage: p.stage, updated_at: new Date().toISOString() }).eq('id', p.id)))
+          setStudents((prev) => prev.map((s) => {
+            const p = prevRows.find((r) => r.id === s.id)
+            return p ? { ...s, group_name: p.group_name, stage: p.stage } : s
+          }))
+        },
+      })
+      setUndoSnackbar({ visible: true, message: `نقل ${idList.length} طالب إلى ${groupName}` })
+      return { ok: idList.length, failed: 0 }
+    } catch (error) {
+      // Roll back the optimistic patch, then resync from server state
+      setStudents((prev) => prev.map((s) => {
+        const p = prevRows.find((r) => r.id === s.id)
+        return p ? { ...s, group_name: p.group_name, stage: p.stage } : s
+      }))
+      showToast(isArabic ? `تعذر نقل الطلاب: ${error.message || ''}` : `Could not move students: ${error.message || ''}`, 'error')
+      return { ok: 0, failed: idList.length }
+    }
+  }
+
+  // Delete multiple students — one batched delete; undo re-inserts all rows.
+  const bulkDeleteStudents = async (students) => {
+    const isArabic = isArabicRef.current
+    const rows = (students || []).filter(Boolean)
+    if (!rows.length) return { ok: 0, failed: 0 }
+    const ids = rows.map((r) => r.id)
+    const backups = rows.map((r) => ({ ...r }))
+    setStudents((prev) => prev.filter((s) => !ids.includes(s.id)))
+    const { error } = await supabase.from('students').delete().in('id', ids)
+    if (error) {
+      setStudents((prev) => [...prev, ...backups].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))))
+      showToast(isArabic ? 'تعذر حذف الطلاب المحددين' : 'Could not delete the selected students', 'error')
+      return { ok: 0, failed: rows.length }
+    }
+    pushAction({
+      type: 'bulk_delete', description: `حذف ${rows.length} طالب`,
+      undoFn: async () => {
+        const restored = backups.map(({ id, ...rest }) => rest)
+        const { data } = await supabase.from('students').insert(restored).select()
+        if (data) setStudents((prev) => [...prev, ...data])
+      },
+    })
+    setUndoSnackbar({ visible: true, message: `حذف ${rows.length} طالب` })
+    return { ok: rows.length, failed: 0 }
+  }
+
   const deleteStudent = async (student) => {
     const isArabic = isArabicRef.current
     const backup = { ...student }
@@ -1230,6 +1304,7 @@ export function WorkspaceProvider({ children }) {
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
     openLessonForGroup, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
+    bulkAssignGroup, bulkDeleteStudents,
     saveExam, addGroup, updateGroup, deleteGroup,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
     // derived helpers

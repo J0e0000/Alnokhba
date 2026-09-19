@@ -18,6 +18,7 @@ import HistoryArea from '../areas/HistoryArea'
 import ReportsArea from '../areas/ReportsArea'
 import AnalyticsArea from '../areas/AnalyticsArea'
 import SettingsArea from '../areas/SettingsArea'
+import TourOverlay from '../components/TourOverlay'
 import useIsMobile from './useIsMobile'
 
 const IS_DEMO = Boolean(typeof window !== 'undefined' && window.__NOKHBA_DEMO__)
@@ -25,15 +26,35 @@ const IS_DEMO = Boolean(typeof window !== 'undefined' && window.__NOKHBA_DEMO__)
 const AR_DATE = new Intl.DateTimeFormat('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const EN_DATE = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
+// IA simplification (spec 8): "Student History" is NO LONGER a main nav
+// item — history is contextual (open a student → their details/history via
+// the name link). The history AREA still renders for the deep link
+// (ui.openStudentHistory); it just doesn't compete for navigation space.
 const NAV = [
   { key: 'home', label: 'نظرة عامة', labelEn: 'Overview', icon: '▦' },
   { key: 'students', label: 'الطلاب', labelEn: 'Students', icon: '♧' },
-  { key: 'history', label: 'سجل الطالب', labelEn: 'Student History', icon: '◷' },
   { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
   { key: 'analytics', label: 'التحليلات', labelEn: 'Analytics', icon: '⌁' },
   { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
 ]
 const MOBILE_NAV = NAV.filter((n) => n.key !== 'analytics')
+
+// Spotlight tour steps (spec 17–19): targets are data-tour anchors resolved
+// at runtime — visible element wins (desktop sidebar vs mobile bottom nav).
+const TOUR_STEPS_AR = [
+  { target: '[data-tour="today-sessions"]', title: 'حصص اليوم تبدأ من هنا', body: 'كل حصة مجدولة اليوم تظهر كبطاقة. اضغط «فتح الحصة» لتبدأ مساحة العمل: حضور، تفاعل، واجب، امتحان، وتقرير — كلها في شاشة واحدة بدون تنقل.' },
+  { target: '[data-tour="stats"]', title: 'نظرة سريعة على يومك', body: 'ثلاث أرقام فقط: عدد حصص اليوم، عدد الطلاب، والإجراءات المعلقة التي تحتاج انتباهك.' },
+  { target: '[data-tour="nav-students"]', title: 'الطلاب وإدارتهم', body: 'من هنا تدير الطلاب: إضافة طالب أو عدة طلاب دفعة واحدة، فلترة بالمرحلة أو المجموعة، وإجراءات جماعية (تعيين مجموعة، رسائل، QR) عند تحديد أكثر من طالب.' },
+  { target: '[data-tour="nav-reports"]', title: 'التقارير الجماعية', body: 'تقارير الحصص المنتهية لكل المجموعة، روابط البوابة (QR)، والقوالب — مع اختيار المستلمين في كل إرسال.' },
+  { target: '[data-tour="account"]', title: 'حسابك وإعداداتك', body: 'الإعدادات والمساعدة والخروج موجودة هنا ومن صفحة الإعدادات — عشان تفضل شاشة العمل نظيفة أثناء الحصص.' },
+]
+const TOUR_STEPS_EN = [
+  { target: '[data-tour="today-sessions"]', title: "Today's sessions start here", body: 'Every scheduled session is a card. Tap "Open session" to launch the workspace: attendance, interaction, homework, exams and the report — all in one screen.' },
+  { target: '[data-tour="stats"]', title: 'Your day at a glance', body: 'Just three numbers: sessions today, students today, and pending actions needing your attention.' },
+  { target: '[data-tour="nav-students"]', title: 'Students', body: 'Manage students here: single or bulk add, stage/group filters, and bulk actions (assign group, messages, QR) when you select multiple students.' },
+  { target: '[data-tour="nav-reports"]', title: 'Batch reports', body: 'Reports for completed sessions, portal (QR) links, and templates — with recipient selection on every send.' },
+  { target: '[data-tour="account"]', title: 'Account & settings', body: 'Settings, help and sign-out live here and in the Settings page — keeping the working screen clean during sessions.' },
+]
 
 export default function AppShell({ onOpenAdmin }) {
   const { profile, signOut, isAssistant, ownerProfile } = useAuth()
@@ -109,6 +130,7 @@ export default function AppShell({ onOpenAdmin }) {
           className={`nav-btn ${activeNav === item.key ? 'active' : ''}`}
           aria-current={activeNav === item.key ? 'page' : undefined}
           onClick={() => ui.setArea(item.key)}
+          data-tour={item.key === 'students' ? 'nav-students' : item.key === 'reports' ? 'nav-reports' : undefined}
         >
           <span aria-hidden="true" style={{ fontSize: '1rem' }}>{item.icon}</span>
           <span>{isArabic ? item.label : item.labelEn}</span>
@@ -200,7 +222,7 @@ export default function AppShell({ onOpenAdmin }) {
                 🛡
               </button>
             )}
-            <div className="nk-account-anchor">
+            <div className="nk-account-anchor" data-tour="account">
               <button
                 className="w-9 h-9 rounded-xl grid place-items-center text-[.72rem] font-black"
                 style={{ background: 'var(--brand-navy)', color: '#fff' }}
@@ -242,12 +264,13 @@ export default function AppShell({ onOpenAdmin }) {
           the session task owns the screen. Logout lives in the account menu:
           a stray tap here must never end the user's session. ─────────── */}
       {!focusActive && (
-      <nav className="nk-bottom-nav lg:hidden" aria-label="التنقل">
+      <nav className="nk-bottom-nav lg:hidden" aria-label="التنقل" data-tour="bottom-nav">
         {MOBILE_NAV.map((item) => (
           <button
             key={item.key}
             className={activeNav === item.key ? 'active' : ''}
             onClick={() => ui.setArea(item.key)}
+            data-tour={item.key === 'students' ? 'nav-students' : item.key === 'reports' ? 'nav-reports' : undefined}
           >
             <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>{item.icon}</span>
             <span>{isArabic ? item.label : item.labelEn}</span>
@@ -321,6 +344,17 @@ export default function AppShell({ onOpenAdmin }) {
         onHistory={() => setHistoryOpen(true)}
         historyCount={historyCount}
       />
+      {/* Spotlight tour (spec 17–19) — started from Settings → Help & Support;
+          skipping/finishing always restores the UI. */}
+      {ui.tourActive && (
+        <TourOverlay
+          steps={isArabic ? TOUR_STEPS_AR : TOUR_STEPS_EN}
+          onDone={() => {
+            ui.setTourActive(false)
+            try { localStorage.setItem('nokhba_tour_done_v1', '1') } catch { /* ignore */ }
+          }}
+        />
+      )}
     </div>
   )
 }

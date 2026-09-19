@@ -7,7 +7,9 @@ import { useLanguage } from '../context/LanguageContext'
 import SettingsModal from '../components/SettingsModal'
 import TemplatesModal from '../components/TemplatesModal'
 import BrandingModal from '../components/BrandingModal'
+import HelpSupportModal from '../components/HelpSupportModal'
 import { IS_DEMO } from '../lib/supabaseClient'
+import { GRADES_BY_STAGE } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SETTINGS AREA — groups & weekly schedule (multi-slot per group supported),
@@ -26,6 +28,7 @@ export default function SettingsArea() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [brandingOpen, setBrandingOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [newGroup, setNewGroup] = useState({ name: '', stage: '', day: String(new Date().getDay()), time: '16:30' })
 
   return (
@@ -87,7 +90,17 @@ export default function SettingsArea() {
         {!isAssistant && (
           <div className="grid sm:grid-cols-[1.3fr_1fr_0.8fr_0.8fr_auto] grid-cols-2 gap-2 items-center">
             <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'اسم المجموعة' : 'Group name'} value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} />
-            <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'المرحلة' : 'Stage'} value={newGroup.stage} onChange={(e) => setNewGroup({ ...newGroup, stage: e.target.value })} />
+            {/* Controlled stage selector (student-creation round): the group's
+                stage is the authoritative source for its students' stage — it
+                must be a standardized value, never free text. */}
+            <select className="glass-input rounded-xl px-2 py-2 text-[.78rem]" value={newGroup.stage} onChange={(e) => setNewGroup({ ...newGroup, stage: e.target.value })} aria-label={isArabic ? 'المرحلة' : 'Stage'}>
+              <option value="">{isArabic ? 'المرحلة...' : 'Stage...'}</option>
+              {Object.entries(GRADES_BY_STAGE).map(([category, grades]) => (
+                <optgroup key={category} label={category}>
+                  {grades.map((g) => <option key={g} value={g}>{g}</option>)}
+                </optgroup>
+              ))}
+            </select>
             <select className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={newGroup.day} onChange={(e) => setNewGroup({ ...newGroup, day: e.target.value })} aria-label={isArabic ? 'اليوم' : 'Day'}>
               {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
             </select>
@@ -121,6 +134,12 @@ export default function SettingsArea() {
             <small className="text-fg-muted block">{isArabic ? 'اسم المدرس، اسم المركز، الشعار، الألوان.' : 'Teacher name, center name, logo, palette.'}</small>
           </button>
         )}
+        {/* Help & Support (spec 20): FAQ + the interactive tour live here —
+            low-frequency help content never belongs in the main workflow. */}
+        <button className="nk-content text-right cursor-pointer" onClick={() => setHelpOpen(true)}>
+          <b className="block text-[.85rem] mb-1">؟ {isArabic ? 'المساعدة والدعم' : 'Help & support'}</b>
+          <small className="text-fg-muted block">{isArabic ? 'الأسئلة الشائعة، الجولة التفاعلية، وطرق التواصل مع الدعم.' : 'FAQ, interactive tour, and support contact.'}</small>
+        </button>
         {IS_DEMO && (
           <button className="nk-content text-right cursor-pointer" onClick={() => {
             if (confirm('إعادة تعيين البيانات التجريبية؟')) {
@@ -203,6 +222,13 @@ export default function SettingsArea() {
         }}
       />
       <BrandingModal open={brandingOpen} onClose={() => setBrandingOpen(false)} />
+      <HelpSupportModal open={helpOpen} onClose={() => setHelpOpen(false)} onStartTour={() => {
+        // The tour is a walkthrough of the HOME working screen — jump there
+        // first so every step's target element actually exists in the DOM.
+        setHelpOpen(false)
+        ui.setArea('home')
+        ui.setTourActive(true)
+      }} />
     </div>
   )
 }

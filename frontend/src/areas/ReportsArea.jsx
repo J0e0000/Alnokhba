@@ -3,7 +3,8 @@ import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import TemplatesModal from '../components/TemplatesModal'
 import AnnouncementsModal from '../components/AnnouncementsModal'
-import { buildTextReport, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import RecipientPickerModal from '../components/RecipientPickerModal'
+import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone, buildWhatsAppUrl } from '../lib/helpers'
 import { downloadCSV, localDateStr } from '../lib/csv'
@@ -23,6 +24,7 @@ export default function ReportsArea() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [announcementsOpen, setAnnouncementsOpen] = useState(false)
   const [busy, setBusy] = useState('')
+  const [picker, setPicker] = useState(null) // { candidates, title, subtitle, preselect }
 
   const completedLessons = useMemo(
     () => ws.lessonSessions.filter((l) => l.group_name === group && l.status === 'completed')
@@ -31,6 +33,8 @@ export default function ReportsArea() {
   )
   const lesson = ws.lessonSessions.find((l) => l.id === lessonId) || null
 
+  // Session report queue → recipient picker (spec 10/11): default = every
+  // student of the group; present vs absent get their own message template.
   const buildDailyReports = async () => {
     if (!lesson) return
     setBusy('reports')
@@ -38,40 +42,63 @@ export default function ReportsArea() {
       const { data: rows } = await supabaseLessonAttendance(lesson.id)
       const attendanceMap = Object.fromEntries((rows || []).map((r) => [r.student_id, r]))
       const groupStudents = ws.students.filter((s) => s.group_name === group)
-      const ranks = ws.ranks
-      const items = []
-      for (const s of groupStudents) {
+      const candidates = groupStudents.map((s) => {
         const row = attendanceMap[s.id]
-        const session = {
-          lesson_topic: lesson.lesson_topic || '', homework_text: lesson.homework_text || '',
-          video_link: lesson.video_link || '', attendance: row?.status || 'لم يرصد',
-        }
+        const status = row?.status || 'لم يرصد'
+        const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
         const reportStudent = { ...s, attendance_status: row?.status || s.attendance_status, hw_status: row?.homework_status || s.hw_status }
-        const text = buildTextReport(reportStudent, { ranks, allStudents: ws.students, session, examScores: ws.examScoresByStudent[s.id] || [] })
-        if (s.phone && isValidPhone(s.phone)) items.push({ student: reportStudent, phone: normalizeEgyptianPhone(s.phone), message: text, lessonId: lesson.id })
-      }
-      if (items.length === 0) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
-      ui.startQueue(items)
+        return {
+          key: s.id,
+          student: reportStudent,
+          phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+          message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings }),
+          lessonId: lesson.id,
+          statusLabel: status,
+          statusType: status === 'حاضر' ? 'present' : status === 'غائب' ? 'absent' : 'none',
+          disabled: !hasPhone,
+        }
+      })
+      if (!candidates.some((c) => !c.disabled)) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
+      setPicker({
+        candidates,
+        title: isArabic ? `تقارير الحصة — ${lesson.session_date}` : `Session reports — ${lesson.session_date}`,
+        subtitle: isArabic ? 'المقترح: كل الطلاب — رسالة حسب حالة كل طالب. عدّل التحديد كما تحب.' : 'Suggested: everyone — message matches each student\'s status. Adjust freely.',
+        preselect: 'all',
+      })
     } finally { setBusy('') }
   }
 
+  // QR links queue → recipient picker, links generated for valid phones only.
   const buildQRQueue = async () => {
     setBusy('qr')
     try {
       const groupStudents = ws.students.filter((s) => s.group_name === group)
       const template = ws.settings?.qr_message_template || ''
-      const items = []
+      const candidates = []
       for (const s of groupStudents) {
-        if (!s.phone || !isValidPhone(s.phone)) continue
-        const token = await getOrCreateStudentToken(s.id)
-        if (!token) continue
-        const link = buildStudentQRLink(token)
-        // buildQRMessage ALWAYS appends the link when the template lacks {link}
-        const message = buildQRMessage(s.name, link, template)
-        items.push({ student: s, phone: normalizeEgyptianPhone(s.phone), message, qrUrl: link })
+        const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
+        let message = ''
+        let qrUrl = ''
+        if (hasPhone) {
+          const token = await getOrCreateStudentToken(s.id)
+          if (!token) continue
+          qrUrl = buildStudentQRLink(token)
+          // buildQRMessage ALWAYS appends the link when the template lacks {link}
+          message = buildQRMessage(s.name, qrUrl, template)
+        }
+        candidates.push({
+          key: s.id, student: s, phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+          message, qrUrl, template,
+          statusLabel: '', statusType: 'none', disabled: !hasPhone,
+        })
       }
-      if (items.length === 0) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
-      ui.startQueue(items)
+      if (!candidates.some((c) => !c.disabled)) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
+      setPicker({
+        candidates,
+        title: isArabic ? 'روابط البوابة (QR)' : 'Portal links (QR)',
+        subtitle: isArabic ? 'المقترح: كل من لديه رقم صحيح. لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: everyone with a valid phone. Nothing sends until you continue.',
+        preselect: 'hasphone',
+      })
     } finally { setBusy('') }
   }
 
@@ -102,10 +129,23 @@ export default function ReportsArea() {
   }
 
   const bulkWelcome = () => {
-    const groupStudents = ws.students.filter((s) => s.group_name === group && s.phone && isValidPhone(s.phone))
-    const items = groupStudents.map((s) => ({ student: s, phone: normalizeEgyptianPhone(s.phone), message: (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) }))
-    if (!items.length) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
-    ui.startQueue(items)
+    const groupStudents = ws.students.filter((s) => s.group_name === group)
+    const candidates = groupStudents.map((s) => {
+      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
+      return {
+        key: s.id, student: s,
+        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+        message: hasPhone ? (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) : '',
+        statusLabel: '', statusType: 'none', disabled: !hasPhone,
+      }
+    })
+    if (!candidates.some((c) => !c.disabled)) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
+    setPicker({
+      candidates,
+      title: isArabic ? 'رسالة ترحيب جماعية' : 'Bulk welcome message',
+      subtitle: isArabic ? 'المقترح: كل من لديه رقم صحيح. لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: everyone with a valid phone. Nothing sends until you continue.',
+      preselect: 'hasphone',
+    })
   }
 
   return (
@@ -178,6 +218,20 @@ export default function ReportsArea() {
             <AnnouncementsModal open onClose={() => setAnnouncementsOpen(false)} teacherId={ws.effectiveTeacherId} studentCount={ws.students.length} showToast={ws.showToast} />
           </div>
         </div>
+      )}
+
+      {/* Shared recipient picker — every batch send from this area confirms
+          its recipients here first (spec 10–11: suggest, never force). */}
+      {picker && (
+        <RecipientPickerModal
+          open
+          onClose={() => setPicker(null)}
+          candidates={picker.candidates}
+          title={picker.title}
+          subtitle={picker.subtitle}
+          preselected={(c) => (picker.preselect === 'all' ? true : picker.preselect === 'manual' ? false : picker.preselect === 'hasphone' ? !c.disabled : c.statusType === picker.preselect)}
+          onStart={(items) => { setPicker(null); ui.startQueue(items) }}
+        />
       )}
     </div>
   )

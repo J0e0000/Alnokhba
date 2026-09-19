@@ -4,15 +4,21 @@ import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
 import { SkeletonTableRows } from '../components/Skeleton'
-import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl } from '../lib/helpers'
+import { checkAcademicWarning, getStudentRank, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
+import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import { downloadCSV } from '../lib/csv'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STUDENTS AREA — rebuilt around fast operations:
-//  • search + filters (name / code / phone / stage / group / status)
-//  • single add/edit (existing StudentModal logic)
-//  • BULK ADD: multi-row grid → validate all → review → save all (rule 19)
-//  • bulk selection: attendance, points, group move, WhatsApp queue
-//  • WhatsApp + Call per student (existing wa.me behavior preserved)
+// STUDENTS AREA — student-management round (spec 3–8, 21–26):
+//  • Stage SEGMENTED FILTER (الكل / ابتدائي / إعدادي / ثانوي) — stages are
+//    visually separated, no giant mixed list unless "الكل" is chosen (spec 4).
+//  • Bulk toolbar appears ONLY when records are selected (spec 22): one
+//    primary action + "More" menu — compact bottom bar on phones (spec 25).
+//  • Batch operations (spec 24): group assignment & deletion are ONE .in()
+//    round-trip; failures are counted and reported, never silent.
+//  • Consequential bulk actions confirm with the exact scope (spec 23).
+//  • BULK ADD ends in a result screen with ready-to-send QR/messages and
+//    per-student selection (spec 5–7) — nothing sends automatically.
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentsArea() {
   const ws = useWorkspace()
@@ -27,6 +33,9 @@ export default function StudentsArea() {
   const [studentModal, setStudentModal] = useState({ open: false, student: null })
   const [qrModal, setQrModal] = useState({ open: false, student: null })
   const [bulkAddOpen, setBulkAddOpen] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [busyBulk, setBusyBulk] = useState('')
 
   const filtered = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -34,7 +43,9 @@ export default function StudentsArea() {
       const searchable = normalizeArabicSearch([s.name, s.phone, s.code, s.stage, s.group_name].filter(Boolean).join(' '))
       if (q && !searchable.includes(q)) return false
       if (groupFilter !== 'all' && s.group_name !== groupFilter) return false
-      if (stageFilter !== 'الكل' && !(s.stage || '').includes(stageFilter)) return false
+      // Stage filter is CATEGORY-based so it matches both full grades
+      // ("الثالث الإعدادي") and legacy category values ("إعدادي").
+      if (stageFilter !== 'الكل' && stageCategoryOf(s.stage) !== stageFilter) return false
       if (statusFilter === 'present' && s.attendance_status !== 'حاضر') return false
       if (statusFilter === 'absent' && s.attendance_status !== 'غائب') return false
       if (statusFilter === 'warning' && !checkAcademicWarning(ws.examScoresByStudent[s.id] || [])) return false
@@ -49,33 +60,110 @@ export default function StudentsArea() {
     return n
   })
 
+  const allFilteredSelected = filtered.length > 0 && filtered.every((s) => selected.has(s.id))
+  const toggleSelectAll = () => setSelected((prev) => {
+    if (filtered.every((s) => prev.has(s.id))) {
+      const n = new Set(prev)
+      filtered.forEach((s) => n.delete(s.id))
+      return n
+    }
+    return new Set([...prev, ...filtered.map((s) => s.id)])
+  })
+
+  const selectedStudents = useMemo(
+    () => [...selected].map((id) => ws.students.find((s) => s.id === id)).filter(Boolean),
+    [selected, ws.students],
+  )
+
   const sendWhatsApp = (student, message) => {
     const phone = normalizeEgyptianPhone(student.phone)
-    if (!phone) { ws.showToast ? null : null; return }
+    if (!phone) return
     const url = buildWhatsAppUrl(phone, message)
     openWhatsAppUrl(url)
   }
 
   // QR button → opens the link card (visible link + copy + WhatsApp + QR download).
-  // The actual WhatsApp send lives in StudentQRModal and ALWAYS appends the link
-  // (buildQRMessage) — the old direct-send here dropped it when the saved
-  // template had no {link} placeholder ("اللينك ما بيتباعش").
   const openStudentQR = (student) => setQrModal({ open: true, student })
 
+  // ── Bulk actions (spec 21–24) ─────────────────────────────────────────────
   const bulkMessage = () => {
-    const items = [...selected].map((id) => ws.students.find((s) => s.id === id)).filter((s) => s && s.phone && isValidPhone(s.phone))
+    const items = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
       .map((s) => ({ student: s, phone: normalizeEgyptianPhone(s.phone), message: (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) }))
-    if (!items.length) { ws.showToast?.('لا يوجد طلاب محددين لديهم أرقام صحيحة', 'error'); return }
+    if (!items.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
+    ui.startQueue(items)
+    setMoreOpen(false)
+  }
+
+  const bulkAssignGroup = async (groupName) => {
+    setAssignOpen(false)
+    const groupStage = ws.groupMeta[groupName]?.stage || ''
+    const stageChanges = selectedStudents.filter((s) => groupStage && s.stage !== groupStage).length
+    const ok = await ui.askConfirm(
+      isArabic
+        ? `سيتم نقل ${selectedStudents.length} طالب إلى مجموعة «${groupName}»${stageChanges > 0 ? ` وتحديث مرحلة ${stageChanges} طالب لتطابق مرحلة المجموعة (${groupStage})` : ''}.`
+        : `Move ${selectedStudents.length} students to "${groupName}"${stageChanges > 0 ? ` and align ${stageChanges} stages to the group's stage (${groupStage})` : ''}.`,
+      { title: isArabic ? 'تغيير مجموعة الطلاب' : 'Change student group', confirmLabel: isArabic ? 'نقل الطلاب' : 'Move students' },
+    )
+    if (!ok) return
+    setBusyBulk('assign')
+    const res = await ws.bulkAssignGroup([...selected], groupName, groupStage)
+    setBusyBulk('')
+    if (res.ok > 0) {
+      ws.showToast?.(isArabic ? `تم نقل ${res.ok} طالب${res.failed ? ` — فشل ${res.failed}` : ''}` : `Moved ${res.ok} students${res.failed ? ` — ${res.failed} failed` : ''}`, res.failed ? 'info' : 'success')
+      setSelected(new Set())
+    }
+  }
+
+  const bulkQRQueue = async () => {
+    setMoreOpen(false)
+    const targets = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
+    if (!targets.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
+    setBusyBulk('qr')
+    const items = []
+    const template = ws.settings?.qr_message_template || ''
+    for (const s of targets) {
+      const token = await getOrCreateStudentToken(s.id)
+      if (!token) continue
+      const link = buildStudentQRLink(token)
+      items.push({ student: s, phone: normalizeEgyptianPhone(s.phone), message: buildQRMessage(s.name, link, template), qrUrl: link, template })
+    }
+    setBusyBulk('')
+    if (!items.length) { ws.showToast?.('تعذر تجهيز روابط البوابة', 'error'); return }
     ui.startQueue(items)
   }
 
-  // PERF: bulk attendance marks run in parallel instead of one-by-one —
-  // each student's write chain is independent (per-student RPC/points row).
+  const bulkExportCSV = () => {
+    setMoreOpen(false)
+    const rows = selectedStudents.map((s) => [s.name, s.code || '', s.phone || '', s.stage || '', s.group_name || '', s.points || 0, s.warnings || 0])
+    downloadCSV('students_selected.csv', ['الاسم', 'الكود', 'الهاتف', 'المرحلة', 'المجموعة', 'النقاط', 'الإنذارات'], rows)
+    ws.showToast?.('تم تحميل ملف CSV ✓', 'success')
+  }
+
+  const bulkDelete = async () => {
+    setMoreOpen(false)
+    const ok = await ui.askConfirm(
+      isArabic
+        ? `سيتم حذف ${selectedStudents.length} طالب نهائيًا من السيرفر مع سجلات حضورهم ودرجاتهم. لا يمكن التراجع عن حذف سجلاتهم من السيرفر (التراجع من الشاشة متاح للحفظ المؤقت فقط).`
+        : `${selectedStudents.length} students will be permanently deleted with their records.`,
+      { title: isArabic ? 'حذف الطلاب المحددين' : 'Delete selected students', confirmLabel: isArabic ? 'حذف نهائي' : 'Delete permanently', danger: true },
+    )
+    if (!ok) return
+    setBusyBulk('delete')
+    const res = await ws.bulkDeleteStudents(selectedStudents)
+    setBusyBulk('')
+    if (res.ok > 0) {
+      ws.showToast?.(isArabic ? `تم حذف ${res.ok} طالب${res.failed ? ` — فشل ${res.failed}` : ''}` : `Deleted ${res.ok} students${res.failed ? ` — ${res.failed} failed` : ''}`, res.failed ? 'info' : 'success')
+      setSelected(new Set())
+    }
+  }
+
   const bulkPresent = async () => {
+    setMoreOpen(false)
     await Promise.all([...selected].map((id) => ws.setAttendance(id, 'حاضر')))
     setSelected(new Set())
   }
   const bulkAbsent = async () => {
+    setMoreOpen(false)
     await Promise.all([...selected].map((id) => ws.setAttendance(id, 'غائب')))
     setSelected(new Set())
   }
@@ -97,7 +185,7 @@ export default function StudentsArea() {
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap gap-2 mb-3">
+      <div className="flex flex-wrap gap-2 mb-2">
         <input
           className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[190px]"
           placeholder={isArabic ? '🔍 بحث بالاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
@@ -118,19 +206,35 @@ export default function StudentsArea() {
         </select>
       </div>
 
-      {/* Bulk selection bar */}
-      {selected.size > 0 && (
-        <div className="glass-card p-3 mb-3 flex flex-wrap items-center gap-2 animate-slide-up">
-          <span className="nk-pill nk-pill-gold">{selected.size} {isArabic ? 'محدد' : 'selected'}</span>
-          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkPresent}>✓ {isArabic ? 'حاضر' : 'Present'}</button>
-          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkAbsent}>✗ {isArabic ? 'غائب' : 'Absent'}</button>
-          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={bulkMessage}>✆ {isArabic ? 'رسالة جماعية' : 'Bulk message'}</button>
-          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={() => setSelected(new Set())}>{isArabic ? 'إلغاء التحديد' : 'Clear'}</button>
+      {/* Stage separation (spec 4): segmented category filter — each stage is
+          one tap away, "الكل" is the only mixed view. */}
+      <div className="nk-att-chips mb-3" role="group" aria-label={isArabic ? 'فلترة المرحلة' : 'Stage filter'}>
+        {['الكل', ...STAGE_CATEGORIES].map((cat) => {
+          const count = cat === 'الكل' ? ws.students.length : ws.students.filter((s) => stageCategoryOf(s.stage) === cat).length
+          return (
+            <button
+              key={cat}
+              onClick={() => setStageFilter(cat)}
+              aria-pressed={stageFilter === cat}
+              className={stageFilter === cat ? 'nk-att-chip nk-att-chip--on' : 'nk-att-chip'}
+            >
+              {cat === 'الكل' ? (isArabic ? `الكل (${count})` : `All (${count})`) : `${cat} (${count})`}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Select-all chip (spec 21): only meaningful with results */}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-2 mb-2">
+          <button className="nk-att-chip" onClick={toggleSelectAll} aria-pressed={allFilteredSelected}>
+            {allFilteredSelected ? (isArabic ? '☑ إلغاء تحديد الكل' : '☑ Unselect all') : (isArabic ? `☐ تحديد الكل (${filtered.length})` : `☐ Select all (${filtered.length})`)}
+          </button>
         </div>
       )}
 
       {/* Student cards/rows */}
-      <div className="grid gap-2">
+      <div className="grid gap-2 pb-20 lg:pb-0">
         {filtered.map((s) => {
           const rank = getStudentRank(s.points || 0, ws.ranks)
           const isSel = selected.has(s.id)
@@ -199,10 +303,42 @@ export default function StudentsArea() {
         )}
       </div>
 
+      {/* Contextual bulk toolbar (spec 22/25): renders ONLY when records are
+          selected — one primary action + More menu; compact fixed bar on
+          phones so the rest of the screen stays usable. */}
+      {selected.size > 0 && (
+        <div className="nk-bulkbar glass-card animate-slide-up" role="toolbar" aria-label={isArabic ? 'إجراءات المحددين' : 'Bulk actions'}>
+          <span className="nk-pill nk-pill-gold shrink-0">{selected.size} {isArabic ? 'محدد' : 'selected'}</span>
+          <button className="btn-gold rounded-xl px-3.5 py-2 text-[.72rem] font-extrabold shrink-0" disabled={busyBulk === 'assign'} onClick={() => setAssignOpen(true)}>
+            ♦ {isArabic ? 'تعيين مجموعة' : 'Assign group'}
+          </button>
+          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkMessage}>✆ {isArabic ? 'رسالة' : 'Message'}</button>
+          <div className="nk-menu-wrap ms-auto">
+            <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
+              {isArabic ? 'المزيد' : 'More'} ▾
+            </button>
+            {moreOpen && (
+              <>
+                <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
+                <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
+                  <button role="menuitem" onClick={bulkPresent}>✓ {isArabic ? 'رصد المحددين حاضر' : 'Mark selected present'}</button>
+                  <button role="menuitem" onClick={bulkAbsent}>✗ {isArabic ? 'رصد المحددين غائب' : 'Mark selected absent'}</button>
+                  <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
+                  <button role="menuitem" onClick={bulkExportCSV}>⬇ {isArabic ? 'تصدير المحددين CSV' : 'Export selected (CSV)'}</button>
+                  <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
+                  <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}>✕ {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <StudentModal
         open={studentModal.open}
         student={studentModal.student}
         groups={ws.groups}
+        groupMeta={ws.groupMeta}
         onClose={() => setStudentModal({ open: false, student: null })}
         onSave={async (form) => {
           const result = await ws.saveStudent(form, studentModal.student)
@@ -219,32 +355,128 @@ export default function StudentsArea() {
         showToast={ws.showToast}
       />
 
+      {/* Assign-group modal (spec 2/3): only stage-compatible groups are
+          offered; the confirm shows the exact consequence. */}
+      {assignOpen && (
+        <AssignGroupModal
+          count={selected.size}
+          groups={ws.groups}
+          groupMeta={ws.groupMeta}
+          currentStages={selectedStudents.map((s) => s.stage).filter(Boolean)}
+          onClose={() => setAssignOpen(false)}
+          onPick={bulkAssignGroup}
+        />
+      )}
+
       {bulkAddOpen && <BulkAddModal onClose={() => setBulkAddOpen(false)} />}
     </div>
   )
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSIGN GROUP modal — groups are filtered to stage-compatible options and the
+// consequence (stage realignment count) is stated before applying (spec 2).
+// ─────────────────────────────────────────────────────────────────────────────
+function AssignGroupModal({ count, groups, groupMeta, currentStages, onClose, onPick }) {
+  const [groupName, setGroupName] = useState('')
+  const meta = groupMeta || {}
+  // Majority category of the selection drives the compatibility filter.
+  const counts = {}
+  for (const st of currentStages) {
+    const cat = stageCategoryOf(st)
+    if (cat) counts[cat] = (counts[cat] || 0) + 1
+  }
+  const majority = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+  const compatible = (groups || []).filter((g) => !majority || !meta[g]?.stage || stageCategoryOf(meta[g]?.stage) === majority)
+  const rest = (groups || []).filter((g) => !compatible.includes(g))
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/50 p-4" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="glass-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-extrabold m-0 mb-1">تعيين مجموعة لـ {count} طالب</h3>
+        <p className="text-[.72rem] text-fg-muted mt-0 mb-3">مرحلة الطالب ستُحدَّث لتطابق مرحلة المجموعة المختارة — المجموعة هي المرجع.</p>
+        <select className="glass-input rounded-xl px-3 py-2.5 text-sm w-full mb-3" value={groupName} onChange={(e) => setGroupName(e.target.value)} autoFocus>
+          <option value="">اختر المجموعة...</option>
+          {compatible.length > 0 && <optgroup label="متوافقة مع مرحلة المحددين">
+            {compatible.map((g) => <option key={g} value={g}>{g}{meta[g]?.stage ? ` — ${meta[g].stage}` : ''}</option>)}
+          </optgroup>}
+          {rest.length > 0 && <optgroup label="مراحل أخرى">
+            {rest.map((g) => <option key={g} value={g}>{g}{meta[g]?.stage ? ` — ${meta[g].stage}` : ''}</option>)}
+          </optgroup>}
+        </select>
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={onClose}>إلغاء</button>
+          <button className="btn-gold flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={!groupName} onClick={() => onPick(groupName)}>متابعة</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// BULK ADD (rule 19): multi-row grid → VALIDATE ALL → REVIEW → SAVE ALL
-// Detects: missing names, invalid phones, duplicates inside the list,
-// and conflicts with existing students (name or phone). Never silently
-// creates duplicates.
+// BULK ADD (rule 19 + spec 5–7): multi-row grid → VALIDATE ALL → REVIEW →
+// SAVE ALL → RESULT SCREEN. The result screen is the spec-5 "Students Added
+// Successfully" state: per-student QR/message generation (existing token/link
+// architecture — no second QR system), per-student selection, copy actions,
+// and explicit send into the existing WhatsApp queue. NOTHING sends without
+// the teacher pressing the send button (spec 6).
 // ═══════════════════════════════════════════════════════════════════════════
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return ok
+    } catch { return false }
+  }
+}
+
 function BulkAddModal({ onClose }) {
   const ws = useWorkspace()
+  const ui = useUI()
   const { isArabic } = ws
   const [rows, setRows] = useState([
-    { name: '', phone: '', stage: '', group: ws.groups[0] || '' },
-    { name: '', phone: '', stage: '', group: ws.groups[0] || '' },
-    { name: '', phone: '', stage: '', group: ws.groups[0] || '' },
+    blankRow(ws.groups[0]), blankRow(ws.groups[0]), blankRow(ws.groups[0]),
   ])
-  const [step, setStep] = useState('edit') // edit | review | saving
+  const [step, setStep] = useState('edit') // edit | review | saving | result
   const [problems, setProblems] = useState([])
   const [result, setResult] = useState(null)
+  const [created, setCreated] = useState([]) // students from the save
+  const [links, setLinks] = useState({}) // id → { status: pending|ready|error, link, message }
+  const [picked, setPicked] = useState(() => new Set())
+  const [linkFilter, setLinkFilter] = useState('all') // all | ready | nophone
+
+  const meta = ws.groupMeta || {}
 
   const setRow = (i, patch) => setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)))
-  const addRow = () => setRows((prev) => [...prev, { name: '', phone: '', stage: '', group: ws.groups[0] || '' }])
+  const addRow = () => setRows((prev) => [...prev, blankRow(ws.groups[0])])
   const removeRow = (i) => setRows((prev) => prev.filter((_, j) => j !== i))
+
+  function blankRow(defaultGroup) {
+    return { name: '', phone: '', stage: '', group: defaultGroup || '' }
+  }
+
+  // Row-level group change inherits the group's stage (spec 2) and row stage
+  // change filters the group options (spec 3) — same rules as StudentModal.
+  const setRowGroup = (i, groupName) => {
+    const groupStage = meta[groupName]?.stage || ''
+    setRow(i, groupStage ? { group: groupName, stage: groupStage } : { group: groupName })
+  }
+  const setRowStage = (i, stage) => {
+    const row = rows[i]
+    const compatible = !row.group || isStageCompatible(stage, meta[row.group]?.stage)
+    setRow(i, compatible ? { stage } : { stage, group: '' })
+  }
+
+  const groupsForStage = (stage) => (ws.groups || []).filter((g) => isStageCompatible(stage, meta[g]?.stage))
 
   const filled = rows.filter((r) => String(r.name || '').trim() || String(r.phone || '').trim())
 
@@ -259,8 +491,192 @@ function BulkAddModal({ onClose }) {
   const saveAll = async () => {
     setStep('saving')
     const res = await ws.bulkAddStudents(filled, () => {})
-    if (res.ok) { setResult(res); setTimeout(onClose, 900) }
-    else { setProblems(res.problems || []); setStep('edit') }
+    if (res.ok) {
+      setResult(res)
+      setCreated(res.students || [])
+      setPicked(new Set((res.students || []).map((s) => s.id)))
+      setStep('result')
+      generateLinks(res.students || [])
+    } else {
+      setProblems(res.problems || [])
+      setStep('edit')
+    }
+  }
+
+  // Generate portal links/messages for the created students (spec 5) —
+  // sequential with a small concurrency window; failures stay per-row
+  // retryable, one bad token never blocks the rest (spec 24 partial failure).
+  const generateLinks = async (students) => {
+    const template = ws.settings?.qr_message_template || ''
+    setLinks(Object.fromEntries(students.filter((s) => isValidPhone(s.phone)).map((s) => [s.id, { status: 'pending', link: '', message: '' }])))
+    const queue = students.filter((s) => isValidPhone(s.phone))
+    const worker = async () => {
+      while (queue.length) {
+        const s = queue.shift()
+        try {
+          const token = await getOrCreateStudentToken(s.id)
+          if (!token) throw new Error('no token')
+          const link = buildStudentQRLink(token)
+          const message = buildQRMessage(s.name, link, template)
+          setLinks((prev) => ({ ...prev, [s.id]: { status: 'ready', link, message } }))
+        } catch {
+          setLinks((prev) => ({ ...prev, [s.id]: { status: 'error', link: '', message: '' } }))
+        }
+      }
+    }
+    await Promise.all([worker(), worker()])
+  }
+
+  const retryLink = async (s) => {
+    setLinks((prev) => ({ ...prev, [s.id]: { status: 'pending', link: '', message: '' } }))
+    try {
+      const token = await getOrCreateStudentToken(s.id)
+      if (!token) throw new Error('no token')
+      const link = buildStudentQRLink(token)
+      const message = buildQRMessage(s.name, link, ws.settings?.qr_message_template || '')
+      setLinks((prev) => ({ ...prev, [s.id]: { status: 'ready', link, message } }))
+    } catch {
+      setLinks((prev) => ({ ...prev, [s.id]: { status: 'error', link: '', message: '' } }))
+    }
+  }
+
+  const visibleCreated = created.filter((s) => {
+    if (linkFilter === 'ready') return links[s.id]?.status === 'ready'
+    if (linkFilter === 'nophone') return !isValidPhone(s.phone)
+    return true
+  })
+
+  const readyCount = created.filter((s) => links[s.id]?.status === 'ready').length
+  const pickedReady = created.filter((s) => picked.has(s.id) && links[s.id]?.status === 'ready')
+
+  const togglePicked = (id) => setPicked((prev) => {
+    const n = new Set(prev)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+
+  const sendSelected = () => {
+    if (!pickedReady.length) { ws.showToast?.(isArabic ? 'لا يوجد رسائل جاهزة للمحددين' : 'No ready messages for the selection', 'error'); return }
+    const items = pickedReady.map((s) => ({ student: s, phone: normalizeEgyptianPhone(s.phone), message: links[s.id].message, qrUrl: links[s.id].link, template: ws.settings?.qr_message_template || '' }))
+    ui.startQueue(items)
+    onClose()
+  }
+
+  const copySelected = async () => {
+    const targets = created.filter((s) => picked.has(s.id) && (links[s.id]?.status === 'ready' || isValidPhone(s.phone)))
+    const text = targets.map((s) => {
+      const msg = links[s.id]?.message
+      if (msg) return `${s.name}\n${msg}`
+      return `${s.name}\n${(ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name)}`
+    }).join('\n\n———\n\n')
+    const ok = await copyText(text)
+    ws.showToast?.(ok ? (isArabic ? `تم نسخ رسائل ${targets.length} طالب` : `Copied ${targets.length} messages`) : (isArabic ? 'تعذر النسخ' : 'Copy failed'), ok ? 'success' : 'error')
+  }
+
+  const problemsList = (list) => (
+    <div className="nk-notice mb-3" style={{ background: 'var(--danger-bg)', borderColor: 'var(--danger-border)', color: 'var(--danger-strong)' }}>
+      <b className="block mb-1">{isArabic ? 'أخطاء يجب إصلاحها قبل الحفظ:' : 'Fix before saving:'}</b>
+      <ul className="list-disc ps-5 m-0">
+        {list.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'صف' : 'Row'} ${p.index + 1}: ` : ''}{p.reason}{p.label ? ` (${p.label})` : ''}</li>)}
+      </ul>
+    </div>
+  )
+
+  // ── RESULT SCREEN (spec 5–7) ───────────────────────────────────────────────
+  if (step === 'result' && result) {
+    return (
+      <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/50 p-3 sm:p-6 overflow-y-auto" onClick={onClose} role="dialog" aria-modal="true">
+        <div className="glass-card w-full max-w-2xl p-5 my-4" onClick={(e) => e.stopPropagation()}>
+          <div className="text-center mb-4">
+            <div className="text-3xl mb-1" aria-hidden="true">🎉</div>
+            <h3 className="text-base font-black m-0">{isArabic ? 'تمت إضافة الطلاب بنجاح' : 'Students added successfully'}</h3>
+            <p className="text-[.74rem] text-fg-muted m-0 mt-1">{isArabic ? `تمت إضافة ${created.length} طالب. جهّز رسائل الدخول وأرسلها للمحدد — لن يُرسل شيء تلقائيًا.` : `${created.length} students added. Prepare the access messages and send to your selection — nothing sends automatically.`}</p>
+          </div>
+
+          <div className="nk-att-chips mb-2">
+            {[
+              ['all', isArabic ? `الكل (${created.length})` : `All (${created.length})`],
+              ['ready', isArabic ? `جاهزة للإرسال (${readyCount})` : `Ready (${readyCount})`],
+              ['nophone', isArabic ? `بلا رقم صحيح (${created.filter((s) => !isValidPhone(s.phone)).length})` : `No phone (${created.filter((s) => !isValidPhone(s.phone)).length})`],
+            ].map(([key, label]) => (
+              <button key={key} onClick={() => setLinkFilter(key)} aria-pressed={linkFilter === key} className={linkFilter === key ? 'nk-att-chip nk-att-chip--on' : 'nk-att-chip'}>
+                {label}
+              </button>
+            ))}
+            <button className="nk-att-chip" onClick={() => setPicked(new Set(visibleCreated.filter((s) => links[s.id]?.status === 'ready' || isValidPhone(s.phone)).map((s) => s.id)))}>
+              {isArabic ? '☐ تحديد الظاهرين' : '☐ Select visible'}
+            </button>
+          </div>
+
+          <div className="grid gap-1.5 max-h-[44vh] overflow-y-auto mb-3">
+            {visibleCreated.map((s) => {
+              const link = links[s.id]
+              const hasPhone = isValidPhone(s.phone)
+              const isPicked = picked.has(s.id)
+              return (
+                <div key={s.id} className="nk-att-row" style={isPicked && hasPhone ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}>
+                  <span className="nk-att-row__name">
+                    <b className="truncate">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-[var(--brand-gold)] cursor-pointer me-2 align-middle"
+                        checked={isPicked && hasPhone}
+                        disabled={!hasPhone}
+                        onChange={() => togglePicked(s.id)}
+                      />
+                      {s.name}
+                    </b>
+                    <small className="truncate">
+                      {hasPhone ? `+${normalizeEgyptianPhone(s.phone)} · ${s.group_name || ''}${s.stage ? ` · ${s.stage}` : ''}` : (isArabic ? 'لا يوجد رقم واتساب صحيح' : 'No valid WhatsApp phone')}
+                    </small>
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    {!hasPhone && <span className="nk-pill nk-pill-neutral">—</span>}
+                    {hasPhone && link?.status === 'pending' && <span className="nk-pill nk-pill-neutral">… {isArabic ? 'جاري التجهيز' : 'Preparing'}</span>}
+                    {hasPhone && link?.status === 'ready' && <span className="nk-pill nk-pill-live">✓ {isArabic ? 'جاهزة' : 'Ready'}</span>}
+                    {hasPhone && link?.status === 'error' && (
+                      <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.64rem] font-extrabold" onClick={() => retryLink(s)}>
+                        ⟲ {isArabic ? 'إعادة المحاولة' : 'Retry'}
+                      </button>
+                    )}
+                    {link?.status === 'ready' && (
+                      <button
+                        className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.64rem] font-extrabold"
+                        onClick={async () => { const ok = await copyText(link.message); ws.showToast?.(ok ? 'تم نسخ الرسالة ✓' : 'تعذر النسخ', ok ? 'success' : 'error') }}
+                        title={isArabic ? 'نسخ الرسالة' : 'Copy message'}
+                      >⧉</button>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Message preview for the first ready student (context, spec 6) */}
+          {pickedReady[0] && links[pickedReady[0].id]?.message && (
+            <div className="rounded-xl p-3 mb-3 text-[.72rem] leading-6 whitespace-pre-line" style={{ background: 'var(--surface-container-high)', border: '1px solid var(--surface-border)' }}>
+              <b className="block mb-1 text-[.68rem] text-fg-muted">{isArabic ? `معاينة رسالة ${pickedReady[0].name}:` : `Preview — ${pickedReady[0].name}:`}</b>
+              {links[pickedReady[0].id].message}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-3" style={{ borderTop: '1px solid var(--surface-border)' }}>
+            <button className="btn-gold action-button !min-h-[3rem]" disabled={pickedReady.length === 0} onClick={sendSelected}>
+              ✆ {isArabic ? `إرسال إلى المحدد (${pickedReady.length})` : `Send to selected (${pickedReady.length})`}
+            </button>
+            <button className="btn-ghost action-button !min-h-[3rem]" onClick={copySelected}>
+              ⧉ {isArabic ? 'نسخ الرسائل' : 'Copy messages'}
+            </button>
+            <button className="btn-ghost action-button !min-h-[3rem] ms-auto" onClick={onClose}>
+              {isArabic ? 'عدم الإرسال الآن' : "Don't send now"}
+            </button>
+          </div>
+          <p className="text-[.66rem] text-fg-muted m-0 mt-2">
+            {isArabic ? 'الإرسال يفتح واتساب لكل طالب على حدة عبر قائمة الإرسال المعتادة — نفس نظام QR الحالي.' : 'Sending opens WhatsApp per student via the usual queue — the same existing QR system.'}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -271,34 +687,42 @@ function BulkAddModal({ onClose }) {
           <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.72rem] font-extrabold" onClick={onClose}>✕</button>
         </div>
         <p className="text-[.7rem] text-fg-muted mt-0 mb-4">
-          {step === 'edit' && (isArabic ? 'أدخل الطلاب في صفوف سريعة، ثم تحقق من الكل ← راجع ← احفظ الجميع مرة واحدة.' : 'Enter students in fast rows, then validate all → review → save all at once.')}
+          {step === 'edit' && (isArabic ? 'أدخل الطلاب في صفوف سريعة، ثم تحقق من الكل ← راجع ← احفظ الجميع مرة واحدة. اختيار المجموعة يحدد المرحلة تلقائيًا.' : 'Enter students in fast rows, then validate all → review → save all at once. Picking a group sets the stage automatically.')}
           {step === 'review' && (isArabic ? 'كل الصفوف صحيحة — اضغط حفظ الجميع للإضافة دفعة واحدة.' : 'All rows valid — save all at once.')}
         </p>
 
-        {problems.length > 0 && step === 'edit' && (
-          <div className="nk-notice mb-3" style={{ background: 'var(--danger-bg)', borderColor: 'var(--danger-border)', color: 'var(--danger-strong)' }}>
-            <b className="block mb-1">{isArabic ? 'أخطاء يجب إصلاحها قبل الحفظ:' : 'Fix before saving:'}</b>
-            <ul className="list-disc ps-5 m-0">
-              {problems.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'صف' : 'Row'} ${p.index + 1}: ` : ''}{p.reason}{p.label ? ` (${p.label})` : ''}</li>)}
-            </ul>
-          </div>
-        )}
+        {problems.length > 0 && step === 'edit' && problemsList(problems)}
 
-        {step !== 'saving' && rows.map((row, i) => (
-          <div key={i} className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_0.8fr_0.9fr_auto] gap-2 mb-2 items-center">
-            <input disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? `اسم الطالب ${i + 1}` : `Name ${i + 1}`} value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} />
-            <input dir="ltr" disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'الهاتف' : 'Phone'} value={row.phone} onChange={(e) => setRow(i, { phone: e.target.value })} />
-            <select disabled={step === 'review'} className="glass-input rounded-xl px-2 py-2 text-[.72rem]" value={row.stage} onChange={(e) => setRow(i, { stage: e.target.value })}>
-              <option value="">{isArabic ? 'المرحلة' : 'Stage'}</option>
-              {['ابتدائي', 'إعدادي', 'ثانوي'].map((st) => <option key={st} value={st}>{st}</option>)}
-            </select>
-            <select disabled={step === 'review'} className="glass-input rounded-xl px-2 py-2 text-[.72rem]" value={row.group} onChange={(e) => setRow(i, { group: e.target.value })}>
-              <option value="">{isArabic ? 'المجموعة' : 'Group'}</option>
-              {ws.groups.map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
-            <button disabled={step === 'review'} className="btn-ghost rounded-lg px-2.5 py-2 text-[.7rem] font-extrabold" onClick={() => removeRow(i)} aria-label={isArabic ? 'حذف الصف' : 'Remove row'}>✕</button>
-          </div>
-        ))}
+        {step !== 'saving' && rows.map((row, i) => {
+          const compatible = groupsForStage(row.stage)
+          const rest = (ws.groups || []).filter((g) => !compatible.includes(g))
+          return (
+            <div key={i} className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] gap-2 mb-2 items-center">
+              <input disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? `اسم الطالب ${i + 1}` : `Name ${i + 1}`} value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} />
+              <input dir="ltr" disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'الهاتف' : 'Phone'} value={row.phone} onChange={(e) => setRow(i, { phone: e.target.value })} />
+              {/* Full-grade stage select (spec 1) — same canonical values as
+                  single-add, not the bare category words. */}
+              <select disabled={step === 'review'} className="glass-input rounded-xl px-2 py-2 text-[.72rem]" value={row.stage} onChange={(e) => setRowStage(i, e.target.value)}>
+                <option value="">{isArabic ? 'المرحلة' : 'Stage'}</option>
+                {Object.entries(GRADES_BY_STAGE).map(([category, grades]) => (
+                  <optgroup key={category} label={category}>
+                    {grades.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+              <select disabled={step === 'review'} className="glass-input rounded-xl px-2 py-2 text-[.72rem]" value={row.group} onChange={(e) => setRowGroup(i, e.target.value)} title={isArabic ? 'المجموعة تحدد المرحلة' : 'The group determines the stage'}>
+                <option value="">{isArabic ? 'المجموعة' : 'Group'}</option>
+                {compatible.length > 0 && <optgroup label={isArabic ? 'متوافقة' : 'Compatible'}>
+                  {compatible.map((g) => <option key={g} value={g}>{g}</option>)}
+                </optgroup>}
+                {rest.length > 0 && <optgroup label={isArabic ? 'مراحل أخرى' : 'Other stages'}>
+                  {rest.map((g) => <option key={g} value={g}>{g}</option>)}
+                </optgroup>}
+              </select>
+              <button disabled={step === 'review'} className="btn-ghost rounded-lg px-2.5 py-2 text-[.7rem] font-extrabold" onClick={() => removeRow(i)} aria-label={isArabic ? 'حذف الصف' : 'Remove row'}>✕</button>
+            </div>
+          )
+        })}
         {step === 'saving' && <p className="text-center py-8 font-extrabold" style={{ color: 'var(--brand-gold)' }}>{isArabic ? 'جاري حفظ الجميع...' : 'Saving all...'}</p>}
 
         {step !== 'saving' && (

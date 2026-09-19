@@ -941,3 +941,126 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
 .nk-att-absent__text small { font-size: .64rem; color: var(--danger-strong); opacity: .8; }
 .nk-att-absent__actions { display: flex; gap: .4rem; flex-shrink: 0; }
 .nk-att-absent__send { background: var(--danger-strong); color: #fff; border-color: var(--danger-strong); }
+
+/* ═══════════════ Student-management round additions ═══════════════ */
+
+/* Contextual bulk toolbar (spec 22/25): compact bottom bar on phones,
+   inline card on desktop. Renders only when records are selected. */
+.nk-bulkbar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: .6rem .7rem;
+  border-radius: 14px;
+}
+@media (max-width: 1023px) {
+  .nk-bulkbar {
+    position: fixed;
+    inset-inline: .5rem;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px) + .4rem);
+    z-index: 55;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+}
+
+/* Dropdown menu / mobile action sheet (report recipients, bulk "More") —
+   primary action stays visible, alternatives live here (spec 15/22). */
+.nk-menu-wrap { position: relative; }
+.nk-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  background: transparent;
+}
+.nk-menu-sheet {
+  position: absolute;
+  z-index: 59;
+  inset-inline-end: 0;
+  top: calc(100% + .4rem);
+  min-width: 230px;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .35);
+  padding: .4rem;
+  display: grid;
+  gap: 2px;
+}
+.nk-menu-sheet__title {
+  font-size: .66rem;
+  color: var(--fg-muted);
+  padding: .35rem .6rem .25rem;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: .25rem;
+}
+.nk-menu-sheet button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: .55rem .6rem;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 800;
+  color: var(--fg);
+  cursor: pointer;
+}
+.nk-menu-sheet button:hover:not(:disabled) { background: var(--surface-container-high); }
+.nk-menu-sheet button:disabled { opacity: .4; cursor: not-allowed; }
+.nk-menu-sheet button small { font-size: .64rem; font-weight: 600; color: var(--fg-muted); }
+.nk-menu-sheet button.nk-menu-danger { color: var(--danger-strong); }
+@media (max-width: 640px) {
+  /* Action-sheet behavior on phones: anchored above the thumb, full width */
+  .nk-menu-sheet {
+    position: fixed;
+    inset-inline: .5rem;
+    inset-inline-end: .5rem;
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px) + .4rem);
+    min-width: 0;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+  }
+}
+
+/* Spotlight tour (spec 17–19): the page is blurred/dimmed behind four shade
+   panels; the target stays sharp inside a gold ring; the card follows the
+   target dynamically and never covers it. */
+.nk-tour { position: fixed; inset: 0; z-index: 95; }
+.nk-tour__shade {
+  position: fixed;
+  background: rgba(2, 6, 18, .55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.nk-tour__ring {
+  position: fixed;
+  border-radius: 14px;
+  border: 2px solid var(--brand-gold);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand-gold) 25%, transparent), 0 0 24px color-mix(in srgb, var(--brand-gold) 45%, transparent);
+  pointer-events: none;
+  transition: top .18s ease, left .18s ease, width .18s ease, height .18s ease;
+}
+.nk-tour__card {
+  position: fixed;
+  z-index: 96;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+}
+.nk-tour__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-border);
+  transition: width .18s ease, background .18s ease;
+}
+
+/* Recipient picker rows inherit nk-att-row; list gets a little breathing room */
+.nk-picker-list { padding-bottom: .25rem; }

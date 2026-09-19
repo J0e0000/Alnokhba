@@ -5,6 +5,8 @@ import { useUI } from '../shell/UIContext'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, getStudentRankPosition, normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, checkAcademicWarning } from '../lib/helpers'
 import { weeklyAttendanceForStudent, WEEKLY_STATUS_LABEL } from '../lib/week'
+import StudentModal from '../components/StudentModal'
+import StudentQRModal from '../components/StudentQRModal'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENT HISTORY (rule 21) — quick reference, deliberately NOT a dashboard.
@@ -19,6 +21,8 @@ export default function HistoryArea() {
   const [selectedId, setSelectedId] = useState(null)
   const [behaviorLogs, setBehaviorLogs] = useState([])
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
 
   // Deep-open support: clicking a student's NAME anywhere (e.g. Students tab)
   // jumps here and opens that student's profile directly (read-only surface).
@@ -118,6 +122,15 @@ export default function HistoryArea() {
                 📞 {isArabic ? 'اتصال' : 'Call'}
               </a>
             )}
+            <button
+              className="action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]"
+              style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', borderColor: 'var(--info-border)' }}
+              onClick={() => setQrOpen(true)}
+              title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
+            >QR</button>
+            <button className="btn-ghost action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" onClick={() => setEditOpen(true)}>
+              ✎ {isArabic ? 'تعديل البيانات' : 'Edit details'}
+            </button>
           </div>
         </div>
         <div className="flex flex-wrap gap-1.5 mt-4">
@@ -200,6 +213,27 @@ export default function HistoryArea() {
           )}
         </section>
       </div>
+
+      {/* Identity editing + QR card — viewing context stays primary here;
+          attendance/grade mutations remain in the Session Workspace (spec 9). */}
+      <StudentModal
+        open={editOpen}
+        student={student}
+        groups={ws.groups}
+        groupMeta={ws.groupMeta}
+        onClose={() => setEditOpen(false)}
+        onSave={async (form) => {
+          const result = await ws.saveStudent(form, student)
+          if (result?.ok) setEditOpen(false)
+        }}
+      />
+      <StudentQRModal
+        open={qrOpen}
+        student={student}
+        template={ws.settings?.qr_message_template || ''}
+        onClose={() => setQrOpen(false)}
+        showToast={ws.showToast}
+      />
     </div>
   )
 }

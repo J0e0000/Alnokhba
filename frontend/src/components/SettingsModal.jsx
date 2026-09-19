@@ -27,6 +27,7 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
   const [teamError, setTeamError] = useState('')
   const [absenceWarningThreshold, setAbsenceWarningThreshold] = useState(2)
   const [absenceAttentionThreshold, setAbsenceAttentionThreshold] = useState(3)
+  const [maxWarnings, setMaxWarnings] = useState(3)
   const [notificationPreferences, setNotificationPreferences] = useState({ attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true })
   const [qrMessageTemplate, setQrMessageTemplate] = useState('مرحباً {studentName}\nرابط متابعة الطالب:')
 
@@ -56,6 +57,7 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
       setReportFields(settings.report_fields || ['rank', 'position', 'points', 'warnings', 'attendance', 'homework', 'session', 'logs'])
       setAbsenceWarningThreshold(Number(settings.insight_config?.absence_warning_threshold || settings.absence_warning_threshold || 2))
       setAbsenceAttentionThreshold(Number(settings.insight_config?.absence_attention_threshold || settings.absence_attention_threshold || 3))
+      setMaxWarnings(Number(settings.insight_config?.max_warnings ?? 3))
       setNotificationPreferences({ attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true, ...(settings.notification_preferences || {}) })
       setQrMessageTemplate(settings.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب: {link}')
     }
@@ -106,7 +108,7 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
       points_absent: Number(points.absent) || 0,
       ranks,
       report_fields: reportFields,
-      insight_config: { ...(settings?.insight_config || {}), absence_warning_threshold: Math.max(1, Number(absenceWarningThreshold) || 2), absence_attention_threshold: Math.max(Math.max(1, Number(absenceWarningThreshold) || 2), Number(absenceAttentionThreshold) || 3) },
+      insight_config: { ...(settings?.insight_config || {}), absence_warning_threshold: Math.max(1, Number(absenceWarningThreshold) || 2), absence_attention_threshold: Math.max(Math.max(1, Number(absenceWarningThreshold) || 2), Number(absenceAttentionThreshold) || 3), max_warnings: Math.max(1, Number(maxWarnings) || 3) },
       notification_preferences: notificationPreferences,
       qr_message_template: qrMessageTemplate,
     })
@@ -130,12 +132,19 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
         </div>
 
         <div>
-          <p className='text-sm text-fg-muted mb-2 font-bold'>{isArabic ? 'تنبيهات الغياب' : 'Absence alerts'}</p>
-          <div className='grid grid-cols-2 gap-2 mb-4'>
+          <p className='text-sm text-fg-muted mb-2 font-bold'>{isArabic ? 'تنبيهات الغياب والإنذارات' : 'Absence alerts & warnings'}</p>
+          <div className='grid grid-cols-2 gap-2 mb-2'>
             <PointField label={isArabic ? 'تحذير بعد عدد غيابات' : 'Warning after absences'} value={absenceWarningThreshold} onChange={setAbsenceWarningThreshold} />
             <PointField label={isArabic ? 'يحتاج متابعة بعد' : 'Attention after absences'} value={absenceAttentionThreshold} onChange={setAbsenceAttentionThreshold} />
           </div>
-          <p className='text-[11px] text-fg-subtle'>{isArabic ? 'يتم تسجيل الغياب فقط عند اختيار المجموعة والضغط على بدء حصة جديدة، ولا يتأثر الطلاب خارج المجموعة.' : 'Absence is marked only for the selected group when starting a new lesson; students outside the group are untouched.'}</p>
+          <div className='grid grid-cols-2 gap-2 mb-2'>
+            {/* Existing business rule, made configurable (spec 12/13): the QR
+                entry block fires at warnings >= this number; the absence
+                message computes "remaining warnings" against it. No other
+                consequence exists or is invented. */}
+            <PointField label={isArabic ? 'منع الدخول بعد عدد إنذارات' : 'Block entry after warnings'} value={maxWarnings} onChange={setMaxWarnings} />
+          </div>
+          <p className='text-[11px] text-fg-subtle'>{isArabic ? 'عتبة الإنذارات تُستخدم في رسائل الغياب ("متبقي X إنذار") وفي منع الدخول عبر بوابة الطالب. لا تُضاف أي عقوبة أخرى تلقائيًا.' : 'The warning threshold powers the absence message ("X warnings remaining") and the portal entry block. No other consequence is applied automatically.'}</p>
         </div>
 
         <div>

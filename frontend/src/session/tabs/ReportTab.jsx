@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
-import { buildTextReport } from '../../lib/qrPdfWhatsApp'
-import { isValidPhone } from '../../lib/helpers'
+import { buildAttendanceMessage } from '../../lib/qrPdfWhatsApp'
+import { isValidPhone, normalizeEgyptianPhone } from '../../lib/helpers'
 import { getStudentRank, getStudentRankPosition } from '../../lib/helpers'
+import RecipientPickerModal from '../../components/RecipientPickerModal'
 import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -46,7 +47,8 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
   const [dirty, setDirty] = useState(restoredRef.current)
   const [saving, setSaving] = useState(false)
   const [finishing, setFinishing] = useState(false)
-  const [queueScope, setQueueScope] = useState('all') // all | present | absent
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [picker, setPicker] = useState(null) // { candidates, title, subtitle, preselect }
 
   useEffect(() => {
     restoredRef.current = false
@@ -91,31 +93,52 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
   }
 
   // Report queue (existing production flow): requires a COMPLETED session.
-  const buildQueue = async () => {
-    const ranks = ws.ranks
-    const all = ws.students
+  // Recipient targeting (spec 10–11, 15): ONE primary action opens a menu
+  // (absent / present / all / manual) — unequal actions never get equal
+  // weight. The picker opens prefilled per scope; the PRESENT template goes
+  // to present students and the ABSENT template to absent ones (spec 12),
+  // with warning balances from real data (spec 13).
+  const buildCandidates = () => {
     const items = []
     for (const s of groupStudents) {
       const row = attendanceMap[s.id]
       const finalAttendance = row?.status || 'لم يرصد'
-      if (queueScope === 'present' && finalAttendance !== 'حاضر') continue
-      if (queueScope === 'absent' && finalAttendance !== 'غائب') continue
-      const session = {
-        lesson_topic: lesson?.lesson_topic || '',
-        homework_text: lesson?.homework_text || '',
-        video_link: lesson?.video_link || '',
-        attendance: finalAttendance,
-      }
+      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
       const reportStudent = { ...s, attendance_status: finalAttendance, hw_status: row?.homework_status || s.hw_status }
-      const examScores = ws.examScoresByStudent[s.id] || []
-      const text = buildTextReport(reportStudent, { ranks, allStudents: all, session, examScores })
-      if (s.phone && isValidPhone(s.phone)) items.push({ student: reportStudent, phone: s.phone, message: text, lessonId: lesson?.id })
+      items.push({
+        key: s.id,
+        student: reportStudent,
+        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+        message: buildAttendanceMessage(reportStudent, { status: finalAttendance, lesson, settings: ws.settings, groupName: groupId }),
+        lessonId: lesson?.id,
+        statusLabel: finalAttendance,
+        statusType: finalAttendance === 'حاضر' ? 'present' : finalAttendance === 'غائب' ? 'absent' : 'none',
+        disabled: !hasPhone,
+      })
     }
-    if (items.length === 0) {
-      ws.showToast?.(isArabic ? 'لا يوجد طلاب مطابقون للنطاق المحدد لديهم أرقام صحيحة' : 'No matching students with valid phone numbers', 'error')
+    return items
+  }
+
+  const openQueue = (scope) => {
+    setMenuOpen(false)
+    const candidates = buildCandidates()
+    if (!candidates.some((c) => !c.disabled)) {
+      ws.showToast?.(isArabic ? 'لا يوجد طلاب لديهم أرقام صحيحة' : 'No students with valid phone numbers', 'error')
       return
     }
-    ui.startQueue(items)
+    const titles = {
+      absent: isArabic ? `تقرير الغياب — ${counts.absent} غائب` : `Absence report — ${counts.absent} absent`,
+      present: isArabic ? `تقرير الحضور — ${counts.present} حاضر` : `Attendance report — ${counts.present} present`,
+      all: isArabic ? `تقرير الحصة — ${counts.total} طالب` : `Session report — ${counts.total} students`,
+      manual: isArabic ? 'تقرير الحصة — تحديد يدوي' : 'Session report — manual selection',
+    }
+    const subtitles = {
+      absent: isArabic ? 'المقترح: الغائبون فقط. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: absent only. Adjust freely — nothing sends until you continue.',
+      present: isArabic ? 'المقترح: الحاضرون فقط. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: present only. Adjust freely — nothing sends until you continue.',
+      all: isArabic ? 'المقترح: كل الطلاب. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: all students. Adjust freely — nothing sends until you continue.',
+      manual: isArabic ? 'اختر المستلمين يدويًا — لن يُرسل شيء حتى تضغط متابعة.' : 'Pick recipients manually — nothing sends until you continue.',
+    }
+    setPicker({ candidates, title: titles[scope], subtitle: subtitles[scope], preselect: scope })
   }
 
   const finish = async () => {
@@ -227,37 +250,49 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
       )}
 
       {/* Reports queue — completed sessions only (existing business rule).
-          Scope selector (spec 30): all / present-only / absent-only. */}
+          Recipient targeting (spec 15): ONE primary action + menu — unequal
+          actions never get equal visual weight. */}
       <div className="rounded-2xl p-4 mb-5" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
         <b className="block mb-1 text-[.8rem]">{isArabic ? 'تقارير أولياء الأمور (WhatsApp)' : 'Parent reports (WhatsApp)'}</b>
         <p className="text-[.7rem] text-fg-muted m-0 mb-3">
           {lessonCompleted
-            ? (isArabic ? 'اختر نطاق التقارير ثم ابنِ قائمة الإرسال — يفتح واتساب لكل طالب على حدة.' : 'Pick the report scope, then build the send queue — WhatsApp opens per student.')
+            ? (isArabic ? 'اختر المستلمين — رسالة الحاضر تختلف عن رسالة الغائب ورصيد الإنذارات يُحسب تلقائيًا.' : 'Pick recipients — present and absent students get different messages, warning balances are computed live.')
             : (isArabic ? 'أنهِ الحصة أولًا لتفعيل التقارير (قاعدة النظام الحالية).' : 'Finish the session first to enable reports (existing rule).')}
         </p>
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          {[
-            ['all', isArabic ? `الكل (${counts.total})` : `All (${counts.total})`],
-            ['present', isArabic ? `الحاضرون (${counts.present})` : `Present (${counts.present})`],
-            ['absent', isArabic ? `الغائبون (${counts.absent})` : `Absent (${counts.absent})`],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setQueueScope(key)}
-              aria-pressed={queueScope === key}
-              className={queueScope === key ? 'nk-att-chip nk-att-chip--on' : 'nk-att-chip'}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="nk-menu-wrap">
+          <button
+            className="btn-navy action-button !min-h-[3rem]"
+            disabled={!lessonCompleted}
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-expanded={menuOpen}
+          >
+            ↗ {isArabic ? 'إرسال التقرير' : 'Send report'} ▼
+          </button>
+          {menuOpen && lessonCompleted && (
+            <>
+              <div className="nk-menu-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+              <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'مستلمو التقرير' : 'Report recipients'}>
+                <b className="nk-menu-sheet__title">{isArabic ? 'اختر المستلمين' : 'Choose recipients'}</b>
+                <button role="menuitem" className={counts.absent === 0 ? 'opacity-40' : ''} disabled={counts.absent === 0} onClick={() => openQueue('absent')}>
+                  <span>✗ {isArabic ? 'الغائبون فقط' : 'Absent students'}</span>
+                  <small>{counts.absent} · {isArabic ? 'رسالة الغياب' : 'absence message'}</small>
+                </button>
+                <button role="menuitem" className={counts.present === 0 ? 'opacity-40' : ''} disabled={counts.present === 0} onClick={() => openQueue('present')}>
+                  <span>✓ {isArabic ? 'الحاضرون فقط' : 'Present students'}</span>
+                  <small>{counts.present} · {isArabic ? 'رسالة الحضور' : 'attendance message'}</small>
+                </button>
+                <button role="menuitem" disabled={counts.total === 0} onClick={() => openQueue('all')}>
+                  <span>◉ {isArabic ? 'كل الطلاب' : 'All students'}</span>
+                  <small>{counts.total} · {isArabic ? 'رسالة حسب حالة كل طالب' : 'message per student status'}</small>
+                </button>
+                <button role="menuitem" disabled={counts.total === 0} onClick={() => openQueue('manual')}>
+                  <span>☰ {isArabic ? 'تحديد يدوي' : 'Manual selection'}</span>
+                  <small>{isArabic ? 'اخترهم واحدًا واحدًا' : 'Pick students one by one'}</small>
+                </button>
+              </div>
+            </>
+          )}
         </div>
-        <button
-          className="btn-navy action-button !min-h-[3rem]"
-          disabled={!lessonCompleted}
-          onClick={buildQueue}
-        >
-          ↗ {isArabic ? 'قائمة التقارير' : 'Build report queue'}
-        </button>
       </div>
 
       {/* FINISH SESSION — the action lives in the persistent workflow bar;
@@ -278,6 +313,24 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
           </p>
         </div>
       ) : null}
+
+      {/* Recipient picker (spec 10–11): preselection follows the chosen scope;
+          per-student toggles cover the "selected students" case. */}
+      {picker && (
+        <RecipientPickerModal
+          open
+          onClose={() => setPicker(null)}
+          candidates={picker.candidates}
+          title={picker.title}
+          subtitle={picker.subtitle}
+          preselected={(c) => {
+            if (picker.preselect === 'all') return true
+            if (picker.preselect === 'manual') return false
+            return c.statusType === picker.preselect
+          }}
+          onStart={(items) => { setPicker(null); ui.startQueue(items) }}
+        />
+      )}
     </div>
   )
 }

@@ -36,6 +36,7 @@ export function UIProvider({ teacherId, children }) {
   const [sessionParams, setSessionParams] = useState(() => readNavState(teacherId).sessionParams)
   const [historyStudentId, setHistoryStudentId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [tourActive, setTourActive] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
   const [queue, setQueue] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(QUEUE_KEY(teacherId)) || 'null') || { open: false, items: [], index: 0 } } catch { return { open: false, items: [], index: 0 } }
@@ -104,7 +105,8 @@ export function UIProvider({ teacherId, children }) {
     queue, startQueue, advanceQueue, closeQueue,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
-  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen])
+    tourActive, setTourActive,
+  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, tourActive])
 
   return (
     <UIContext.Provider value={value}>

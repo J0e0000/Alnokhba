@@ -112,7 +112,7 @@ export default function HomePage() {
       </div>
 
       {/* Exactly 3 stats */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-3 gap-3 mb-6" data-tour="stats">
         <div className="nk-stat">
           <small>{ar ? 'حصص اليوم' : "Today's sessions"}</small>
           <strong>{stats.sessionsToday}</strong>
@@ -128,7 +128,7 @@ export default function HomePage() {
       </div>
 
       {/* Today's Sessions */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3" data-tour="today-sessions">
         <h2 className="text-[.98rem] font-extrabold m-0">{ar ? 'حصص اليوم' : "Today's sessions"}</h2>
         <span className="text-[.68rem] text-fg-muted">{ar ? 'اضغط على الحصة لفتح مساحة العمل' : 'Tap a session to open its workspace'}</span>
       </div>

@@ -1,8 +1,9 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
 import { useUI } from '../../shell/UIContext'
-import { buildTextReport } from '../../lib/qrPdfWhatsApp'
-import { isValidPhone } from '../../lib/helpers'
+import { buildAttendanceMessage } from '../../lib/qrPdfWhatsApp'
+import { isValidPhone, normalizeEgyptianPhone } from '../../lib/helpers'
+import RecipientPickerModal from '../../components/RecipientPickerModal'
 import { usePublishBar } from '../WorkflowBar'
 
 // PERF (performance round): html5-qrcode (~230 KB minified) streams in the
@@ -44,6 +45,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
@@ -73,29 +75,29 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
     [students, attendanceMap],
   )
 
-  const buildAbsenceQueue = () => {
-    const ranks = ws.ranks
-    const all = ws.students
+  // ── Session-level absentees (spec 31) + WhatsApp absence reports (spec 30).
+  // Recipient targeting (spec 10/14): the picker opens prefilled with ALL
+  // absentees selected — the teacher can deselect before anything is queued.
+  // Message = the ABSENT template (different from present, spec 12) with the
+  // warning balance computed from the student's real counters (spec 13).
+  const absenceCandidates = useMemo(() => {
     const lesson = ws.activeLesson
-    const items = []
-    for (const s of absentStudents) {
-      if (!s.phone || !isValidPhone(s.phone)) continue
-      const session = {
-        lesson_topic: lesson?.lesson_topic || '',
-        homework_text: lesson?.homework_text || '',
-        video_link: lesson?.video_link || '',
-        attendance: 'غائب',
-      }
+    return absentStudents.map((s) => {
+      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
       const reportStudent = { ...s, attendance_status: 'غائب', hw_status: attendanceMap[s.id]?.homework_status || s.hw_status }
-      const text = buildTextReport(reportStudent, { ranks, allStudents: all, session, examScores: ws.examScoresByStudent[s.id] || [] })
-      items.push({ student: reportStudent, phone: s.phone, message: text, lessonId: lesson?.id })
-    }
-    if (items.length === 0) {
-      ws.showToast?.(isArabic ? 'لا يوجد غائبون لديهم أرقام صحيحة' : 'No absent students with valid phone numbers', 'error')
-      return
-    }
-    ui.startQueue(items)
-  }
+      return {
+        key: s.id,
+        student: reportStudent,
+        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+        message: buildAttendanceMessage(reportStudent, { status: 'غائب', lesson, settings: ws.settings, groupName: groupId }),
+        lessonId: lesson?.id,
+        statusLabel: 'غائب',
+        statusType: 'absent',
+        disabled: !hasPhone,
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [absentStudents, ws.activeLesson, ws.settings, groupId, attendanceMap])
 
   // ── Workflow bar — published UNCONDITIONALLY (the usePublishBar hook must
   // run on every render), with a null spec for the read-only view. ────────
@@ -214,7 +216,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
             <button className="nk-wf-ghost" onClick={() => { setFilter('absent'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
               {isArabic ? 'عرض الغائبين' : 'View absent'}
             </button>
-            <button className="nk-wf-ghost nk-att-absent__send" onClick={buildAbsenceQueue}>
+            <button className="nk-wf-ghost nk-att-absent__send" onClick={() => setPickerOpen(true)}>
               ↗ {isArabic ? 'تقارير الغياب' : 'Absence reports'}
             </button>
           </span>
@@ -230,7 +232,12 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
           return (
             <div key={s.id} className={`nk-att-row${status === 'حاضر' ? ' nk-att-row--present' : status === 'غائب' ? ' nk-att-row--absent' : ''}`}>
               <span className="nk-att-row__name">
-                <b className="truncate">{s.name}{savingRow ? ' …' : ''}</b>
+                <b className="truncate">
+                  {s.name}{savingRow ? ' …' : ''}
+                  {status === 'غائب' && (s.warnings || 0) > 0 && (
+                    <span className="nk-pill nk-pill-danger !text-[.58rem] ms-1.5 align-middle" title={isArabic ? 'الإنذارات المسجلة' : 'Recorded warnings'}>⚠ {s.warnings}</span>
+                  )}
+                </b>
                 <small>
                   {savedRow ? `✓ ${isArabic ? 'تم الحفظ' : 'Saved'}` : [s.code, s.stage].filter(Boolean).join(' · ') || (STATUS_LABEL[status] || status)}
                 </small>
@@ -287,6 +294,19 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
           }}
         />
       </Suspense>
+
+      {/* Absence report recipients (spec 14): prefilled with the absent
+          students, teacher-adjustable, nothing sends without confirmation. */}
+      {pickerOpen && absenceCandidates.length > 0 && (
+        <RecipientPickerModal
+          open
+          onClose={() => setPickerOpen(false)}
+          candidates={absenceCandidates}
+          title={isArabic ? `تقارير الغياب — ${absentStudents.length} غائب` : `Absence reports — ${absentStudents.length} absent`}
+          subtitle={isArabic ? 'المقترح: الغائبون فقط. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: absent students only. Adjust freely — nothing sends until you continue.'}
+          onStart={(items) => { setPickerOpen(false); ui.startQueue(items) }}
+        />
+      )}
     </div>
   )
 }
