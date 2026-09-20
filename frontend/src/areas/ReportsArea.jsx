@@ -6,8 +6,8 @@ import AnnouncementsModal from '../components/AnnouncementsModal'
 import RecipientPickerModal from '../components/RecipientPickerModal'
 import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
-import { normalizeEgyptianPhone, buildWhatsAppUrl } from '../lib/helpers'
-import { downloadCSV, localDateStr } from '../lib/csv'
+import { normalizeEgyptianPhone } from '../lib/helpers'
+import { downloadCSV } from '../lib/csv'
 import { supabase } from '../lib/supabaseClient'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -69,29 +69,30 @@ export default function ReportsArea() {
   }
 
   // QR links queue → recipient picker, links generated for valid phones only.
+  // PERF: token creation used to be a sequential await per student (N network
+  // round-trips); the per-student token ops are independent row upserts, so
+  // they run in parallel — one round-trip latency for the whole group.
   const buildQRQueue = async () => {
     setBusy('qr')
     try {
       const groupStudents = ws.students.filter((s) => s.group_name === group)
       const template = ws.settings?.qr_message_template || ''
-      const candidates = []
-      for (const s of groupStudents) {
+      const results = await Promise.all(groupStudents.map(async (s) => {
         const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
-        let message = ''
-        let qrUrl = ''
-        if (hasPhone) {
-          const token = await getOrCreateStudentToken(s.id)
-          if (!token) continue
-          qrUrl = buildStudentQRLink(token)
-          // buildQRMessage ALWAYS appends the link when the template lacks {link}
-          message = buildQRMessage(s.name, qrUrl, template)
+        if (!hasPhone) {
+          return { key: s.id, student: s, phone: '', message: '', qrUrl: '', template, statusLabel: '', statusType: 'none', disabled: true }
         }
-        candidates.push({
-          key: s.id, student: s, phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
-          message, qrUrl, template,
-          statusLabel: '', statusType: 'none', disabled: !hasPhone,
-        })
-      }
+        const token = await getOrCreateStudentToken(s.id)
+        if (!token) return null
+        const qrUrl = buildStudentQRLink(token)
+        // buildQRMessage ALWAYS appends the link when the template lacks {link}
+        const message = buildQRMessage(s.name, qrUrl, template)
+        return {
+          key: s.id, student: s, phone: normalizeEgyptianPhone(s.phone),
+          message, qrUrl, template, statusLabel: '', statusType: 'none', disabled: false,
+        }
+      }))
+      const candidates = results.filter(Boolean)
       if (!candidates.some((c) => !c.disabled)) { ws.showToast?.(isArabic ? 'لا يوجد طلاب بأرقام صحيحة' : 'No students with valid phones', 'error'); return }
       setPicker({
         candidates,

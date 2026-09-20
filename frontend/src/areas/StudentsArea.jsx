@@ -119,14 +119,16 @@ export default function StudentsArea() {
     const targets = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
     if (!targets.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
     setBusyBulk('qr')
-    const items = []
+    // PERF: token ops are independent per-student row upserts — run them in
+    // parallel instead of one await per student (N× round-trip → 1×).
     const template = ws.settings?.qr_message_template || ''
-    for (const s of targets) {
+    const results = await Promise.all(targets.map(async (s) => {
       const token = await getOrCreateStudentToken(s.id)
-      if (!token) continue
+      if (!token) return null
       const link = buildStudentQRLink(token)
-      items.push({ student: s, phone: normalizeEgyptianPhone(s.phone), message: buildQRMessage(s.name, link, template), qrUrl: link, template })
-    }
+      return { student: s, phone: normalizeEgyptianPhone(s.phone), message: buildQRMessage(s.name, link, template), qrUrl: link, template }
+    }))
+    const items = results.filter(Boolean)
     setBusyBulk('')
     if (!items.length) { ws.showToast?.('تعذر تجهيز روابط البوابة', 'error'); return }
     ui.startQueue(items)

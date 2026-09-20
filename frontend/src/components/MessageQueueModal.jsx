@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from './Modal'
 import { buildWhatsAppUrl } from '../lib/helpers'
 import { buildQRWhatsAppUrl } from '../lib/qrPdfWhatsApp'
@@ -9,17 +9,26 @@ const BATCH_PAUSE_MS = 2500
 /**
  * Message queue — one student at a time.
  *
- * Round 4 (iOS fix): the send button is now a REAL <a href="{wa.me link}">
+ * Round 4 (iOS fix): the send button is a REAL <a href="{wa.me link}">
  * element, not a button that calls window.open. A link the user taps is
  * browser-native navigation: iOS Safari's popup blocker never applies and
- * WhatsApp always opens. The wa.me URL for each item is precomputed (the
- * queue is built before the modal opens), so the href is ready up front.
+ * WhatsApp always opens.
+ *
+ * Queue-resilience round: the batch survives reloads (localStorage via
+ * UIContext — mobile browsers often reload the dashboard tab after WhatsApp
+ * takes the foreground) and the modal is no longer dismissible by a stray
+ * backdrop tap: closing happens ONLY via the explicit ✕ / إيقاف buttons.
+ * Each item is recorded as sent/skipped so the progress line reflects
+ * reality and a resumed batch never makes the teacher guess who already
+ * received the message.
  */
-export default function MessageQueueModal({ open, onClose, queue, index, onAdvance }) {
+export default function MessageQueueModal({ open, onClose, queue, index, status, onAdvance }) {
   const [failed, setFailed] = useState(false)
   const [pauseUntil, setPauseUntil] = useState(0)
   const [remainingPause, setRemainingPause] = useState(0)
   const pauseTimerRef = useRef(null)
+  // Was this batch resumed mid-way (the teacher already handled some items)?
+  const [resumed, setResumed] = useState(false)
 
   useEffect(() => {
     setFailed(false)
@@ -27,9 +36,12 @@ export default function MessageQueueModal({ open, onClose, queue, index, onAdvan
     setRemainingPause(0)
   }, [index, open])
 
-  useEffect(() => () => {
-    if (pauseTimerRef.current) window.clearTimeout(pauseTimerRef.current)
-  }, [])
+  // When the queue first becomes visible with prior progress, tell the
+  // teacher it continued from where it stopped (reload / إيقاف → استكمال).
+  useEffect(() => {
+    if (open && index > 0) setResumed(true)
+    if (!open) setResumed(false)
+  }, [open, index])
 
   useEffect(() => {
     if (!pauseUntil) return undefined
@@ -43,6 +55,10 @@ export default function MessageQueueModal({ open, onClose, queue, index, onAdvan
     }, 250)
     return () => window.clearInterval(timer)
   }, [pauseUntil])
+
+  const sentCount = useMemo(() => (status || []).filter((s) => s === 'sent').length, [status])
+  const skippedCount = useMemo(() => (status || []).filter((s) => s === 'skipped').length, [status])
+  const remainingCount = Math.max(0, queue.length - index)
 
   if (!open || index >= queue.length) return null
   const item = queue[index]
@@ -90,14 +106,24 @@ export default function MessageQueueModal({ open, onClose, queue, index, onAdvan
 
   const skip = () => {
     setFailed(false)
-    onAdvance()
+    onAdvance({ skipped: true })
   }
 
   const greenButtonClass = 'flex-1 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe5b] text-[#06231a] border border-[#25D366] font-black py-2 rounded-lg text-sm transition select-none'
 
   return (
-    <Modal open={open} onClose={onClose} title={`إرسال (${index + 1}/${queue.length})`}>
+    <Modal open={open} onClose={onClose} title={`إرسال (${index + 1}/${queue.length})`} dismissible={false}>
+      {resumed && (
+        <p className="text-[.7rem] mb-2 font-bold" style={{ color: 'var(--accent-blue)' }}>
+          استكملنا القائمة من حيث توقفت ✓
+        </p>
+      )}
       <p className="text-sm mb-2"><strong>الطالب:</strong> {item.student.name}</p>
+      {(sentCount > 0 || skippedCount > 0) && (
+        <p className="text-[.68rem] mb-1 text-fg-subtle">
+          تم إرسال <b>{sentCount}</b>{skippedCount > 0 && (<> · تم تخطي <b>{skippedCount}</b></>)} · المتبقي <b>{remainingCount}</b>
+        </p>
+      )}
       <p className="text-[11px] mb-2 text-fg-subtle">كل ضغطة تفتح واتساب برسالة الطالب مباشرة — اضغط الزرّ الأخضر.</p>
       {isBatchBoundary && <p className="text-[11px] mb-2 text-amber-300">بعد كل 100 رسالة سيأخذ الإرسال وقفة قصيرة لحماية WhatsApp والمتصفح.</p>}
       {remainingPause > 0 && <p className="text-xs font-bold text-amber-300 mb-3">استراحة تلقائية: {Math.ceil(remainingPause / 1000)} ثوانٍ...</p>}

@@ -11,6 +11,15 @@ const UIContext = createContext(null)
 const QUEUE_KEY = (tid) => `nokhba_message_queue_${tid}`
 const NAV_KEY = (tid) => `nokhba_nav_state_${tid || 'anon'}`
 
+// WhatsApp send queue — reload-resilience fix: the queue used to live in
+// sessionStorage with open:false, so the reload that mobile browsers do when
+// the teacher returns from WhatsApp threw the whole batch away and the
+// teacher had to rebuild it (re-messaging students who already received the
+// report). It now persists to localStorage with the REAL open flag, the
+// current index, and a per-item status (sent/skipped/pending), and is
+// restored while fresh — the modal reopens exactly where it stopped.
+const QUEUE_TTL_MS = 12 * 60 * 60 * 1000
+
 // Reload-resilience (spec: "if the page reloaded make it leave me wherever I
 // am"): the active area + open session context persist in localStorage. A
 // stored SESSION context is only restored while fresh (12h) — never revive
@@ -30,6 +39,23 @@ function readNavState(teacherId) {
   } catch { return { area: 'home', sessionParams: null } }
 }
 
+function readStoredQueue(teacherId) {
+  const empty = { open: false, items: [], index: 0, status: [] }
+  if (!teacherId) return empty
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY(teacherId))
+    if (!raw) return empty
+    const q = JSON.parse(raw)
+    const fresh = q?.savedAt && Date.now() - new Date(q.savedAt).getTime() < QUEUE_TTL_MS
+    if (!fresh || !Array.isArray(q.items) || !q.items.length) return empty
+    const status = Array.isArray(q.status) && q.status.length === q.items.length ? q.status : q.items.map(() => 'pending')
+    // Finished batch → discard. Mid-queue with the modal open → resume it.
+    if (q.index >= q.items.length) return empty
+    const resumeOpen = q.open === true
+    return { open: resumeOpen, items: q.items, index: Math.min(Math.max(0, q.index | 0), q.items.length - 1), status }
+  } catch { return empty }
+}
+
 export function UIProvider({ teacherId, children }) {
   // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings'
   const [area, setAreaState] = useState(() => readNavState(teacherId).area)
@@ -38,9 +64,7 @@ export function UIProvider({ teacherId, children }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [tourActive, setTourActive] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
-  const [queue, setQueue] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(QUEUE_KEY(teacherId)) || 'null') || { open: false, items: [], index: 0 } } catch { return { open: false, items: [], index: 0 } }
-  })
+  const [queue, setQueue] = useState(() => readStoredQueue(teacherId))
 
   const persistNav = useCallback((a, sp) => {
     try { localStorage.setItem(NAV_KEY(teacherId), JSON.stringify({ area: a, sessionParams: sp, savedAt: new Date().toISOString() })) } catch { /* ignore */ }
@@ -54,9 +78,17 @@ export function UIProvider({ teacherId, children }) {
     }
   }, [persistNav])
 
+  // Persist to localStorage WITH the real open flag: a reload while the modal
+  // is up restores the exact position; a deliberate إيقاف keeps the batch so
+  // the small resume chip can offer continuation (or full discard).
   const persistQueue = useCallback((next) => {
     setQueue(next)
-    try { sessionStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, open: false })) } catch { /* ignore */ }
+    try {
+      if (!teacherId) return
+      const finished = next.index >= next.items.length
+      if (finished || !next.items.length) localStorage.removeItem(QUEUE_KEY(teacherId))
+      else localStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }))
+    } catch { /* ignore */ }
   }, [teacherId])
 
   const openSession = useCallback((params) => {
@@ -85,28 +117,57 @@ export function UIProvider({ teacherId, children }) {
   }), [])
 
   const startQueue = useCallback((items) => {
-    const next = { open: true, items, index: 0 }
-    setQueue(next)
-    try { sessionStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, open: false })) } catch { /* ignore */ }
-  }, [teacherId])
+    const next = { open: true, items, index: 0, status: items.map(() => 'pending') }
+    persistQueue(next)
+  }, [persistQueue])
 
-  const advanceQueue = useCallback((nextIndex) => {
+  // onAdvance optionally receives { skipped: true } so the queue records what
+  // actually happened per student — the teacher can trust the remaining list.
+  const advanceQueue = useCallback((opts) => {
+    const skipped = Boolean(opts && typeof opts === 'object' && opts.skipped)
     setQueue((prev) => {
-      const next = { ...prev, index: typeof nextIndex === 'number' ? nextIndex : prev.index + 1 }
-      try { sessionStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, open: false })) } catch { /* ignore */ }
+      const status = [...(prev.status || [])]
+      if (status[prev.index] === 'pending') status[prev.index] = skipped ? 'skipped' : 'sent'
+      const next = { ...prev, index: prev.index + 1, status, open: prev.index + 1 < prev.items.length ? prev.open : false }
+      try {
+        if (teacherId) {
+          if (next.index >= next.items.length) localStorage.removeItem(QUEUE_KEY(teacherId))
+          else localStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }))
+        }
+      } catch { /* ignore */ }
       return next
     })
   }, [teacherId])
 
-  const closeQueue = useCallback(() => setQueue((prev) => ({ ...prev, open: false })), [])
+  // إيقاف keeps the remaining batch recoverable via the resume chip.
+  const closeQueue = useCallback(() => setQueue((prev) => {
+    const next = { ...prev, open: false }
+    try {
+      if (teacherId && prev.index < prev.items.length) {
+        localStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }))
+      }
+    } catch { /* ignore */ }
+    return next
+  }), [teacherId])
+
+  // Reopen a paused/failed batch at the exact position it stopped.
+  const reopenQueue = useCallback(() => setQueue((prev) => (
+    prev.index < prev.items.length ? { ...prev, open: true } : prev
+  )), [])
+
+  // Discard the remaining batch entirely (✕ on the resume chip).
+  const discardQueue = useCallback(() => {
+    setQueue({ open: false, items: [], index: 0, status: [] })
+    try { if (teacherId) localStorage.removeItem(QUEUE_KEY(teacherId)) } catch { /* ignore */ }
+  }, [teacherId])
 
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
-    queue, startQueue, advanceQueue, closeQueue,
+    queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
     tourActive, setTourActive,
-  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, tourActive])
+  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, tourActive])
 
   return (
     <UIContext.Provider value={value}>

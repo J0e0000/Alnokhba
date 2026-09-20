@@ -1,7 +1,11 @@
-export default function Modal({ open, onClose, title, children, wide }) {
+// dismissible={false} — used by destructive-workflow modals (the WhatsApp
+// send queue): a stray tap on the dark backdrop right after returning from
+// WhatsApp must NOT silently kill the batch. Closing then happens ONLY
+// through the explicit buttons (✕ / إيقاف) that call onClose.
+export default function Modal({ open, onClose, title, children, wide, dismissible = true }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose} role="dialog" aria-modal="true">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={dismissible ? onClose : undefined} role="dialog" aria-modal="true">
       <div
         className={`glass-card rounded-2xl shadow-2xl w-full ${wide ? 'max-w-4xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto overflow-x-hidden min-w-0`}
         onClick={(e) => e.stopPropagation()}

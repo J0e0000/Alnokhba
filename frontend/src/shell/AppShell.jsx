@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
@@ -13,13 +13,25 @@ import MessageQueueModal from '../components/MessageQueueModal'
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
 import HomePage from '../home/HomePage'
 import SessionWorkspace from '../session/SessionWorkspace'
-import StudentsArea from '../areas/StudentsArea'
-import HistoryArea from '../areas/HistoryArea'
-import ReportsArea from '../areas/ReportsArea'
-import AnalyticsArea from '../areas/AnalyticsArea'
-import SettingsArea from '../areas/SettingsArea'
 import TourOverlay from '../components/TourOverlay'
+
+// PERF (bundle splitting): Home and the Session Workspace stay in the main
+// bundle (they ARE the daily flow — lazy chunks would add a flash to the
+// most-used paths). Secondary destinations load on demand: opening Students,
+// Reports, Analytics, Settings, فريق التحليل, or History fetches only that
+// area's chunk, so first paint stays light and unrelated area code never
+// runs at startup. Same features, same routes — smaller initial payload.
+const StudentsArea = lazy(() => import('../areas/StudentsArea'))
+const HistoryArea = lazy(() => import('../areas/HistoryArea'))
+const ReportsArea = lazy(() => import('../areas/ReportsArea'))
+const AnalyticsArea = lazy(() => import('../areas/AnalyticsArea'))
+const SettingsArea = lazy(() => import('../areas/SettingsArea'))
+const InsightsArea = lazy(() => import('../areas/InsightsArea'))
+
+const AREA_FALLBACK_AR = 'جاري التحميل...'
+const AREA_FALLBACK_EN = 'Loading...'
 import useIsMobile from './useIsMobile'
+
 
 const IS_DEMO = Boolean(typeof window !== 'undefined' && window.__NOKHBA_DEMO__)
 
@@ -252,11 +264,14 @@ export default function AppShell({ onOpenAdmin }) {
         <main className="flex-1 min-w-0">
           {ui.area === 'home' && <HomePage />}
           {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
-          {ui.area === 'students' && <StudentsArea />}
-          {ui.area === 'history' && <HistoryArea />}
-          {ui.area === 'reports' && <ReportsArea />}
-          {ui.area === 'analytics' && <AnalyticsArea />}
-          {ui.area === 'settings' && <SettingsArea />}
+          <Suspense fallback={<div className="py-10 text-center text-sm text-fg-muted" role="status">{isArabic ? AREA_FALLBACK_AR : AREA_FALLBACK_EN}</div>}>
+            {ui.area === 'students' && <StudentsArea />}
+            {ui.area === 'history' && <HistoryArea />}
+            {ui.area === 'reports' && <ReportsArea />}
+            {ui.area === 'analytics' && <AnalyticsArea />}
+            {ui.area === 'settings' && <SettingsArea />}
+            {ui.area === 'insights' && <InsightsArea />}
+          </Suspense>
         </main>
       </div>
 
@@ -292,6 +307,17 @@ export default function AppShell({ onOpenAdmin }) {
                 <b>{profile.full_name}</b>
                 <small>{roleLabel}{profile.email ? ` · ${profile.email}` : ''}</small>
               </div>
+              {/* Smart Insights destination (spec 3): a deliberate entry in the
+                  More/⋯ account menu — never a dashboard card, popup, or
+                  notification, and never inside the Session Workspace. */}
+              <button
+                className="nk-account-menu__item"
+                role="menuitem"
+                onClick={() => { setAccountOpen(false); ui.setArea('insights') }}
+              >
+                <span aria-hidden="true">⌁</span>
+                <span>{isArabic ? 'فريق التحليل' : 'Smart Insights'}</span>
+              </button>
               <button
                 className="nk-account-menu__item"
                 role="menuitem"
@@ -332,8 +358,24 @@ export default function AppShell({ onOpenAdmin }) {
         onClose={ui.closeQueue}
         queue={ui.queue.items}
         index={ui.queue.index}
+        status={ui.queue.status}
         onAdvance={ui.advanceQueue}
       />
+      {/* Paused send batch — a small non-intrusive chip at the very top
+          (never over the working area): resume exactly where it stopped, or
+          discard the remainder. Hidden while the queue modal itself is open. */}
+      {!ui.queue.open && ui.queue.index < ui.queue.items.length && (
+        <div
+          className="fixed top-2 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 rounded-full px-3 py-1.5 shadow-lg"
+          style={{ background: 'var(--surface)', border: '1px solid var(--brand-gold)' }}
+          role="status"
+        >
+          <button className="text-[.7rem] font-extrabold" onClick={ui.reopenQueue}>
+            ⏸ استكمال قائمة الإرسال ({ui.queue.items.length - ui.queue.index} متبقي)
+          </button>
+          <button className="text-fg-subtle hover:text-fg leading-none" onClick={ui.discardQueue} aria-label="إلغاء القائمة المتبقية">✕</button>
+        </div>
+      )}
       <UndoSnackbar
         visible={wsMeta.undoSnackbar.visible}
         message={wsMeta.undoSnackbar.message}
