@@ -42,18 +42,21 @@ export default function UndoSnackbar({ visible, message, onUndo, onRedo, canRedo
 
   return (
     <div
-      className={`fixed bottom-16 md:bottom-8 left-1/2 -translate-x-1/2 z-[90] transition-all duration-300 ${
-        animating ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'
+      className={`fixed top-3 left-1/2 -translate-x-1/2 z-[90] transition-all duration-300 ${
+        animating ? 'opacity-0 -translate-y-3' : 'opacity-100 translate-y-0'
       }`}
       dir="rtl"
     >
-      <div className="glass-card border-emerald-500/30 rounded-xl shadow-lg px-5 py-3 flex items-center gap-3 min-w-[280px]">
-        <span className="text-emerald-300">✅</span>
-        <span className="flex-1 text-sm font-semibold text-fg">{message || 'تم الحفظ'}</span>
+      {/* TOP placement (teacher request): the bottom edge hosts the workflow
+          bar / mobile nav — the undo popup must never cover it. Compact
+          pill, centered at the very top. */}
+      <div className="glass-card border-emerald-500/30 rounded-full shadow-lg ps-3 pe-2 py-1.5 flex items-center gap-2 max-w-[92vw]">
+        <span className="text-emerald-300 text-sm">✅</span>
+        <span className="flex-1 min-w-0 truncate text-xs font-semibold text-fg">{message || 'تم الحفظ'}</span>
         {onHistory && historyCount > 0 && (
           <button
             onClick={() => { onHistory(); onDismiss?.() }}
-            className="text-fg-subtle hover:text-fg text-xs font-bold border-r border-subtle pr-3 transition-colors"
+            className="text-fg-subtle hover:text-fg text-[.7rem] font-bold border-r border-subtle ps-2 transition-colors whitespace-nowrap"
             title="سجل العمليات"
           >
             🕐 ({historyCount})
@@ -63,14 +66,14 @@ export default function UndoSnackbar({ visible, message, onUndo, onRedo, canRedo
           <button
             onClick={handleRedo}
             disabled={!canRedo}
-            className="text-brand-gold-hover hover:text-brand-gold font-bold text-sm border-r border-subtle pr-3 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="text-brand-gold-hover hover:text-brand-gold font-bold text-[.72rem] border-r border-subtle ps-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
           >
             ↪ إعادة
           </button>
         )}
         <button
           onClick={handleUndo}
-          className="text-brand-gold-hover hover:text-brand-gold font-bold text-sm border-r border-subtle pr-3 transition-colors"
+          className="text-brand-gold-hover hover:text-brand-gold font-bold text-[.72rem] border-r border-subtle ps-2 transition-colors whitespace-nowrap"
         >
           تراجع
         </button>

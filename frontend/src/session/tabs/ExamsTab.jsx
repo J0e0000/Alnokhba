@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
-import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXAMS / GRADES TAB (rule 12 + closed-session exam support + draft autosave)
@@ -43,7 +42,7 @@ function clearExamDraft(lessonId) {
   try { localStorage.removeItem(examDraftKey(lessonId)) } catch { /* ignore */ }
 }
 
-export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext, onGoPrev, onBar }) {
+export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   // Draft recovery: an interrupted grading flow resumes EXACTLY where it was
@@ -56,17 +55,8 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext, onGo
     [ws.examsList, lessonId],
   )
 
-  // Persistent workflow bar — only on the exams home view (the setup / grade
-  // sub-flows carry their own actions → bar hidden, state-based interface).
-  const barData = view === 'list' ? {
-    ariaLabel: isArabic ? 'إجراءات الامتحانات' : 'Exams actions',
-    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — المراجعة ←' : 'Next — Review →', disabled: !onGoNext }],
-    secondary: [
-      { key: 'prev', label: isArabic ? '→ السابق — التفاعل والواجب' : '← Previous — Interaction', disabled: !onGoPrev },
-    ],
-    meta: isArabic ? 'الامتحانات اختيارية — تخطّيها لا يوقف المسار' : 'Exams are optional — skipping never blocks the pipeline',
-  } : null
-  usePublishBar(onBar, barData, { next: () => onGoNext?.(), prev: () => onGoPrev?.() })
+  // TOP ACTION (teacher request): next-step button inline-END at the top of
+  // the home view only — setup/grade sub-flows carry their own actions.
 
   // CLOSED SESSION SUPPORT: a completed session with no exams yet still gets
   // the "New exam" action — the old frontend-only gate is removed.
@@ -92,6 +82,15 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext, onGo
   }
   return (
     <div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request */}
+      <div className="flex justify-end mb-2">
+        <button
+          className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+          onClick={() => onGoNext?.()}
+        >
+          {isArabic ? 'التالي — المراجعة ←' : 'Next — Review →'}
+        </button>
+      </div>
       <button
         className="btn-gold action-button !min-h-[3rem] mb-4"
         onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول', 'السؤال الثاني'], max: 20 }); setView('setup') }}

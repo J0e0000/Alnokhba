@@ -30,6 +30,39 @@ export default function SettingsArea() {
   const [brandingOpen, setBrandingOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [newGroup, setNewGroup] = useState({ name: '', stage: '', day: String(new Date().getDay()), time: '16:30' })
+  // Group EDITING (teacher request): each group row can be renamed and its
+  // stage/day/time changed. Rename propagates everywhere (students, schedule,
+  // settings) through ws.renameGroup; meta changes go through ws.updateGroup.
+  const [editingGroup, setEditingGroup] = useState(null) // group name being edited
+  const [editForm, setEditForm] = useState({ name: '', stage: '', day: 0, time: '' })
+  const [busyGroup, setBusyGroup] = useState(false)
+
+  const startGroupEdit = (g) => {
+    const meta = ws.groupMeta[g] || {}
+    setEditingGroup(g)
+    setEditForm({ name: g, stage: meta.stage || '', day: meta.day !== undefined && meta.day !== '' ? Number(meta.day) : 0, time: meta.time || '16:30' })
+  }
+
+  const saveGroupEdit = async () => {
+    if (!editingGroup || busyGroup) return
+    const name = editForm.name.trim()
+    if (!name) { ws.showToast?.(isArabic ? 'اسم المجموعة مطلوب' : 'Group name is required', 'error'); return }
+    setBusyGroup(true)
+    try {
+      let current = editingGroup
+      if (name !== editingGroup) {
+        const okRename = await ws.renameGroup(editingGroup, name)
+        if (!okRename) { setBusyGroup(false); return }
+        current = name
+      }
+      const meta = ws.groupMeta[editingGroup] || {}
+      const metaChanged = editForm.stage !== (meta.stage || '')
+        || Number(editForm.day) !== Number(meta.day)
+        || editForm.time !== (meta.time || '')
+      if (metaChanged) await ws.updateGroup(current, { stage: editForm.stage, day: editForm.day, time: editForm.time })
+      setEditingGroup(null)
+    } finally { setBusyGroup(false) }
+  }
 
   return (
     <div>
@@ -66,6 +99,35 @@ export default function SettingsArea() {
         <div className="grid gap-2 mb-4">
           {ws.groups.map((g) => {
             const meta = ws.groupMeta[g] || {}
+            const editing = editingGroup === g
+            if (editing) {
+              return (
+                <div key={g} className="nk-row !flex-wrap" style={{ borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' }}>
+                  <div className="grid grid-cols-2 sm:grid-cols-[1.3fr_1.2fr_0.9fr_0.8fr] gap-2 w-full">
+                    <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'اسم المجموعة' : 'Group name'} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} aria-label={isArabic ? 'اسم المجموعة' : 'Group name'} />
+                    <select className="glass-input rounded-xl px-2 py-2 text-[.78rem]" value={editForm.stage} onChange={(e) => setEditForm({ ...editForm, stage: e.target.value })} aria-label={isArabic ? 'المرحلة' : 'Stage'}>
+                      <option value="">{isArabic ? 'المرحلة...' : 'Stage...'}</option>
+                      {Object.entries(GRADES_BY_STAGE).map(([category, grades]) => (
+                        <optgroup key={category} label={category}>
+                          {grades.map((gr) => <option key={gr} value={gr}>{gr}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <select className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={editForm.day} onChange={(e) => setEditForm({ ...editForm, day: Number(e.target.value) })} aria-label={isArabic ? 'اليوم' : 'Day'}>
+                      {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                    </select>
+                    <input type="time" className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={editForm.time} onChange={(e) => setEditForm({ ...editForm, time: e.target.value })} aria-label={isArabic ? 'الميعاد' : 'Time'} />
+                  </div>
+                  <div className="flex gap-1.5 w-full justify-end">
+                    <button className="btn-ghost !min-h-0 rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" onClick={() => setEditingGroup(null)}>{isArabic ? 'إلغاء' : 'Cancel'}</button>
+                    <button className="btn-navy !min-h-0 rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" disabled={busyGroup} onClick={saveGroupEdit}>
+                      ✓ {busyGroup ? (isArabic ? 'جاري الحفظ…' : 'Saving…') : (isArabic ? 'حفظ التعديل' : 'Save changes')}
+                    </button>
+                  </div>
+                  <small className="w-full text-fg-muted">{isArabic ? 'تغيير الاسم يحدّث طلاب المجموعة ومواعيدها أوتوماتيكيًا.' : 'Renaming updates the group’s students and schedule automatically.'}</small>
+                </div>
+              )
+            }
             return (
               <div key={g} className="nk-row">
                 <span className="min-w-0">
@@ -73,6 +135,11 @@ export default function SettingsArea() {
                   <small>{meta.stage || '—'} · {meta.day !== undefined && meta.day !== '' ? WEEKDAYS[Number(meta.day)] : '—'} · {meta.time || '—'}</small>
                 </span>
                 <span className="flex gap-1.5">
+                  <button
+                    className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                    onClick={() => startGroupEdit(g)}
+                    title={isArabic ? 'تعديل الاسم والمرحلة والموعد' : 'Edit name, stage & schedule'}
+                  >✎</button>
                   <button
                     className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                     onClick={async () => {

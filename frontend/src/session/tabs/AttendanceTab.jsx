@@ -1,10 +1,5 @@
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { Suspense, lazy, useMemo, useState, useEffect } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
-import { useUI } from '../../shell/UIContext'
-import { buildAttendanceMessage } from '../../lib/qrPdfWhatsApp'
-import { isValidPhone, normalizeEgyptianPhone } from '../../lib/helpers'
-import RecipientPickerModal from '../../components/RecipientPickerModal'
-import { usePublishBar } from '../WorkflowBar'
 
 // PERF (performance round): html5-qrcode (~230 KB minified) streams in the
 // first time the teacher actually opens the scanner — never up front.
@@ -37,20 +32,17 @@ const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم ي�
 // - Session-level absent answer (spec 30–32): who was absent THIS session +
 //   absence reports, shown only when absentees exist (context before capability).
 // ═══════════════════════════════════════════════════════════════════════════
-export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, onBar }) {
+export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, absentIntent }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
-  const ui = useUI()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
-  const [pickerOpen, setPickerOpen] = useState(false)
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
   const counts = ws.countsForLesson(groupId)
-  const markedCount = counts.present + counts.absent
 
   const statusOf = (s) => attendanceMap[s.id]?.status || 'لم يرصد'
 
@@ -67,65 +59,16 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [students, search, filter, attendanceMap])
 
-  // ── Session-level absentees (spec 31) + WhatsApp absence reports (spec 30).
-  // Report text uses the SAME production template as the report queue.
-  const absentStudents = useMemo(
-    () => students.filter((s) => statusOf(s) === 'غائب'),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [students, attendanceMap],
-  )
+  // "View absent" jump from the Report tab ribbon (teacher request): when the
+  // counter changes, pre-filter the list to the absent students and scroll up.
+  useEffect(() => {
+    if (!absentIntent) return
+    setFilter('absent')
+    setSearch('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [absentIntent])
 
-  // ── Session-level absentees (spec 31) + WhatsApp absence reports (spec 30).
-  // Recipient targeting (spec 10/14): the picker opens prefilled with ALL
-  // absentees selected — the teacher can deselect before anything is queued.
-  // Message = the ABSENT template (different from present, spec 12) with the
-  // warning balance computed from the student's real counters (spec 13).
-  const absenceCandidates = useMemo(() => {
-    const lesson = ws.activeLesson
-    return absentStudents.map((s) => {
-      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
-      const reportStudent = { ...s, attendance_status: 'غائب', hw_status: attendanceMap[s.id]?.homework_status || s.hw_status }
-      return {
-        key: s.id,
-        student: reportStudent,
-        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
-        message: buildAttendanceMessage(reportStudent, { status: 'غائب', lesson, settings: ws.settings, groupName: groupId }),
-        lessonId: lesson?.id,
-        statusLabel: 'غائب',
-        statusType: 'absent',
-        disabled: !hasPhone,
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [absentStudents, ws.activeLesson, ws.settings, groupId, attendanceMap])
-
-  // ── Workflow bar — published UNCONDITIONALLY (the usePublishBar hook must
-  // run on every render), with a null spec for the read-only view. ────────
   const savingAny = wsMeta.savingIds.size > 0
-  const barData = lessonOpen ? {
-    ariaLabel: isArabic ? 'إجراءات الحضور' : 'Attendance actions',
-    primary: [{
-      key: 'completeStage',
-      kind: 'gold',
-      label: isArabic ? '✓ إتمام الحضور والمتابعة ←' : '✓ Complete attendance →',
-      disabled: !onCompleteStage,
-    }],
-    secondary: [
-      { key: 'bulkPresent', label: `✓ ${isArabic ? 'الكل حاضر' : 'All present'}`, title: isArabic ? 'رصد كل الطلاب حاضر دفعة واحدة' : 'Mark everyone present in one tap' },
-      { key: 'bulkAbsent', label: `✗ ${isArabic ? 'رصد الباقي غائبًا' : 'Mark rest absent'}`, title: isArabic ? 'رصد غير المرصد غائبًا (سيرفر)' : 'Server-side mark remaining as absent' },
-      { key: 'openQR', label: '⛶ QR', title: isArabic ? 'مسح QR الطالب' : 'Scan student QR' },
-    ],
-    meta: savingAny
-      ? `… ${isArabic ? 'جاري الحفظ' : 'Saving'}`
-      : (isArabic ? `حاضر ${counts.present} · غائب ${counts.absent} · ${counts.unrecorded} لم يُرصد` : `${counts.present} present · ${counts.absent} absent · ${counts.unrecorded} unmarked`),
-  } : null
-  const barHandlers = {
-    completeStage: () => onCompleteStage?.(),
-    bulkPresent: () => ws.markAllPresent(groupId, ws.activeLessonId),
-    bulkAbsent: () => ws.markGroupAbsences(ws.activeLessonId),
-    openQR: () => setQrOpen(true),
-  }
-  usePublishBar(lessonOpen ? onBar : null, barData, barHandlers)
 
   // ── Read-only view (completed session) — same compact list, no controls ──
   if (!lessonOpen) {
@@ -164,10 +107,19 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
     )
   }
 
-  // ── Active session: the compact list IS the attendance UI ─────────────────
 
   return (
     <div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request */}
+      <div className="flex justify-end mb-2">
+        <button
+          className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+          onClick={() => onCompleteStage?.()}
+        >
+          ✓ {isArabic ? 'إتمام الحضور والمتابعة ←' : 'Complete attendance →'}
+        </button>
+      </div>
+
       {/* Sticky tools — search stays reachable while the list scrolls; with
           resizes-content the results remain visible ABOVE the keyboard. */}
       <div className="nk-att-tools">
@@ -202,26 +154,27 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
             {label}
           </button>
         ))}
+        {/* Bulk shortcuts (kept from the removed bottom bar, now tiny and
+            non-blocking): mark everyone present / mark the unrecorded absent.
+            The absence RPC previously failed ('تعذر رصد الغائبين') — the store
+            now uses the same per-student path as manual marking. */}
+        <button
+          className="nk-att-chip shrink-0"
+          disabled={savingAny}
+          onClick={() => ws.markAllPresent(groupId, ws.activeLessonId)}
+          title={isArabic ? 'رصد كل الطلاب حاضر دفعة واحدة' : 'Mark everyone present in one tap'}
+        >
+          ✓ {isArabic ? 'الكل حاضر' : 'All present'}
+        </button>
+        <button
+          className="nk-att-chip shrink-0"
+          disabled={savingAny}
+          onClick={() => ws.markGroupAbsences(groupId, ws.activeLessonId)}
+          title={isArabic ? 'رصد غير المرصد غائبًا' : 'Mark unmarked students absent'}
+        >
+          ✗ {isArabic ? 'الباقي غائبًا' : 'Rest absent'}
+        </button>
       </div>
-
-      {/* Session-level absent block (spec 30–32): answers "who was absent in
-          THIS session" right here — actions appear ONLY when absentees exist. */}
-      {markedCount > 0 && absentStudents.length > 0 && (
-        <div className="nk-att-absent">
-          <span className="nk-att-absent__text">
-            <b>{isArabic ? `الغائبون في هذه الحصة: ${absentStudents.length}` : `Absent in this session: ${absentStudents.length}`}</b>
-            <small className="truncate">{absentStudents.slice(0, 6).map((s) => s.name).join(' · ')}{absentStudents.length > 6 ? ' …' : ''}</small>
-          </span>
-          <span className="nk-att-absent__actions">
-            <button className="nk-wf-ghost" onClick={() => { setFilter('absent'); setSearch(''); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
-              {isArabic ? 'عرض الغائبين' : 'View absent'}
-            </button>
-            <button className="nk-wf-ghost nk-att-absent__send" onClick={() => setPickerOpen(true)}>
-              ↗ {isArabic ? 'تقارير الغياب' : 'Absence reports'}
-            </button>
-          </span>
-        </div>
-      )}
 
       {/* The list — compact rows, direct Present/Absent taps, one tap per mark */}
       <div className="grid gap-1.5 nk-att-list">
@@ -277,8 +230,8 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
         )}
       </div>
 
-      {/* The persistent contextual workflow bar is published to the workspace
-          root (see usePublishBar) — Complete Attendance is the primary action. */}
+      {/* The primary "Complete Attendance" action lives at the TOP of this
+          tab (inline-END); the sticky bottom bar no longer exists. */}
 
       <Suspense fallback={qrOpen ? <ScannerFallback /> : null}>
         <QRSessionScanner
@@ -295,18 +248,6 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, on
         />
       </Suspense>
 
-      {/* Absence report recipients (spec 14): prefilled with the absent
-          students, teacher-adjustable, nothing sends without confirmation. */}
-      {pickerOpen && absenceCandidates.length > 0 && (
-        <RecipientPickerModal
-          open
-          onClose={() => setPickerOpen(false)}
-          candidates={absenceCandidates}
-          title={isArabic ? `تقارير الغياب — ${absentStudents.length} غائب` : `Absence reports — ${absentStudents.length} absent`}
-          subtitle={isArabic ? 'المقترح: الغائبون فقط. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: absent students only. Adjust freely — nothing sends until you continue.'}
-          onStart={(items) => { setPickerOpen(false); ui.startQueue(items) }}
-        />
-      )}
     </div>
   )
 }

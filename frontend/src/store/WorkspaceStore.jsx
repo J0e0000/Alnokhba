@@ -825,25 +825,28 @@ export function WorkspaceProvider({ children }) {
     } finally { setSaveStatus('idle') }
   }, [showToast, validateLessonState])
 
-  const markGroupAbsences = useCallback(async (lessonId) => {
-    const effectiveTeacherId = teacherIdRef.current
-    const isOnline = isOnlineRef.current
+  // FIX (teacher report "تعذر رصد الغائبين"): the old implementation called
+  // the `mark_group_absences` RPC, which was missing/unavailable in this
+  // environment — the button always tosted "تعذر رصد الغائبين" even though
+  // marking a single student absent worked. It now reuses the SAME proven
+  // per-student write path as manual marking and markAllPresent (autosave,
+  // points, offline queue): mark every UNRECORDED student of the group's
+  // lesson as غائب, in parallel (same wall-clock as one round-trip).
+  const markGroupAbsences = async (groupName, lessonIdOverride) => {
     const isArabic = isArabicRef.current
-    if (!lessonId || !isOnline) return 0
-    const { data, error } = await supabase.rpc('mark_group_absences', { p_lesson_session_id: lessonId })
-    if (error) { showToast(isArabic ? 'تعذر رصد الغائبين' : 'Could not mark absences', 'error'); return 0 }
-    // Re-read the lesson map so the UI reflects the server-side upserts.
-    const { data: rows } = await supabase.from('attendance_records')
-      .select('student_id, status, homework_status, recorded_at, id, lesson_session_id')
-      .eq('teacher_id', effectiveTeacherId).eq('lesson_session_id', lessonId)
-      .order('recorded_at', { ascending: false })
-    const map = {}
-    ;(rows || []).forEach((row) => { if (!map[row.student_id]) map[row.student_id] = row })
-    setLessonAttendanceByStudent(map)
-    const marked = data?.marked || 0
-    if (marked > 0) showToast(isArabic ? `تم رصد ${marked} طالب غائب` : `Marked ${marked} students absent`, 'success')
-    return marked
-  }, [showToast])
+    if (!groupName) return 0
+    const list = studentsRef.current.filter((s) => s.group_name === groupName)
+    const attendance = lessonAttendanceRef.current
+    const pending = list.filter((s) => {
+      const current = lessonIdOverride ? attendance[s.id]?.status : s.attendance_status
+      return current !== 'حاضر' && current !== 'غائب'
+    })
+    await Promise.all(pending.map((s) => setAttendance(s.id, 'غائب', lessonIdOverride)))
+    const count = pending.length
+    if (count > 0) showToast(isArabic ? `تم رصد ${count} طالب غائب` : `Marked ${count} students absent`, 'success')
+    else showToast(isArabic ? 'لا يوجد طلاب غير مرصدين — الكل مسجل بالفعل' : 'No unmarked students left', 'info')
+    return count
+  }
 
   // PERF (performance round): the loop used to `await setAttendance` per
   // student — N sequential write chains (3 writes each) meant marking a
@@ -1261,6 +1264,46 @@ export function WorkspaceProvider({ children }) {
     }
   }
 
+  // Full rename (teacher request: edit groups from Settings): renaming a
+  // group must propagate everywhere the name is the KEY — teacher_settings
+  // (groups array + group_meta), group_schedule rows, and every student's
+  // group_name. Each leg reports its own failure; settings rollback if a
+  // later leg fails so the workspace never ends up half-renamed.
+  const renameGroup = async (oldName, newName) => {
+    const isArabic = isArabicRef.current
+    const name = String(newName || '').trim()
+    if (!oldName || !name || name === oldName) return false
+    const groups = settingsRef.current?.groups || []
+    const groupMeta = settingsRef.current?.group_meta || {}
+    if (groups.includes(name)) { showToast(isArabic ? 'يوجد بالفعل مجموعة بهذا الاسم' : 'A group with this name already exists', 'error'); return false }
+    const previousSettings = { groups: [...groups], group_meta: { ...groupMeta } }
+    const nextGroups = groups.map((g) => (g === oldName ? name : g))
+    const nextMeta = { ...groupMeta }
+    if (nextMeta[oldName]) { nextMeta[name] = nextMeta[oldName]; delete nextMeta[oldName] }
+    const settingsResult = await updateSettingsRef.current({ groups: nextGroups, group_meta: nextMeta })
+    if (settingsResult?.error) { showToast(`${isArabic ? 'فشل تعديل اسم المجموعة: ' : 'Could not rename the group: '}${settingsResult.error.message || ''}`, 'error'); return false }
+    const { error: scheduleError } = await supabase.from('group_schedule')
+      .update({ group_name: name }).eq('teacher_id', teacherIdRef.current).eq('group_name', oldName)
+    if (scheduleError) {
+      await updateSettingsRef.current(previousSettings)
+      showToast(isArabic ? 'فشل تحديث مواعيد المجموعة، تم التراجع' : 'Could not update the schedule; rename rolled back', 'error')
+      return false
+    }
+    const { error: studentsError } = await supabase.from('students')
+      .update({ group_name: name, updated_at: new Date().toISOString() })
+      .eq('teacher_id', teacherIdRef.current).eq('group_name', oldName)
+    if (studentsError) {
+      await updateSettingsRef.current(previousSettings)
+      await supabase.from('group_schedule').update({ group_name: oldName }).eq('teacher_id', teacherIdRef.current).eq('group_name', name)
+      showToast(isArabic ? 'فشل تحديث طلاب المجموعة، تم التراجع' : 'Could not update the students; rename rolled back', 'error')
+      return false
+    }
+    await loadAll()
+    refreshTodayGroups()
+    showToast(isArabic ? `تم إعادة تسمية المجموعة إلى «${name}» وتحديث طلابها ومواعيدها` : `Group renamed to "${name}" — students and schedule updated`, 'success')
+    return true
+  }
+
   const deleteGroup = async (groupName) => {
     const groups = settingsRef.current?.groups || []
     const groupMeta = settingsRef.current?.group_meta || {}
@@ -1305,7 +1348,7 @@ export function WorkspaceProvider({ children }) {
     openLessonForGroup, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
     bulkAssignGroup, bulkDeleteStudents,
-    saveExam, addGroup, updateGroup, deleteGroup,
+    saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
     // derived helpers
     sessionStudentsFor, countsForLesson, showToast,

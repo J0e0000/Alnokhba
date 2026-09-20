@@ -1,31 +1,17 @@
 import { useWorkspace } from '../../store/WorkspaceStore'
-import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REVIEW TAB (rule 13) — lightweight pre-finish checkpoint.
 // Detects incomplete work and routes the teacher back to the right tab.
 // Does NOT block finishing (the existing finalize RPC is the gate).
-// The next-step action lives in the persistent workflow bar.
+// The next-step action sits inline-END at the top of the tab.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo, onGoNext, onGoPrev, onBar }) {
+export default function ReviewTab({ groupId, counts, interactionCount, gradedStudents, sessionExamCount, issues, lessonOpen, onGoTo }) {
   const ws = useWorkspace()
   const { isArabic } = ws
 
-  // Persistent workflow bar — next step lives here, always visible.
-  const barData = {
-    ariaLabel: isArabic ? 'إجراءات المراجعة' : 'Review actions',
-    primary: [{ key: 'next', kind: 'gold', label: isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →', disabled: false }],
-    secondary: [
-      { key: 'prev', label: isArabic ? '→ السابق — الامتحانات' : '← Previous — Exams', disabled: !onGoPrev },
-    ],
-    meta: issues.length
-      ? (isArabic ? `${issues.length} ملاحظة قبل الإنهاء` : `${issues.length} item(s) to check`)
-      : (isArabic ? 'كل شيء مكتمل ✓' : 'All complete ✓'),
-  }
-  usePublishBar(onBar, barData, {
-    next: () => onGoTo?.('report'),
-    prev: () => onGoPrev?.(),
-  })
+  // TOP ACTION (teacher request): next-step button inline-END at the top —
+  // the old sticky bottom bar is removed (it blocked the view on mobile).
 
   const rows = [
     {
@@ -60,6 +46,15 @@ export default function ReviewTab({ groupId, counts, interactionCount, gradedStu
 
   return (
     <div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request */}
+      <div className="flex justify-end mb-2">
+        <button
+          className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+          onClick={() => onGoTo?.('report')}
+        >
+          {isArabic ? 'التالي — التقرير والإنهاء ←' : 'Next — Report & finish →'}
+        </button>
+      </div>
       <div className="grid gap-2.5 mb-4">
         {rows.map((r) => (
           <button key={r.key} className="nk-row !items-center w-full text-right" onClick={() => onGoTo(r.tab)}>

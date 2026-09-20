@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from 'react'
 import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
@@ -9,7 +9,6 @@ import InteractionHomeworkTab from './tabs/InteractionHomeworkTab'
 import ExamsTab from './tabs/ExamsTab'
 import ReviewTab from './tabs/ReviewTab'
 import ReportTab from './tabs/ReportTab'
-import WorkflowBar from './WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SESSION WORKSPACE — the core experience (rules 5–14).
@@ -20,11 +19,11 @@ import WorkflowBar from './WorkflowBar'
 // ═══════════════════════════════════════════════════════════════════════════
 
 const TABS = [
-  { key: 'attendance', n: 1, title: 'الحضور', sub: 'سجّل حاضر وغائب', titleEn: 'Attendance', subEn: 'Mark present / absent' },
-  { key: 'interaction', n: 2, title: 'التفاعل والواجب', sub: 'للحاضرين فقط', titleEn: 'Interaction + Homework', subEn: 'Present students only' },
-  { key: 'exams', n: 3, title: 'الامتحانات', sub: 'الدرجات والتصحيح', titleEn: 'Exams', subEn: 'Grades' },
-  { key: 'review', n: 4, title: 'المراجعة', sub: 'راجع قبل الإغلاق', titleEn: 'Review', subEn: 'Check before closing' },
-  { key: 'report', n: 5, title: 'التقرير', sub: 'التقرير وإنهاء الحصة', titleEn: 'Report', subEn: 'Report & finish' },
+  { key: 'attendance', n: 1, title: 'الحضور', short: 'الحضور', sub: 'سجّل حاضر وغائب', titleEn: 'Attendance', shortEn: 'Attendance', subEn: 'Mark present / absent' },
+  { key: 'interaction', n: 2, title: 'التفاعل والواجب', short: 'التفاعل والواجب', sub: 'للحاضرين فقط', titleEn: 'Interaction + Homework', shortEn: 'Homework', subEn: 'Present students only' },
+  { key: 'exams', n: 3, title: 'الامتحانات', short: 'الامتحانات', sub: 'الدرجات والتصحيح', titleEn: 'Exams', shortEn: 'Exams', subEn: 'Grades' },
+  { key: 'review', n: 4, title: 'المراجعة', short: 'المراجعة', sub: 'راجع قبل الإغلاق', titleEn: 'Review', shortEn: 'Review', subEn: 'Check before closing' },
+  { key: 'report', n: 5, title: 'التقرير', short: 'التقرير', sub: 'التقرير وإنهاء الحصة', titleEn: 'Report', shortEn: 'Report', subEn: 'Report & finish' },
 ]
 
 export default function SessionWorkspace({ params }) {
@@ -64,13 +63,10 @@ export default function SessionWorkspace({ params }) {
     if (ws.activeLessonId) setStageTab(tab)
   }, [tab, ws.activeLessonId, setStageTab])
 
-  // PERSISTENT WORKFLOW BAR — rendered HERE at the workspace root (not inside
-  // the tab panel) on purpose: a sticky element can never rise above the top
-  // of its containing block, so the bar must live in a container that starts
-  // near the top of the page. Tabs publish a serializable bar spec + handlers
-  // (published only when the spec actually changes — no re-render loops).
-  const [bar, setBar] = useState(null) // { data, handlers }
-  const publishBar = useCallback((spec) => setBar(spec), [])
+  // PERSISTENT WORKFLOW BAR — REMOVED (teacher request): the sticky bottom
+  // bar blocked the view and duplicated keys available above. Each tab now
+  // renders its own next/complete action inline-END at the top (top-left in
+  // Arabic, top-right in English).
 
   // Resolve the session for this group — server-authoritative open-or-reuse.
   // MUST wait for the store's initial load: calling openLessonForGroup with
@@ -158,6 +154,16 @@ export default function SessionWorkspace({ params }) {
     markStageComplete('attendance')
     setTab(counts.present > 0 ? 'interaction' : 'review')
   }, [markStageComplete, counts.present])
+
+  // "View absent" jump (teacher request): the absentees ribbon lives at the
+  // END of the Report tab; its view button jumps to Attendance pre-filtered
+  // to the absent students. A counter (not a boolean) re-triggers the effect
+  // even when the tab/filter is already on 'absent'.
+  const [absentIntent, setAbsentIntent] = useState(0)
+  const viewAbsentFromReport = useCallback(() => {
+    setAbsentIntent((n) => n + 1)
+    setTab('attendance')
+  }, [])
 
   if (opening) {
     return (
@@ -269,25 +275,24 @@ export default function SessionWorkspace({ params }) {
       </section>
 
       {/* ── Pipeline tabs (not a wizard — free movement) ──────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2" role="tablist" aria-label={isArabic ? 'مراحل الحصة' : 'Session pipeline'}>
-        {TABS.map((t) => {
+      <div className="nk-timeline" role="tablist" aria-label={isArabic ? 'مراحل الحصة' : 'Session pipeline'}>
+        {TABS.map((t, i) => {
           const state = t.key === tab ? 'active' : stepState(t.key)
-          const mark = state === 'done' ? '✓' : state === 'attention' ? '!' : t.key === tab ? '●' : '○'
+          const mark = state === 'done' ? '✓' : state === 'attention' ? '!' : t.key === tab ? '●' : t.n
+          const cls = t.key === tab ? 'nk-timeline__step--active' : state === 'done' ? 'nk-timeline__step--done' : state === 'attention' ? 'nk-timeline__step--attention' : ''
           return (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={t.key === tab}
-              className={`nk-step ${t.key === tab ? 'nk-step--active' : state === 'done' ? 'nk-step--done' : state === 'attention' ? 'nk-step--attention' : ''}`}
-              onClick={() => setTab(t.key)}
-            >
-              <b>
-                <span aria-hidden="true" className={state === 'attention' ? 'text-[.9rem]' : ''}>{mark}</span>
-                <span className="truncate">{t.n} · {isArabic ? t.title : t.titleEn}</span>
-                <span className="nk-step__state" />
-              </b>
-              <small className="truncate">{isArabic ? t.sub : t.subEn}</small>
-            </button>
+            <Fragment key={t.key}>
+              {i > 0 && <span className={`nk-timeline__link${state === 'done' ? ' nk-timeline__link--done' : ''}`} aria-hidden="true" />}
+              <button
+                role="tab"
+                aria-selected={t.key === tab}
+                className={`nk-timeline__step ${cls}`}
+                onClick={() => setTab(t.key)}
+              >
+                <span className="nk-timeline__dot" aria-hidden="true">{mark}</span>
+                <small className="nk-timeline__label">{isArabic ? t.short : t.shortEn}</small>
+              </button>
+            </Fragment>
           )
         })}
       </div>
@@ -303,8 +308,7 @@ export default function SessionWorkspace({ params }) {
             groupId={groupId}
             lessonOpen={lessonOpen}
             onCompleteStage={completeAttendanceStage}
-            onGoNext={() => setTab(counts.present > 0 ? 'interaction' : 'review')}
-            onBar={publishBar}
+            absentIntent={absentIntent}
           />
         )}
         {tab === 'interaction' && (
@@ -312,8 +316,6 @@ export default function SessionWorkspace({ params }) {
             groupId={groupId}
             lessonOpen={lessonOpen}
             onGoNext={() => setTab(counts.present > 0 ? 'exams' : 'review')}
-            onGoPrev={() => setTab('attendance')}
-            onBar={publishBar}
           />
         )}
         {tab === 'exams' && (
@@ -322,8 +324,6 @@ export default function SessionWorkspace({ params }) {
             lessonId={ws.activeLessonId}
             lessonOpen={lessonOpen}
             onGoNext={() => setTab('review')}
-            onGoPrev={() => setTab('interaction')}
-            onBar={publishBar}
           />
         )}
         {tab === 'review' && (
@@ -336,8 +336,6 @@ export default function SessionWorkspace({ params }) {
             issues={issues}
             lessonOpen={lessonOpen}
             onGoTo={(k) => setTab(k)}
-            onGoPrev={() => setTab('exams')}
-            onBar={publishBar}
           />
         )}
         {tab === 'report' && (
@@ -348,20 +346,10 @@ export default function SessionWorkspace({ params }) {
             lessonCompleted={lessonCompleted}
             counts={counts}
             teacherName={profile?.full_name || ''}
-            onBar={publishBar}
+            onViewAbsent={viewAbsentFromReport}
           />
         )}
       </section>
-
-      {/* ── Persistent contextual workflow bar (workspace root level) ─────── */}
-      {bar && (
-        <WorkflowBar
-          ariaLabel={bar.data.ariaLabel}
-          primary={bar.data.primary.map((b) => ({ ...b, onClick: () => bar.handlers[b.key]?.() }))}
-          secondary={(bar.data.secondary || []).map((b) => ({ ...b, onClick: () => bar.handlers[b.key]?.() }))}
-          meta={bar.data.meta}
-        />
-      )}
     </div>
   )
 }

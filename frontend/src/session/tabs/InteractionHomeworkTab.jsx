@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
-import { usePublishBar } from '../WorkflowBar'
 
 const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص': 'ناقص', 'لم يتم': 'لم يتم', 'لم يرصد': 'لم يُرصد' }
 
@@ -9,12 +8,12 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // - SIMPLE point actions only: تفاعل (+points_interact) and مخالفة
 //   (points_interrupt) — the existing business-logic-backed amounts. The
 //   "Golden Book / إجابة ذهبية" concept is REMOVED from this workflow.
-// - Homework completion is BINARY: مكتمل / لم يتم. (Historic 'ناقص' rows
-//   still display read-only; no new partial states can be created.)
+// - Homework status is THREE states (teacher request): مكتمل / ناقص / لم يتم
+//   ('ناقص' styling already existed; hwDone still counts 'مكتمل' only).
 // - Only APPLICABLE students appear: default view excludes absent students
 //   (they cannot interact and receive no homework).
 // ═══════════════════════════════════════════════════════════════════════════
-export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext, onGoPrev, onBar }) {
+export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
@@ -41,35 +40,30 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext, 
     { label: `− ${isArabic ? 'مخالفة' : 'Violation'}`, amount: ws.settings?.points_interrupt ?? -3, reason: isArabic ? 'مخالفة سلوكية' : 'Behavior violation' },
   ]
 
-  // BINARY homework (spec 23): ✓ مكتمل / ○ لم يتم — nothing in between.
+  // THREE-STATE homework (teacher request): ✓ مكتمل / ◐ ناقص / ○ لم يتم.
   const hwOptions = [
     ['مكتمل', isArabic ? '✓ مكتمل' : '✓ Done', 'nk-on-hw-done'],
+    ['ناقص', isArabic ? '◐ ناقص' : '◐ Partial', 'nk-on-hw-partial'],
     ['لم يتم', isArabic ? '○ لم يتم' : '○ Missing', 'nk-on-hw-missing'],
   ]
 
   const counts = ws.countsForLesson(groupId)
 
-  // Persistent workflow bar: back to attendance if a mark was wrong, forward
-  // to the next pipeline step (exams, or review when nobody is present).
-  const barData = {
-    ariaLabel: isArabic ? 'إجراءات التفاعل والواجب' : 'Interaction & homework actions',
-    primary: [{
-      key: 'next',
-      kind: 'gold',
-      label: counts.present > 0
-        ? (isArabic ? 'التالي — الامتحانات ←' : 'Next — Exams →')
-        : (isArabic ? 'التالي — المراجعة ←' : 'Next — Review →'),
-      disabled: !onGoNext,
-    }],
-    secondary: [
-      { key: 'prev', label: isArabic ? '→ السابق — الحضور' : '← Previous — Attendance', disabled: !onGoPrev },
-    ],
-    meta: isArabic ? `الواجب مكتمل ${counts.hwDone} من ${counts.hwApplicable}` : `Homework ${counts.hwDone}/${counts.hwApplicable}`,
-  }
-  usePublishBar(onBar, barData, { next: () => onGoNext?.(), prev: () => onGoPrev?.() })
-
   return (
     <div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request.
+          The old sticky bottom bar is removed; back-navigation stays available
+          through the pipeline timeline (any step is one tap away). */}
+      <div className="flex justify-end mb-2">
+        <button
+          className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+          onClick={() => onGoNext?.()}
+        >
+          {counts.present > 0
+            ? (isArabic ? 'التالي — الامتحانات ←' : 'Next — Exams →')
+            : (isArabic ? 'التالي — المراجعة ←' : 'Next — Review →')}
+        </button>
+      </div>
       <div className="nk-notice mb-4">
         {isArabic
           ? 'التفاعل والواجب يظهران للحاضرين — الغائبون مستثنون تلقائيًا. كل ضغطة تُحفظ فورًا.'

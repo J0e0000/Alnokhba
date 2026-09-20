@@ -474,6 +474,87 @@ html.dark .btn-glow { background: #223055; }
 .nk-step--attention { border-color: var(--warn-border); background: var(--warn-bg); }
 .nk-step--attention b { color: var(--warn-strong); }
 
+/* Pipeline TIMELINE (roadmap-style, teacher request): the old 2×3 grid of
+   big step cards is replaced by one compact horizontal roadmap — small
+   numbered dots connected by a line, tiny labels underneath. Fits one row
+   on phones (no giant cards pushing the content down). */
+.nk-timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: .2rem;
+  overflow-x: auto;
+  padding: .15rem 0 .35rem;
+  -webkit-overflow-scrolling: touch;
+}
+.nk-timeline__link {
+  flex: 1 0 .6rem;
+  height: 2px;
+  margin-top: .8rem;
+  background: var(--surface-border);
+  border-radius: 2px;
+  min-width: .5rem;
+}
+.nk-timeline__link--done { background: var(--ok-border); }
+.nk-timeline__step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .2rem;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  min-width: 3.1rem;
+  font: inherit;
+  color: inherit;
+}
+.nk-timeline__dot {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .7rem;
+  font-weight: 800;
+  line-height: 1;
+  border: 1.5px solid var(--surface-border);
+  background: var(--surface-solid);
+  color: var(--fg-muted);
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.nk-timeline__step--active .nk-timeline__dot {
+  border-color: var(--brand-gold);
+  background: var(--brand-gold);
+  color: var(--app-bg);
+  box-shadow: 0 0 0 3px var(--brand-gold-surface);
+}
+.nk-timeline__step--done .nk-timeline__dot {
+  border-color: var(--ok-border);
+  background: var(--ok-bg);
+  color: var(--ok-strong);
+}
+.nk-timeline__step--attention .nk-timeline__dot {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-strong);
+}
+.nk-timeline__label {
+  font-size: .58rem;
+  font-weight: 700;
+  color: var(--fg-muted);
+  max-width: 4rem;
+  text-align: center;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 4rem;
+}
+.nk-timeline__step--active .nk-timeline__label { color: var(--brand-gold); }
+.nk-timeline__step--done .nk-timeline__label { color: var(--ok-strong); }
+
 /* Attendance rows */
 .nk-row {
   display: flex;

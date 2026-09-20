@@ -7,12 +7,62 @@
  * Reuses the existing NotificationBell pattern but extends it with
  * teacher-specific events from teacher_notification_events table.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { registerTeacherPush, hasTeacherPushSubscription } from '../lib/pushNotifications'
+
+// Swipeable notification row (teacher request): drag a notification sideways
+// (either direction, ~80px threshold) to remove it from the list. The inner
+// button keeps its normal tap behavior — only horizontal intent swipes.
+function SwipeRow({ onRemove, children }) {
+  const [dx, setDx] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const [gone, setGone] = useState(false)
+  const start = useRef(null)
+
+  const onTouchStart = (e) => {
+    const t = e.touches[0]
+    start.current = { x: t.clientX, y: t.clientY }
+    setDragging(true)
+  }
+  const onTouchMove = (e) => {
+    if (!start.current) return
+    const t = e.touches[0]
+    const dxNow = t.clientX - start.current.x
+    const dyNow = t.clientY - start.current.y
+    // Horizontal intent only — vertical drags keep scrolling the list.
+    if (Math.abs(dxNow) > Math.abs(dyNow)) setDx(Math.max(-140, Math.min(140, dxNow)))
+  }
+  const onTouchEnd = () => {
+    setDragging(false)
+    start.current = null
+    if (Math.abs(dx) > 80) {
+      setGone(true)
+      setTimeout(onRemove, 180)
+    } else {
+      setDx(0)
+    }
+  }
+
+  return (
+    <div
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{
+        transform: gone ? `translateX(${dx >= 0 ? '' : '-'}110%)` : `translateX(${dx}px)`,
+        opacity: gone ? 0 : Math.max(0.35, 1 - Math.abs(dx) / 180),
+        transition: dragging ? 'none' : 'transform .18s ease, opacity .18s ease',
+        overflow: 'hidden',
+      }}
+    >
+      {children}
+    </div>
+  )
+}
 
 export default function TeacherNotificationCenter({ onSelectStudent }) {
   const { effectiveTeacherId } = useAuth()
@@ -110,6 +160,20 @@ export default function TeacherNotificationCenter({ onSelectStudent }) {
     setUnreadCount(0)
   }
 
+  // Swipe-to-remove (teacher request): optimistic local removal first so the
+  // gesture feels instant, then delete on the server; if RLS forbids delete,
+  // fall back to marking read so the unread state still clears.
+  const removeEvent = async (event) => {
+    setEvents((prev) => prev.filter((e) => e.id !== event.id))
+    setUnreadCount((prev) => Math.max(0, prev - (event.is_read ? 0 : 1)))
+    try {
+      const { error } = await supabase.from('teacher_notification_events').delete().eq('id', event.id)
+      if (error) {
+        await supabase.from('teacher_notification_events').update({ is_read: true }).eq('id', event.id)
+      }
+    } catch { /* offline — stays removed locally for this session */ }
+  }
+
   const eventTypeToCategory = {
     payment_recorded: 'payment',
     student_submission: 'performance',
@@ -177,16 +241,17 @@ export default function TeacherNotificationCenter({ onSelectStudent }) {
                 </button>
               ))}
             </div>
-            <div className="px-4 pt-1.5 pb-1">
+            <div className="px-4 pt-1.5 pb-1 flex items-center justify-between gap-2">
               <span className="text-fg-subtle text-[10px]">{filteredEvents.length} {isArabic ? 'تنبيه' : 'notifications'}</span>
+              <span className="text-fg-subtle/70 text-[10px]">{isArabic ? 'اسحب التنبيه جانبًا لإزالته ⇄' : 'Swipe a notification away to remove ⇄'}</span>
             </div>
             <div className="overflow-y-auto flex-1">
               {filteredEvents.length === 0 ? (
                 <p className="text-fg-subtle text-sm text-center py-8">{isArabic ? 'لا توجد تنبيهات' : 'No notifications'}</p>
               ) : (
                 filteredEvents.map((event) => (
+                  <SwipeRow key={event.id} onRemove={() => removeEvent(event)}>
                   <button
-                    key={event.id}
                     onClick={() => {
                       if (!event.is_read) markRead(event.id)
                       if (event.related_student_id && onSelectStudent) {
@@ -208,6 +273,7 @@ export default function TeacherNotificationCenter({ onSelectStudent }) {
                       {!event.is_read && <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1.5" />}
                     </div>
                   </button>
+                  </SwipeRow>
                 ))
               )}
             </div>

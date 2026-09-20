@@ -5,7 +5,6 @@ import { buildAttendanceMessage } from '../../lib/qrPdfWhatsApp'
 import { isValidPhone, normalizeEgyptianPhone } from '../../lib/helpers'
 import { getStudentRank, getStudentRankPosition } from '../../lib/helpers'
 import RecipientPickerModal from '../../components/RecipientPickerModal'
-import { usePublishBar } from '../WorkflowBar'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORT TAB (rule 14) — the report belongs to THIS session only.
@@ -23,7 +22,7 @@ import { usePublishBar } from '../WorkflowBar'
 // ═══════════════════════════════════════════════════════════════════════════
 const reportDraftKey = (lessonId) => `nokhba_report_draft_v1_${lessonId || 'none'}`
 
-export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName, onBar }) {
+export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName, onViewAbsent }) {
   const ws = useWorkspace()
   const ui = useUI()
   const { isArabic } = ws
@@ -161,37 +160,53 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
     return [...groupStudents].sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 3)
   }, [groupStudents])
 
-  // Persistent workflow bar — the session pipeline ends here.
-  const barData = lessonOpen
-    ? {
-        ariaLabel: isArabic ? 'إجراءات التقرير' : 'Report actions',
-        primary: [{
-          key: 'finish',
-          kind: 'ok',
-          label: finishing ? (isArabic ? '… جاري الإنهاء' : 'Finishing…') : `✓ ${isArabic ? 'إنهاء الحصة' : 'Finish session'}`,
-          disabled: finishing,
-        }],
-        secondary: dirty
-          ? [{ key: 'save', label: `💾 ${isArabic ? 'حفظ البيانات أولًا' : 'Save first'}`, disabled: saving }]
-          : [],
-        meta: dirty
-          ? (isArabic ? 'تغييرات غير محفوظة — الإنهاء يحفظها تلقائيًا' : 'Unsaved changes — finishing saves them')
-          : (isArabic ? 'الإنهاء يغلق الحصة نهائيًا' : 'Finishing closes the session for good'),
-      }
-    : {
-        ariaLabel: isArabic ? 'إجراءات التقرير' : 'Report actions',
-        primary: [{ key: 'home', kind: 'gold', label: isArabic ? 'العودة للرئيسية ←' : 'Back to Home →', disabled: false }],
-        secondary: [],
-        meta: '',
-      }
-  usePublishBar(onBar, barData, {
-    finish: () => finish(),
-    save: () => save(),
-    home: () => ui.closeSession(),
-  })
+  // ── Absentees ribbon (teacher request): the "who was absent" ribbon moved
+  // HERE to the END of the reports part (out of the attendance tab). It keeps
+  // both actions: jump to the attendance list pre-filtered on the absent, and
+  // prepare absence reports (nothing sends without the teacher's confirm).
+  const absentStudents = useMemo(
+    () => groupStudents.filter((s) => (attendanceMap[s.id]?.status || 'لم يرصد') === 'غائب'),
+    [groupStudents, attendanceMap],
+  )
+  const openAbsenceQueue = () => {
+    const candidates = buildCandidates().filter((c) => c.statusType === 'absent')
+    if (!candidates.some((c) => !c.disabled)) {
+      ws.showToast?.(isArabic ? 'لا يوجد غائبون لديهم أرقام صحيحة' : 'No absent students with valid phone numbers', 'error')
+      return
+    }
+    setPicker({
+      candidates,
+      title: isArabic ? `تقارير الغياب — ${candidates.length} غائب` : `Absence reports — ${candidates.length} absent`,
+      subtitle: isArabic ? 'المقترح: الغائبون فقط. عدّل التحديد إن أردت — لن يُرسل شيء حتى تضغط متابعة.' : 'Suggested: absent only. Adjust freely — nothing sends until you continue.',
+      preselect: 'absent',
+    })
+  }
+
+  // TOP ACTION (teacher request): finish (open session) or home (completed)
+  // sits inline-END at the TOP — the old sticky bottom bar is removed.
 
   return (
     <div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request */}
+      <div className="flex justify-end mb-2">
+        {lessonOpen ? (
+          <button
+            className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+            disabled={finishing}
+            onClick={finish}
+          >
+            {finishing ? (isArabic ? '… جاري الإنهاء' : 'Finishing…') : `✓ ${isArabic ? 'إنهاء الحصة' : 'Finish session'}`}
+          </button>
+        ) : lessonCompleted ? (
+          <button
+            className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+            onClick={() => ui.closeSession()}
+          >
+            {isArabic ? 'العودة للرئيسية ←' : 'Back to Home →'}
+          </button>
+        ) : null}
+      </div>
+
       {/* Session summary block */}
       <div className="rounded-2xl p-4 mb-4" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
         <b className="block mb-2 text-[.8rem]">{isArabic ? 'ملخص الحصة' : 'Session summary'}</b>
@@ -302,8 +317,8 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
           <b className="block mb-1 text-[.85rem]" style={{ color: 'var(--ok-strong)' }}>{isArabic ? 'إنهاء الحصة' : 'Finish session'}</b>
           <p className="text-[.72rem] m-0" style={{ color: 'var(--ok-strong)' }}>
             {isArabic
-              ? 'الإنهاء يحوّل غير المرصد إلى غائب، يغلق الحصة، ويرسل التحديث النهائي لأولياء الأمور. الحفظ شيء والإنهاء شيء آخر — زر الإنهاء في الشريط بالأسفل.'
-              : 'Finishing converts unrecorded to absent, closes the session, and sends the final parent update. Save and Finish are separate — the Finish button is in the bar below.'}
+              ? 'الإنهاء يحوّل غير المرصد إلى غائب، يغلق الحصة، ويرسل التحديث النهائي لأولياء الأمور. الحفظ شيء والإنهاء شيء آخر — زر الإنهاء في أعلى الشاشة.'
+              : 'Finishing converts unrecorded to absent, closes the session, and sends the final parent update. Save and Finish are separate — the Finish button is at the top of the screen.'}
           </p>
         </div>
       ) : lessonCompleted ? (
@@ -313,6 +328,26 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
           </p>
         </div>
       ) : null}
+
+      {/* Absentees ribbon — at the END of the reports part (teacher request):
+          answers "who was absent in THIS session", with actions only when
+          absentees exist. */}
+      {absentStudents.length > 0 && (
+        <div className="nk-att-absent mb-4">
+          <span className="nk-att-absent__text">
+            <b>{isArabic ? `الغائبون في هذه الحصة: ${absentStudents.length}` : `Absent in this session: ${absentStudents.length}`}</b>
+            <small className="truncate">{absentStudents.slice(0, 6).map((s) => s.name).join(' · ')}{absentStudents.length > 6 ? ' …' : ''}</small>
+          </span>
+          <span className="nk-att-absent__actions">
+            <button className="nk-wf-ghost" onClick={() => onViewAbsent?.()}>
+              {isArabic ? 'عرض الغائبين' : 'View absent'}
+            </button>
+            <button className="nk-wf-ghost nk-att-absent__send" onClick={openAbsenceQueue}>
+              ↗ {isArabic ? 'تقارير الغياب' : 'Absence reports'}
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Recipient picker (spec 10–11): preselection follows the chosen scope;
           per-student toggles cover the "selected students" case. */}
