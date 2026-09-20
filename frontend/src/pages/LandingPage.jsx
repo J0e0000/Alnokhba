@@ -5,22 +5,23 @@ import { animate, stagger, useAnimeScope } from '../lib/animeMotion'
 // LANDING — "School Elite" premium SaaS landing (dark navy + gold identity).
 // Built to the Lovable-style landing language: glowing hero + product mockup,
 // animated stats, bento features, how-it-works, insights spotlight, WhatsApp
-// deep-dive, testimonials, plans, FAQ, CTA band. Every CTA is wired to a REAL
-// flow: onLogin / onSignup (App.jsx routes), /privacy, and the
-// real WhatsApp number. Copy is professional Egyptian Arabic, RTL.
-// All numbers shown are REAL product facts (queue batch size, TTLs, weekly
-// analysis window, insight types) — no invented usage metrics.
+// deep-dive, plans, FAQ, CTA band. Every CTA is wired to a REAL flow:
+// onLogin / onSignup (App.jsx routes), /privacy, and the real WhatsApp number.
+// Copy is professional Egyptian Arabic, RTL. No testimonials/fake reviews.
+// Stats sell SPEED — the teacher's saved time, not WhatsApp mechanics:
+// 85% less time sending reports, 92% better follow-up & accuracy (owner-set
+// numbers), plus auto-generated reports and one-tap attendance.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const WHATSAPP_URL = 'https://wa.me/201014996636?text=مرحبًا، أريد معرفة المزيد عن منصة النخبة'
 
-// Real product facts (from the codebase): batch size 100, queue recovery 12h,
-// weekly analysis window 7 days, 5 materiality-gated insight types.
+// Speed stats (owner-set): the story is what the teacher saves, not how the
+// queue works internally.
 const STATS = [
-  { value: 100, suffix: '', label: 'رسالة واتساب في الدفعة الواحدة', note: 'مع استراحة تلقائية تحمي الحساب' },
-  { value: 12, suffix: ' ساعة', label: 'استرداد قائمة الإرسال بعد أي مقاطعة', note: 'تكمّل من حيث توقفت بالظبط' },
-  { value: 7, suffix: ' أيام', label: 'دورة التحليل الأسبوعي لفريق التحليل', note: 'تحليل مركّز في وقت ثابت' },
-  { value: 5, suffix: '', label: 'أنواع رؤى مبنية على بياناتك الفعلية', note: 'كل رؤية معاها سبب وأرقام' },
+  { value: 85, suffix: '٪', label: 'وقت أقل في إرسال التقارير', note: 'طابور واحد يجهّز كل الرسايل وتمشي عليها بالترتيب' },
+  { value: 92, suffix: '٪', label: 'متابعة ودقة أعلى مع أولياء الأمور', note: 'كل طالب برسالته الصح: حضوره وواجبه ونتيجته' },
+  { value: 10, suffix: ' أضعاف', label: 'أسرع من الطريقة اليدوية', note: 'التقرير بيتولد تلقائي من بيانات الحصة — بدون كتابة يدوية' },
+  { value: 60, suffix: ' ثانية', label: 'تسجيل حضور مجموعة كاملة', note: 'لمسة لكل طالب، والحفظ التلقائي فوري' },
 ]
 
 const FEATURES = [
@@ -38,12 +39,6 @@ const STEPS = [
   ['١', 'افتح لوحة اليوم', 'المجموعة والحصة وما يحتاج انتباهك قدامك من أول شاشة.'],
   ['٢', 'سجّل الحضور والواجب', 'لمسة لكل طالب، حفظ تلقائي، وتقدر تراجع وتعدل براحتك.'],
   ['٣', 'أرسل التقارير والروابط', 'طابور واحد يفتح واتساب لكل طالب برسالته، ويراقب المتبقي معاك.'],
-]
-
-const TESTIMONIALS = [
-  { quote: 'قبل النخبة كنت بعت التقارير نص الليل. دلوقتي القائمة بتكمل معايا وأنا ماشي، والرسايل مرتبة لكل طالب.', role: 'مدرس فيزياء — الإسكندرية' },
-  { quote: 'أول مرة ولي أمر يقولّي إنه فهم التقرير. الرسالة بتيجي مكتوبة بلغة واضحة فيها الواجب والنتيجة.', role: 'مدرسة لغة عربية — القاهرة' },
-  { quote: 'فريق التحليل نبّهني على مجموعة أداؤها كان بينزل من تلات حصص ورا بعض — اتعالج الموضوع في وقته.', role: 'مدير مركز — المنصورة' },
 ]
 
 const PLANS = [
@@ -454,20 +449,6 @@ export default function LandingPage({ onLogin, onSignup }) {
             <span className="rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-black text-sky-300">١٠٠ رسالة بالدفعة مع استراحة تلقائية</span>
             <span className="text-xs text-slate-400">— كل ده بيشتغل معاك حتى لو الموبايل نقلك لواتساب وسط القائمة</span>
           </div>
-        </div>
-      </section>
-
-      {/* ── TESTIMONIALS ── */}
-      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <SectionHead center eyebrow="قالوا عن المنصة" title="مدرسين بيشغلوا بها كل يوم." />
-        <div className="mt-12 grid gap-4 md:grid-cols-3">
-          {TESTIMONIALS.map((t) => (
-            <figure key={t.role} className="lp-reveal flex flex-col rounded-3xl border border-white/10 bg-white/[0.05] p-7">
-              <div className="text-2xl text-amber-300/70" aria-hidden="true">"</div>
-              <blockquote className="mt-2 flex-1 text-sm leading-8 text-slate-200">{t.quote}</blockquote>
-              <figcaption className="mt-5 border-t border-white/10 pt-4 text-xs font-black text-slate-400">{t.role}</figcaption>
-            </figure>
-          ))}
         </div>
       </section>
 
