@@ -11,6 +11,29 @@ const UIContext = createContext(null)
 const QUEUE_KEY = (tid) => `nokhba_message_queue_${tid}`
 const NAV_KEY = (tid) => `nokhba_nav_state_${tid || 'anon'}`
 
+// Durable server-side record of each send/skip (best-effort, never blocks
+// the queue): the DB row survives device switches and storage clears, so
+// "who already received the report" stays true even where localStorage
+// doesn't. If migration_043 isn't applied yet, the insert fails silently
+// and the queue keeps working exactly as before — the migration can be run
+// before or after this code ships, in either order.
+const logQueueAdvance = (teacherId, item, status) => {
+  try {
+    if (!teacherId || !item?.key) return
+    import('../lib/supabaseClient')
+      .then(({ supabase }) => supabase.from('whatsapp_send_log').insert({
+        teacher_id: teacherId,
+        student_id: item.key,
+        kind: item.kind || (item.qrUrl ? 'qr_link' : 'custom'),
+        status,
+        lesson_session_id: item.lessonId || null,
+        group_name: item.student?.group_name || null,
+        message_preview: String(item.message || '').slice(0, 300),
+      }))
+      .catch(() => { /* table not migrated yet / offline — queue still works */ })
+  } catch { /* ignore */ }
+}
+
 // WhatsApp send queue — reload-resilience fix: the queue used to live in
 // sessionStorage with open:false, so the reload that mobile browsers do when
 // the teacher returns from WhatsApp threw the whole batch away and the
@@ -123,8 +146,16 @@ export function UIProvider({ teacherId, children }) {
 
   // onAdvance optionally receives { skipped: true } so the queue records what
   // actually happened per student — the teacher can trust the remaining list.
+  // The same transition is logged server-side (fire-and-forget) BEFORE the
+  // pointer moves: only the first pending→sent/skipped transition logs, so a
+  // resumed batch never double-records.
   const advanceQueue = useCallback((opts) => {
     const skipped = Boolean(opts && typeof opts === 'object' && opts.skipped)
+    const cur = queue
+    const curItem = Array.isArray(cur?.items) ? cur.items[cur.index] : null
+    if (curItem && (cur?.status?.[cur.index] ?? 'pending') === 'pending') {
+      logQueueAdvance(teacherId, curItem, skipped ? 'skipped' : 'sent')
+    }
     setQueue((prev) => {
       const status = [...(prev.status || [])]
       if (status[prev.index] === 'pending') status[prev.index] = skipped ? 'skipped' : 'sent'
@@ -137,7 +168,7 @@ export function UIProvider({ teacherId, children }) {
       } catch { /* ignore */ }
       return next
     })
-  }, [teacherId])
+  }, [teacherId, queue])
 
   // إيقاف keeps the remaining batch recoverable via the resume chip.
   const closeQueue = useCallback(() => setQueue((prev) => {

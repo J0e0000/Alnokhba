@@ -88,7 +88,7 @@ export default function StudentsArea() {
   // ── Bulk actions (spec 21–24) ─────────────────────────────────────────────
   const bulkMessage = () => {
     const items = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
-      .map((s) => ({ student: s, phone: normalizeEgyptianPhone(s.phone), message: (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) }))
+      .map((s) => ({ key: s.id, kind: 'welcome', student: s, phone: normalizeEgyptianPhone(s.phone), message: (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) }))
     if (!items.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
     ui.startQueue(items)
     setMoreOpen(false)
@@ -126,7 +126,7 @@ export default function StudentsArea() {
       const token = await getOrCreateStudentToken(s.id)
       if (!token) return null
       const link = buildStudentQRLink(token)
-      return { student: s, phone: normalizeEgyptianPhone(s.phone), message: buildQRMessage(s.name, link, template), qrUrl: link, template }
+      return { key: s.id, kind: 'qr_link', student: s, phone: normalizeEgyptianPhone(s.phone), message: buildQRMessage(s.name, link, template), qrUrl: link, template }
     }))
     const items = results.filter(Boolean)
     setBusyBulk('')
@@ -545,7 +545,7 @@ function BulkAddModal({ onClose }) {
 
   const sendSelected = () => {
     if (!pickedReady.length) { ws.showToast?.(isArabic ? 'لا يوجد رسائل جاهزة للمحددين' : 'No ready messages for the selection', 'error'); return }
-    const items = pickedReady.map((s) => ({ student: s, phone: normalizeEgyptianPhone(s.phone), message: links[s.id].message, qrUrl: links[s.id].link, template: ws.settings?.qr_message_template || '' }))
+    const items = pickedReady.map((s) => ({ key: s.id, kind: 'qr_link', student: s, phone: normalizeEgyptianPhone(s.phone), message: links[s.id].message, qrUrl: links[s.id].link, template: ws.settings?.qr_message_template || '' }))
     ui.startQueue(items)
     onClose()
   }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Modal from './Modal'
 import { normalizeArabicSearch } from '../store/WorkspaceStore'
 
@@ -27,6 +27,30 @@ export default function RecipientPickerModal({ open, onClose, candidates = [], p
   })
   const [scope, setScope] = useState('all') // all | present | absent | hasphone
   const [search, setSearch] = useState('')
+  // Cross-device duplicate guard (migration_043): students who already had a
+  // message logged as sent in the last 24h get a soft badge. Best-effort —
+  // if the log table isn't migrated yet the query fails silently and the
+  // picker behaves exactly as before. Soft hint only: the teacher decides.
+  const [recentSent, setRecentSent] = useState(() => new Set())
+
+  useEffect(() => {
+    if (!open) return undefined
+    let alive = true
+    const ids = [...new Set(candidates.map((c) => c.key).filter(Boolean))]
+    if (!ids.length) return undefined
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    import('../lib/supabaseClient')
+      .then(({ supabase }) => supabase.from('whatsapp_send_log')
+        .select('student_id')
+        .in('student_id', ids)
+        .eq('status', 'sent')
+        .gte('created_at', since))
+      .then(({ data }) => {
+        if (alive && Array.isArray(data)) setRecentSent(new Set(data.map((r) => r.student_id)))
+      })
+      .catch(() => { /* log table not migrated yet — badge never shows */ })
+    return () => { alive = false }
+  }, [open, candidates])
 
   const visible = useMemo(() => {
     const q = normalizeArabicSearch(search)
@@ -64,10 +88,12 @@ export default function RecipientPickerModal({ open, onClose, candidates = [], p
 
   const start = () => {
     // Strip the picker-only display fields before queueing; the queue item
-    // shape stays exactly what MessageQueueModal expects.
+    // shape stays exactly what MessageQueueModal expects — plus key/kind/
+    // lessonId, which the durable send log (migration_043) records per item.
     const items = candidates
       .filter((c) => selected.has(c.key) && !c.disabled)
       .map((c) => ({
+        key: c.key, kind: c.kind,
         student: c.student, phone: c.phone, message: c.message,
         qrUrl: c.qrUrl, template: c.template, lessonId: c.lessonId,
       }))
@@ -135,6 +161,11 @@ export default function RecipientPickerModal({ open, onClose, candidates = [], p
                 </small>
               </span>
               <span className="flex items-center gap-1.5 shrink-0">
+                {recentSent.has(c.key) && (
+                  <span className="nk-pill nk-pill-live !text-[.6rem]" title="سُجّل إرسال رسالة لهذا الطالب خلال آخر 24 ساعة">
+                    تم إرسال حديثًا ✓
+                  </span>
+                )}
                 {c.statusLabel && (
                   <span className={`nk-pill ${c.statusType === 'present' ? 'nk-pill-live' : c.statusType === 'absent' ? 'nk-pill-danger' : 'nk-pill-neutral'}`}>
                     {c.statusLabel}

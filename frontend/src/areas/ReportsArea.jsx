@@ -49,6 +49,7 @@ export default function ReportsArea() {
         const reportStudent = { ...s, attendance_status: row?.status || s.attendance_status, hw_status: row?.homework_status || s.hw_status }
         return {
           key: s.id,
+          kind: 'session_report',
           student: reportStudent,
           phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
           message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings }),
@@ -80,7 +81,7 @@ export default function ReportsArea() {
       const results = await Promise.all(groupStudents.map(async (s) => {
         const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
         if (!hasPhone) {
-          return { key: s.id, student: s, phone: '', message: '', qrUrl: '', template, statusLabel: '', statusType: 'none', disabled: true }
+          return { key: s.id, kind: 'qr_link', student: s, phone: '', message: '', qrUrl: '', template, statusLabel: '', statusType: 'none', disabled: true }
         }
         const token = await getOrCreateStudentToken(s.id)
         if (!token) return null
@@ -88,7 +89,7 @@ export default function ReportsArea() {
         // buildQRMessage ALWAYS appends the link when the template lacks {link}
         const message = buildQRMessage(s.name, qrUrl, template)
         return {
-          key: s.id, student: s, phone: normalizeEgyptianPhone(s.phone),
+          key: s.id, kind: 'qr_link', student: s, phone: normalizeEgyptianPhone(s.phone),
           message, qrUrl, template, statusLabel: '', statusType: 'none', disabled: false,
         }
       }))
@@ -134,7 +135,7 @@ export default function ReportsArea() {
     const candidates = groupStudents.map((s) => {
       const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
       return {
-        key: s.id, student: s,
+        key: s.id, kind: 'welcome', student: s,
         phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
         message: hasPhone ? (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) : '',
         statusLabel: '', statusType: 'none', disabled: !hasPhone,
