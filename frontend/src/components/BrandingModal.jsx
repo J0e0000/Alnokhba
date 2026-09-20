@@ -140,7 +140,7 @@ export default function BrandingModal({ open, onClose }) {
           <div className="flex gap-2">
             <label className="text-xs text-brand-gold-hover hover:text-brand-gold font-bold cursor-pointer">
               {logoPreview ? 'تغيير الشعار' : 'رفع شعار'}
-              <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" className="hidden" onChange={handleLogoChange} />
+              <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
             </label>
             {logoPreview && (
               <button onClick={removeLogo} className="text-rose-400 text-xs">إزالة</button>

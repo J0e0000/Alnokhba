@@ -184,7 +184,7 @@ export default function Onboarding({ onComplete }) {
               </div>
               <label className="text-xs text-brand-gold-hover hover:text-brand-gold font-bold cursor-pointer">
                 رفع شعار (اختياري)
-                <input type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml" className="hidden" onChange={handleLogoChange} />
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleLogoChange} />
               </label>
               {logoPreview && (
                 <button onClick={() => { setLogoFile(null); setLogoPreview('') }} className="text-rose-400 text-[11px] mt-1">إزالة</button>

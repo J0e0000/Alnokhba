@@ -376,10 +376,10 @@ export async function generateStudentQRImage(student, qrUrl) {
         <div style="font-size: 12px; color: #64748B;">إدارة الحصص الذكية</div>
       </div>
       <div style="text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 22px; font-weight: 800; color: #0E2954; line-height: 1.3;">${student.name}</div>
+        <div style="font-size: 22px; font-weight: 800; color: #0E2954; line-height: 1.3;">${escapeReportHtml(student.name)}</div>
         <div style="display: inline-block; background: #FEF3C7; color: #D97706; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; margin-top: 6px;">طالب</div>
-        ${student.stage ? `<div style="color: #64748B; font-size: 13px; margin-top: 6px;">${student.stage}${student.group_name ? ' · ' + student.group_name : ''}</div>` : ''}
-        ${student.code ? `<div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: monospace;">${student.code}</div>` : ''}
+        ${student.stage ? `<div style="color: #64748B; font-size: 13px; margin-top: 6px;">${escapeReportHtml(student.stage)}${student.group_name ? ' · ' + escapeReportHtml(student.group_name) : ''}</div>` : ''}
+        ${student.code ? `<div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: monospace;">${escapeReportHtml(student.code)}</div>` : ''}
       </div>
       <div style="display: flex; justify-content: center; margin-bottom: 16px;">
         <div style="border: 3px solid #F59E0B; border-radius: 14px; padding: 10px; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
@@ -1007,7 +1007,7 @@ export async function generateStudentReportPDF(student, { isDark = false, ranks,
       cell.innerHTML = `
         <div style="font-size: 24px; margin-bottom: 6px;">${icon}</div>
         <div style="font-size: 12px; color: ${subtleColor}; margin-bottom: 4px;">${label}</div>
-        <div style="font-size: 20px; font-weight: 700; color: ${headingColor};">${value}</div>
+        <div style="font-size: 20px; font-weight: 700; color: ${headingColor};">${escapeReportHtml(String(value))}</div>
       `
       statsGrid.appendChild(cell)
     })

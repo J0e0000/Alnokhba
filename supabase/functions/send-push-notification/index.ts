@@ -59,6 +59,33 @@ Deno.serve(async (req) => {
     const job = payload?.record || payload
     if (!job?.id || !job?.teacher_id) return json({ ok: false, error: 'invalid job' }, 400)
 
+    // ── SECURITY (audit 2026-09) ────────────────────────────────────────────
+    // This endpoint runs with verify_jwt=false because the DB trigger
+    // (migration_033) calls it WITHOUT an Authorization header. That means
+    // ANY anonymous caller can POST payloads here — the payload alone proves
+    // nothing. Validate it against the DB before sending:
+    //   • the job row must EXIST in push_notification_jobs (rows are inserted
+    //     ONLY by service-role triggers — no authenticated INSERT policy),
+    //   • must be UNPROCESSED (replay/duplicate protection),
+    //   • must match the claimed teacher_id (no cross-teacher spoofing).
+    // The DB row then becomes the single source of truth for title/body/url.
+    const { data: jobRow, error: jobErr } = await supabase
+      .from('push_notification_jobs')
+      .select('id, teacher_id, student_id, title, body, url, broadcast, processed_at')
+      .eq('id', job.id)
+      .maybeSingle()
+    if (jobErr || !jobRow) return json({ ok: false, error: 'invalid job' }, 403)
+    if (jobRow.processed_at) return json({ ok: true, note: 'already processed' })
+    if (jobRow.teacher_id !== job.teacher_id) return json({ ok: false, error: 'job mismatch' }, 403)
+    // Trust the DB row, never the caller's payload.
+    job.teacher_id = jobRow.teacher_id
+    job.student_id = jobRow.student_id ?? null
+    job.broadcast = jobRow.broadcast === true
+    job.title = jobRow.title
+    job.body = jobRow.body
+    job.url = jobRow.url
+    // ───────────────────────────────────────────────────────────────────────
+
     let subscriptions: Array<{ id: string; endpoint: string; p256dh: string; auth: string; portal_url?: string | null }> = []
     let perSubscriptionUrl = false
 

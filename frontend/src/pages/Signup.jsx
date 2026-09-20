@@ -14,8 +14,10 @@ export default function Signup({ onSwitchToLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (password.length < 6) {
-      setError('كلمة المرور لازم تكون 6 حروف/أرقام على الأقل.')
+    // SEC: 8-char minimum (aligned with admin set_password policy; GoTrue allows 6
+    // but we hold the stricter client-side floor — server RLS remains the boundary).
+    if (password.length < 8) {
+      setError('كلمة المرور لازم تكون 8 حروف/أرقام على الأقل.')
       return
     }
     setLoading(true)

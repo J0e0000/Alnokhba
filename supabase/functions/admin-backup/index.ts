@@ -482,9 +482,15 @@ Deno.serve(async (req: Request) => {
     if (action === "scheduled") {
       const backupId = String(body.backupId || "")
       if (!backupId) return json({ error: "backupId is required" }, 400)
-      const { data: row, error } = await service.from("backups").select("id, status, backup_type").eq("id", backupId).maybeSingle()
+      const { data: row, error } = await service.from("backups").select("id, status, backup_type, created_by").eq("id", backupId).maybeSingle()
       if (error || !row) return json({ error: "backup not found" }, 404)
       if (row.backup_type !== "weekly") return json({ error: "not a scheduled backup" }, 403)
+      // SECURITY (audit 2026-09): this action needs no admin JWT (pg_cron has
+      // none), so restrict it to rows the DB scheduler itself created —
+      // scheduler inserts leave created_by NULL, manual/retry rows always
+      // carry the admin id. Prevents anyone with a PENDING weekly row they
+      // did not create from forcing backup runs.
+      if (row.created_by) return json({ error: "not a scheduler-created backup" }, 403)
       if (row.status !== "PENDING") return json({ ok: true, note: "already processed" })
 
       const { data: began, error: beginError } = await service.rpc("admin_backup_begin", { p_backup_id: backupId })
