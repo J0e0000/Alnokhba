@@ -18,13 +18,13 @@ import TourOverlay from '../components/TourOverlay'
 // PERF (bundle splitting): Home and the Session Workspace stay in the main
 // bundle (they ARE the daily flow — lazy chunks would add a flash to the
 // most-used paths). Secondary destinations load on demand: opening Students,
-// Reports, Analytics, Settings, فريق التحليل, or History fetches only that
-// area's chunk, so first paint stays light and unrelated area code never
-// runs at startup. Same features, same routes — smaller initial payload.
+// Reports, فريق التحليل, Settings, or History fetches only that area's chunk,
+// so first paint stays light and unrelated area code never runs at startup.
+// ANALYTICS RESTRUCTURE: the old "التحليلات" dashboard area was merged INTO
+// فريق التحليل (InsightsArea) — one dedicated analytics product.
 const StudentsArea = lazy(() => import('../areas/StudentsArea'))
 const HistoryArea = lazy(() => import('../areas/HistoryArea'))
 const ReportsArea = lazy(() => import('../areas/ReportsArea'))
-const AnalyticsArea = lazy(() => import('../areas/AnalyticsArea'))
 const SettingsArea = lazy(() => import('../areas/SettingsArea'))
 const InsightsArea = lazy(() => import('../areas/InsightsArea'))
 
@@ -46,10 +46,9 @@ const NAV = [
   { key: 'home', label: 'نظرة عامة', labelEn: 'Overview', icon: '▦' },
   { key: 'students', label: 'الطلاب', labelEn: 'Students', icon: '♧' },
   { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
-  { key: 'analytics', label: 'التحليلات', labelEn: 'Analytics', icon: '⌁' },
   { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
 ]
-const MOBILE_NAV = NAV.filter((n) => n.key !== 'analytics')
+const MOBILE_NAV = NAV
 
 // Spotlight tour steps (spec 17–19): targets are data-tour anchors resolved
 // at runtime — visible element wins (desktop sidebar vs mobile bottom nav).
@@ -268,9 +267,9 @@ export default function AppShell({ onOpenAdmin }) {
             {ui.area === 'students' && <StudentsArea />}
             {ui.area === 'history' && <HistoryArea />}
             {ui.area === 'reports' && <ReportsArea />}
-            {ui.area === 'analytics' && <AnalyticsArea />}
             {ui.area === 'settings' && <SettingsArea />}
-            {ui.area === 'insights' && <InsightsArea />}
+            {/* legacy 'analytics' deep links land in the restructured product */}
+            {(ui.area === 'insights' || ui.area === 'analytics') && <InsightsArea />}
           </Suspense>
         </main>
       </div>

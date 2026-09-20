@@ -27,7 +27,6 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const SubscriptionGate = lazy(() => import('./pages/SubscriptionGate'))
 const PublicQRPage = lazy(() => import('./pages/PublicQRPage'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
-const PreviewDashboard = lazy(() => import('./pages/PreviewDashboard'))
 const StatusPage = lazy(() => import('./pages/StatusPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const AuthAction = lazy(() => import('./pages/AuthAction'))
@@ -61,10 +60,6 @@ function getAuthCallbackError() {
 function getRequestedAuthView() {
   const requested = new URLSearchParams(window.location.search).get('auth')
   return requested === 'signup' ? 'signup' : 'login'
-}
-
-function isPreviewPath() {
-  return new URLSearchParams(window.location.search).get('preview') === '1'
 }
 
 function getAuthActionPath() {
@@ -110,8 +105,7 @@ function Gate() {
 
   if (!session) {
     const authRequested = new URLSearchParams(window.location.search).get('auth')
-    if (isPreviewPath()) return <Suspense fallback={<PageFallback />}><PreviewDashboard onBack={() => { window.location.assign('/') }} onLogin={() => { window.location.assign('/?auth=login') }} /></Suspense>
-    if (!authRequested) return <LandingPage onLogin={() => { window.location.assign('/?auth=login') }} onSignup={() => { window.location.assign('/?auth=signup') }} onPreview={() => { window.location.assign('/?preview=1') }} />
+    if (!authRequested) return <LandingPage onLogin={() => { window.location.assign('/?auth=login') }} onSignup={() => { window.location.assign('/?auth=signup') }} />
     return authView === 'login'
       ? <Login onSwitchToSignup={() => { window.location.assign('/?auth=signup') }} />
       : <Suspense fallback={<PageFallback />}><Signup onSwitchToLogin={() => { window.location.assign('/?auth=login') }} /></Suspense>

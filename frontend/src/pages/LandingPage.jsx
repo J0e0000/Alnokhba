@@ -6,7 +6,7 @@ import { animate, stagger, useAnimeScope } from '../lib/animeMotion'
 // Built to the Lovable-style landing language: glowing hero + product mockup,
 // animated stats, bento features, how-it-works, insights spotlight, WhatsApp
 // deep-dive, testimonials, plans, FAQ, CTA band. Every CTA is wired to a REAL
-// flow: onLogin / onSignup / onPreview (App.jsx routes), /privacy, and the
+// flow: onLogin / onSignup (App.jsx routes), /privacy, and the
 // real WhatsApp number. Copy is professional Egyptian Arabic, RTL.
 // All numbers shown are REAL product facts (queue batch size, TTLs, weekly
 // analysis window, insight types) — no invented usage metrics.
@@ -167,7 +167,7 @@ function MiniScene({ kind }) {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
-export default function LandingPage({ onLogin, onSignup, onPreview }) {
+export default function LandingPage({ onLogin, onSignup }) {
   const root = useRef(null)
   const [openFaq, setOpenFaq] = useState(0)
   useAnimeScope(root, () => {
@@ -204,7 +204,6 @@ export default function LandingPage({ onLogin, onSignup, onPreview }) {
             <button className="transition hover:text-white" onClick={() => scrollTo('faq')}>الأسئلة</button>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onPreview} className="hidden min-h-11 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 text-sm font-black text-amber-200 transition hover:bg-amber-300/20 sm:inline-flex">معاينة المنصة</button>
             <button onClick={onLogin} className="min-h-11 rounded-xl px-3 text-sm font-black text-slate-200 transition hover:bg-white/10 sm:px-4">تسجيل الدخول</button>
             <button onClick={onSignup} className="min-h-11 min-w-[120px] rounded-xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-5 text-sm font-black text-[#1a1205] shadow-lg shadow-amber-500/20 transition hover:-translate-y-0.5">ابدأ مجانًا</button>
           </div>
@@ -230,7 +229,6 @@ export default function LandingPage({ onLogin, onSignup, onPreview }) {
             </p>
             <div className="mt-9 flex flex-wrap items-start gap-4">
               <ActionButton onClick={onSignup} hint="أنشئ حساب المدرس وابدأ إعداد مجموعاتك" className="min-h-14 min-w-[170px] rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-6 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ مجانًا</ActionButton>
-              <ActionButton onClick={onPreview} hint="شاهد النظام ببيانات تجريبية من غير تسجيل" className="min-h-14 min-w-[170px] rounded-2xl border border-white/15 bg-white/5 px-6 text-sm font-black text-slate-100 backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/10">شاهد معاينة المنصة</ActionButton>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs font-bold text-slate-400">
               <span>✓ إعداد في دقائق</span>
@@ -533,7 +531,6 @@ export default function LandingPage({ onLogin, onSignup, onPreview }) {
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <ActionButton onClick={onSignup} hint="ابدأ حسابك الحقيقي في دقائق" className="min-h-14 min-w-[180px] rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ مجانًا</ActionButton>
-            <ActionButton onClick={onPreview} hint="بيانات تجريبية من غير تسجيل" className="min-h-14 min-w-[180px] rounded-2xl border border-white/15 bg-white/5 px-7 text-sm font-black text-slate-100 transition hover:-translate-y-0.5 hover:bg-white/10">شاهد المعاينة</ActionButton>
           </div>
         </div>
       </section>

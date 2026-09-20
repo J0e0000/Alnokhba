@@ -65,6 +65,9 @@ export const INSIGHT_CONFIG = {
 
   // ── Warnings ──
   warningsNear: 1,         // students within 1 warning of the configured limit
+
+  // ── Engagement (behavior logs, observable records only) ──
+  engagementMinNotes: 2,   // >= 2 negative behavior notes in the window per student
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -89,6 +92,10 @@ function recordDate(r) {
  *   examScoresByStudent map student_id → [{ total_score, max_score_per_section,
  *                     section_scores, created_at, exam_id, exam_title }]
  *   settings          teacher_settings row (insight_config.max_warnings)
+ *   behaviorLogs      OPTIONAL behavior_logs rows (student_id, points_delta,
+ *                     created_at) covering the current window. When absent
+ *                     the engagement finder silently skips (no fabricated
+ *                     engagement data).
  *   now               Date (defaults to now)
  * @returns {{ insights: Array, meta: object }}
  */
@@ -99,6 +106,7 @@ export function runInsightAnalysis(input = {}) {
   const attendance = Array.isArray(input.allAttendance) ? input.allAttendance : []
   const sessions = Array.isArray(input.lessonSessions) ? input.lessonSessions : []
   const scoresByStudent = input.examScoresByStudent || {}
+  const behaviorLogs = Array.isArray(input.behaviorLogs) ? input.behaviorLogs : []
   const maxWarnings = Number(input.settings?.insight_config?.max_warnings ?? 3) || 3
 
   const curStart = now.getTime() - cfg.windowDays * DAY_MS
@@ -421,6 +429,51 @@ export function runInsightAnalysis(input = {}) {
         students: near.map((s) => ({ id: s.id, name: s.name })),
         metrics: { students: near.length, maxWarnings },
         reasons: [`عدد الطلاب ${near.length} >= الحد الأدنى ${cfg.minPopulation}`, 'كلهم على خطوة واحدة من الإجراء الرسمي — تأثير تشغيلي مباشر'],
+      })
+    }
+  }
+
+  // ── 6) Engagement drop (observable behavior records only) ────────────────
+  // Spec 7F: never infer motivation or mental state — we count RECORDED
+  // negative behavior notes. A pattern across several students in the same
+  // window is an operational signal worth one watch-level insight.
+  if (behaviorLogs.length) {
+    const negByStudent = new Map()
+    for (const b of behaviorLogs) {
+      if (!b?.student_id) continue
+      const d = b.created_at ? new Date(b.created_at).getTime() : NaN
+      if (!Number.isFinite(d) || d < curStart || d > now.getTime() + DAY_MS) continue
+      if (Number(b.points_delta) >= 0) continue
+      negByStudent.set(b.student_id, (negByStudent.get(b.student_id) || 0) + 1)
+    }
+    const flagged = []
+    for (const [sid, notes] of negByStudent) {
+      if (notes < cfg.engagementMinNotes) continue
+      const st = studentsById.get(sid)
+      if (st) flagged.push({ id: sid, name: st.name, notes })
+    }
+    const needed = Math.max(cfg.minPopulation, Math.ceil(students.length * cfg.populationShare))
+    if (flagged.length >= needed) {
+      findingsTotal += 1
+      flagged.sort((a, b) => b.notes - a.notes)
+      const names = flagged.slice(0, 5).map((s) => s.name).join('، ') + (flagged.length > 5 ? ` و${flagged.length - 5} تانيين` : '')
+      push({
+        id: 'engagement-drop',
+        type: 'engagement-drop',
+        group: null,
+        severity: 'watch',
+        title: `${arNum(flagged.length)} طلاب عليهم ملاحظات سلوكية متكررة في آخر ٤ أسابيع`,
+        lines: [
+          `الأسامي: ${names}.`,
+          `كل واحد فيهم عليه ${cfg.engagementMinNotes} ملاحظات سلبية مسجلة أو أكتر في نفس الفترة — ده تسجيل ملاحظات حقيقي، والسبب المحتمل مش واضح من البيانات لوحدها.`,
+        ],
+        action: 'تكلم مع الطلاب دول قبل ما الموضوع يكبر، وسجل أي تطور في ملاحظاتهم عشان الفريق يقدر يقيس التغير الشهر الجاي.',
+        students: flagged.map((s) => ({ id: s.id, name: s.name })),
+        metrics: { students: flagged.length, needed },
+        reasons: [
+          `عدد الطلاب ${flagged.length} >= الحد المطلوب ${needed}`,
+          `كل طالب عليه ${cfg.engagementMinNotes} ملاحظات سلبية مسجلة على الأقل في الفترة`,
+        ],
       })
     }
   }

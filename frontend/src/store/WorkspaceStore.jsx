@@ -127,7 +127,7 @@ export function WorkspaceProvider({ children }) {
         supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
         supabase.from('behavior_logs').select('*').eq('teacher_id', tid).gte('created_at', todayStart.toISOString()).order('created_at'),
         // PERF + FIX: attendance_date is required by the Analytics 30/90-day
-        // filters (AnalyticsArea) — it used to be missing from this select,
+        // filters (InsightsArea advanced tools) — it used to be missing from this select,
         // which silently made every period-filtered attendance percentage
         // null. Selecting it costs nothing.
         supabase.from('attendance_records').select('student_id, status, recorded_at, lesson_session_id, homework_status, attendance_date').eq('teacher_id', tid).order('recorded_at', { ascending: false }).limit(5000),
