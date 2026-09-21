@@ -13,7 +13,7 @@ export default function PrivacyPage() {
             <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-8 w-8 rounded-lg" />
             <b className="text-base">النخبة</b>
           </div>
-          <a href="/" className="text-[.78rem] font-extrabold rounded-xl px-4 py-2" style={{ background: 'var(--brand-navy, #0E2954)', color: '#fff' }}>
+          <a href="/" className="text-[.78rem] font-extrabold rounded-xl px-4 py-2" style={{ background: 'var(--brand-navy, #142D62)', color: '#fff' }}>
             الرئيسية
           </a>
         </div>

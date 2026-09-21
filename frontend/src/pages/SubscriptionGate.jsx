@@ -26,7 +26,7 @@ export default function SubscriptionGate() {
         <a
           href={WHATSAPP_URL} target="_blank" rel="noreferrer"
           onClick={() => track('whatsapp_click', { source: 'subscription-gate' })}
-          className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-5 text-sm font-black text-[#1a1205] shadow-lg shadow-amber-500/20 transition hover:-translate-y-0.5"
+          className="mb-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] px-5 text-sm font-black text-[#1D0E03] shadow-lg shadow-nk-500/20 transition hover:-translate-y-0.5"
         >
           <span aria-hidden="true">◉</span> جدّد عبر واتساب — التفعيل فور التأكيد
         </a>

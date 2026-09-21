@@ -401,7 +401,7 @@ export default function PublicQRPage() {
     // section (it used to be a static import on the portal page).
     import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(portalLink, {
       width: 320, margin: 4,
-      color: { dark: '#0E2954', light: '#FFFFFF' },
+      color: { dark: '#142D62', light: '#FFFFFF' },
       errorCorrectionLevel: 'M',
     })).then(setQrDataUrl).catch(() => {})
   }, [showQR, qrDataUrl, portal, portalLink])
@@ -1047,14 +1047,14 @@ function EmptyLine({ text }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Design tokens — El No5ba: navy #001f43, gold #FFD700
+// Design tokens — sampled from the approved logo: navy #142D62, orange #FB9C1B
 // ═══════════════════════════════════════════════════════════════
 
-const NAVY = '#172033'
+const NAVY = '#142D62'
 const NAVY_LIGHT = '#f8fafc'
-const GOLD = '#0f766e'
-const GOLD_HOVER = '#0d9488'
-const WHITE = '#172033'
+const GOLD = '#A65700'
+const GOLD_HOVER = '#8C4900'
+const WHITE = '#142D62'
 const GRAY_400 = '#718096'
 const GREEN = '#25D366'
 

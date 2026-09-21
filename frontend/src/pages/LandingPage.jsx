@@ -173,7 +173,7 @@ export default function LandingPage({ onLogin, onSignup }) {
   return (
     <main ref={root} className="lp-dark min-h-screen text-[#eef2fb]" dir="rtl">
       {/* ── NAV (§2 architecture: simple, real links) ── */}
-      <header className="lp-nav sticky top-0 z-40 border-b border-white/10 bg-[#0c1631]/80 backdrop-blur-xl">
+      <header className="lp-nav sticky top-0 z-40 border-b border-white/10 bg-[#0D1C3D]/80 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-8" aria-label="التنقل الرئيسي">
           <a href="/" className="flex items-center gap-3" aria-label="النخبة — الرئيسية">
             <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-10 w-10 rounded-xl shadow-lg shadow-black/30" />
@@ -188,7 +188,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onLogin} className="min-h-11 rounded-xl px-3 text-sm font-black text-slate-200 transition hover:bg-white/10 sm:px-4">تسجيل الدخول</button>
-            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'nav' })} className="inline-flex min-h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-5 text-sm font-black text-[#1a1205] shadow-lg shadow-amber-500/20 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
+            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'nav' })} className="inline-flex min-h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] px-5 text-sm font-black text-[#1D0E03] shadow-lg shadow-nk-500/20 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
           </div>
         </nav>
       </header>
@@ -209,7 +209,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               النخبة بتجمع مسار الشغل اليومي كله في نظام واحد بيفهمه المدرس ويستخدمه من موبايله.
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-4">
-              <a href={signup()} onClick={() => track('trial_cta_click', { source: 'hero' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
+              <a href={signup()} onClick={() => track('trial_cta_click', { source: 'hero' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] px-7 text-sm font-black text-[#1D0E03] shadow-xl shadow-nk-500/25 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
               <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" onClick={() => track('whatsapp_click', { source: 'hero' })} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/10 px-7 text-sm font-black text-[#4be08a] transition hover:bg-[#25D366]/20">
                 <span aria-hidden="true">◉</span> تواصل معنا عبر واتساب
               </a>
@@ -230,7 +230,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               </div>
               <Shot s={SCREENS.session} alt="مساحة الحصة الحقيقية في منصة النخبة: تبويبات الحضور والتفاعل والواجب والامتحانات والتقرير" priority className="w-full" />
             </div>
-            <div className="lp-float absolute -right-3 -top-5 rounded-2xl border border-emerald-300/30 bg-[#0c1631]/95 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur sm:-right-6">
+            <div className="lp-float absolute -right-3 -top-5 rounded-2xl border border-emerald-300/30 bg-[#0D1C3D]/95 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur sm:-right-6">
               <div className="flex items-center gap-2 text-xs font-black"><span className="lp-pulse-dot h-2.5 w-2.5 rounded-full bg-[#25D366]" /> واتساب · قائمة الإرسال</div>
               <div className="mt-1 text-[11px] text-slate-300">بتكمّل من حيث توقفت — حتى لو الصفحة اتقفلت ✓</div>
             </div>
@@ -239,11 +239,11 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 2 — OWNER-SET SPEED STATS ── */}
-      <section className="border-y border-white/10 bg-[#0c1631]/60 px-5 py-10 sm:px-8" aria-label="مؤشرات السرعة">
+      <section className="border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-10 sm:px-8" aria-label="مؤشرات السرعة">
         <div className="mx-auto grid max-w-7xl gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {STATS.map((s) => (
             <div key={s.label} className="lp-stat text-center sm:text-right">
-              <div className="text-3xl font-black text-[#e8bd63]"><Counter value={s.value} suffix={s.suffix} /></div>
+              <div className="text-3xl font-black text-[#FBBF6D]"><Counter value={s.value} suffix={s.suffix} /></div>
               <div className="mt-1.5 text-sm font-black text-slate-200">{s.label}</div>
               <div className="mt-1 text-xs text-slate-400">{s.note}</div>
             </div>
@@ -269,7 +269,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               <div className={i % 2 ? 'lg:order-2' : ''}>
                 <h3 className="text-2xl font-black">{t}</h3>
                 <p className="mt-3 leading-8 text-slate-300/90">{d}</p>
-                <a href="/features" className="mt-4 inline-flex items-center gap-2 text-sm font-black text-[#e8bd63]">كل المميزات <span aria-hidden="true">←</span></a>
+                <a href="/features" className="mt-4 inline-flex items-center gap-2 text-sm font-black text-[#FBBF6D]">كل المميزات <span aria-hidden="true">←</span></a>
               </div>
               <Shot s={s} alt={alt} className={`w-full ${i % 2 ? 'lg:order-1' : ''}`} />
             </div>
@@ -278,7 +278,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 4 — THE PROBLEM ── */}
-      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead
             center
@@ -314,7 +314,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           {WORKFLOW.map(([t, d], i) => (
             <li key={t} className="lp-reveal relative rounded-2xl border border-white/10 bg-white/[0.05] p-5">
               <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-sm font-black text-[#1a1205]">{i + 1}</span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#FB9C1B] to-[#E07F00] text-sm font-black text-[#1D0E03]">{i + 1}</span>
                 <h3 className="font-black">{t}</h3>
               </div>
               <p className="mt-2 text-xs leading-6 text-slate-400">{d}</p>
@@ -324,7 +324,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 6 — CORE FEATURES (categories → /features) ── */}
-      <section id="features" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section id="features" className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead
             eyebrow="قدرات المنصة"
@@ -334,7 +334,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map(([t, d]) => (
               <article key={t} className="landing-feature-card lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-                <h3 className="text-lg font-black text-[#e8bd63]">{t}</h3>
+                <h3 className="text-lg font-black text-[#FBBF6D]">{t}</h3>
                 <p className="mt-3 text-sm leading-7 text-slate-300/90">{d}</p>
               </article>
             ))}
@@ -354,7 +354,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               title="الحصة بتفتح مرة… وبتقفل لما تخلص شغلك."
               sub="مسار واضح من أول شاشة لحد التقرير — والحفظ التلقائي معاك في كل خطوة. لو الموبايل نقلك لواتساب وسط الشغل، ترجع تلاقي كل حاجة زي ما هي."
             />
-            <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.07] p-4 text-sm leading-7 text-amber-100/90">
+            <div className="mt-4 rounded-2xl border border-nk-300/25 bg-nk-400/[0.07] p-4 text-sm leading-7 text-nk-100/90">
               <b className="font-black">الحفظ مش الإنهاء:</b> الحصة تفضل مفتوحة وقابلة للاستكمال في أي وقت —
               الإنهاء بتحسمه أنت لما تخلص، وساعتها كل حاجة بتتثبت في السجل.
             </div>
@@ -362,7 +362,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="lp-timeline space-y-3">
             {TEACHER_FLOW.map(([t, d], i) => (
               <div key={t} className="relative rounded-2xl border border-white/10 bg-white/[0.05] p-4 pr-16">
-                <div className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-sm font-black text-[#1a1205]">{i + 1}</div>
+                <div className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl bg-gradient-to-br from-[#FB9C1B] to-[#E07F00] text-sm font-black text-[#1D0E03]">{i + 1}</div>
                 <h3 className="font-black">{t}</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-300/90">{d}</p>
               </div>
@@ -372,7 +372,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 8 — OWNER / MANAGEMENT VIEW ── */}
-      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
           <div className="order-2 lg:order-1">
             <Shot s={SCREENS.dashboard} alt="لوحة اليوم في منصة النخبة — نظرة المدير على حصص اليوم والطلاب" className="w-full" />
@@ -386,7 +386,7 @@ export default function LandingPage({ onLogin, onSignup }) {
             <ul className="mt-7 space-y-3.5">
               {OWNER_POINTS.map(([t, d]) => (
                 <li key={t} className="flex gap-3">
-                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span>
+                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-nk-400/15 text-xs font-black text-nk-300 ring-1 ring-nk-300/30">✓</span>
                   <div><b className="font-black">{t}</b><p className="mt-0.5 text-sm leading-6 text-slate-300/90">{d}</p></div>
                 </li>
               ))}
@@ -399,13 +399,13 @@ export default function LandingPage({ onLogin, onSignup }) {
       <section id="insights" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-24 sm:px-8">
         <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
           <div className="order-2 lg:order-1">
-            <div className="lp-reveal relative rounded-[26px] border border-amber-300/20 bg-gradient-to-b from-amber-400/[0.08] to-transparent p-4 sm:p-6">
+            <div className="lp-reveal relative rounded-[26px] border border-nk-300/20 bg-gradient-to-b from-nk-400/[0.08] to-transparent p-4 sm:p-6">
               <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2 font-black text-amber-200">✦ فريق التحليل</div>
+                <div className="flex items-center gap-2 font-black text-nk-200">✦ فريق التحليل</div>
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-black text-slate-300">تحليل الأسبوع · اكتمل ✓</span>
               </div>
               <div className="mt-4 space-y-3">
-                <div className="rounded-2xl border border-white/10 bg-[#0c1631]/70 p-4">
+                <div className="rounded-2xl border border-white/10 bg-[#0D1C3D]/70 p-4">
                   <div className="text-sm font-black">غياب مجموعة الأحد عالي وزايد</div>
                   <p className="mt-2 text-xs leading-6 text-slate-300/90">الغياب وصل ٣٤٪ في آخر ٤ أسابيع مقابل ١٨٪ الشهر اللي فاته — وبيأثر على ٧٧ طالب.</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -414,7 +414,7 @@ export default function LandingPage({ onLogin, onSignup }) {
                     <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">٧٧ طالب متأثر</span>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-[#0c1631]/70 p-4">
+                <div className="rounded-2xl border border-white/10 bg-[#0D1C3D]/70 p-4">
                   <div className="text-sm font-black">تسليم الواجب نازل بشكل ملحوظ</div>
                   <p className="mt-2 text-xs leading-6 text-slate-300/90">النسبة نزلت لـ ٣٥٪ في آخر ٤ أسابيع بعد ما كانت ٨٢٪ — مراجعة نوع الواجب والتواصل مع أولياء الأمور أول خطوة.</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
@@ -438,7 +438,7 @@ export default function LandingPage({ onLogin, onSignup }) {
                 ['بيتعرف على التحسن', 'لما الموقف يتحسن، الرؤية بتتعلّم «بتتحسّن» وبعدين بتتحل لوحدها — من غير تكرار مزعج.'],
               ].map(([t, d]) => (
                 <li key={t} className="flex gap-3">
-                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span>
+                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-nk-400/15 text-xs font-black text-nk-300 ring-1 ring-nk-300/30">✓</span>
                   <div><b className="font-black">{t}</b><p className="mt-0.5 text-sm leading-6 text-slate-300/90">{d}</p></div>
                 </li>
               ))}
@@ -448,7 +448,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 10 — WHATSAPP ── */}
-      <section id="whatsapp" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section id="whatsapp" className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead
             center
@@ -471,7 +471,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           </div>
           <div className="lp-reveal mt-4 flex flex-wrap items-center justify-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-5 text-sm font-bold text-slate-300">
             <span className="rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-black text-emerald-300">تم إرسال حديثًا ✓</span>
-            <span className="rounded-full bg-amber-400/10 px-3 py-1.5 text-xs font-black text-amber-200">استكمال من حيث توقفت</span>
+            <span className="rounded-full bg-nk-400/10 px-3 py-1.5 text-xs font-black text-nk-200">استكمال من حيث توقفت</span>
             <span className="rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-black text-sky-300">قوالب قابلة للتخصيص</span>
             <span className="text-xs text-slate-400">— وكل ده بيشتغل من موبايلك</span>
           </div>
@@ -490,7 +490,7 @@ export default function LandingPage({ onLogin, onSignup }) {
             <ul className="mt-7 grid gap-3 sm:grid-cols-2">
               {['حضور بلمسة واحدة', 'بحث فوري بين الطلاب', 'قائمة الإرسال من الجيب', 'بوابة الطالب على الموبايل', 'إضافة للشاشة الرئيسية (PWA)', 'يعمل مع شبكات الموبايل الضعيفة'].map((t) => (
                 <li key={t} className="flex items-center gap-2.5 text-sm font-bold text-slate-200">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span> {t}
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-nk-400/15 text-xs font-black text-nk-300 ring-1 ring-nk-300/30">✓</span> {t}
                 </li>
               ))}
             </ul>
@@ -504,19 +504,19 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 12 — HOW IT WORKS ── */}
-      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead center eyebrow="إزاي تبدأ؟" title="٣ خطوات — ومركزك شغال." />
           <div className="mt-12 grid gap-4 md:grid-cols-3">
             {HOW.map(([n, t, d]) => (
               <div key={n} className="relative rounded-3xl border border-white/10 bg-white/[0.05] p-7">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-lg font-black text-[#1a1205] shadow-lg shadow-amber-500/20">{n}</div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FB9C1B] to-[#E07F00] text-lg font-black text-[#1D0E03] shadow-lg shadow-nk-500/20">{n}</div>
                 <h3 className="mt-5 text-lg font-black">{t}</h3>
                 <p className="mt-3 text-sm leading-7 text-slate-300/90">{d}</p>
               </div>
             ))}
           </div>
-          <div className="mt-10 text-center"><a href="/trial" className="text-sm font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">تفاصيل التجربة المجانية</a></div>
+          <div className="mt-10 text-center"><a href="/trial" className="text-sm font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">تفاصيل التجربة المجانية</a></div>
         </div>
       </section>
 
@@ -526,36 +526,36 @@ export default function LandingPage({ onLogin, onSignup }) {
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {AUDIENCE.map(([t, d]) => (
             <div key={t} className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-              <h3 className="font-black text-[#e8bd63]">{t}</h3>
+              <h3 className="font-black text-[#FBBF6D]">{t}</h3>
               <p className="mt-2 text-sm leading-7 text-slate-300/90">{d}</p>
             </div>
           ))}
         </div>
-        <div className="mt-10 text-center"><a href="/solutions" className="text-sm font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">شوف الحلول حسب دورك في المركز</a></div>
+        <div className="mt-10 text-center"><a href="/solutions" className="text-sm font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">شوف الحلول حسب دورك في المركز</a></div>
       </section>
 
       {/* ── SECTION 14 — PRICING TEASER (config-driven) ── */}
-      <section id="plans" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      <section id="plans" className="scroll-mt-24 border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead center eyebrow="الباقات" title="أسعار واضحة — ابدأ مجانًا وكبّر لما تشوف الفايدة." sub={`تجربة مجانية ${fmtAr(TRIAL.days)} يوم بكل المميزات ومن غير بطاقة. بعدها تختار الباقة اللي على قد شغلك — والتفعيل بيتم على واتساب.`} />
           <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {PLANS.map((p) => (
-              <div key={p.id} className={`lp-reveal relative flex flex-col rounded-3xl border p-7 ${p.highlighted ? 'border-amber-300/45 bg-gradient-to-b from-amber-400/[0.10] to-white/[0.03] shadow-2xl shadow-amber-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
-                {p.highlighted && <span className="absolute -top-3.5 right-6 rounded-full bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-3.5 py-1.5 text-[11px] font-black text-[#1a1205] shadow-lg shadow-amber-500/25">الأكثر اختيارًا</span>}
+              <div key={p.id} className={`lp-reveal relative flex flex-col rounded-3xl border p-7 ${p.highlighted ? 'border-nk-300/45 bg-gradient-to-b from-nk-400/[0.10] to-white/[0.03] shadow-2xl shadow-nk-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
+                {p.highlighted && <span className="absolute -top-3.5 right-6 rounded-full bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] px-3.5 py-1.5 text-[11px] font-black text-[#1D0E03] shadow-lg shadow-nk-500/25">الأكثر اختيارًا</span>}
                 <div className="text-sm font-black text-slate-400">{p.who}</div>
                 <h3 className="mt-1 text-2xl font-black">{p.name}</h3>
                 <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-3xl font-black text-[#e8bd63]">{formatPrice(p)}</span>
+                  <span className="text-3xl font-black text-[#FBBF6D]">{formatPrice(p)}</span>
                 </div>
                 <div className="mt-2 text-sm font-black text-slate-300">{p.studentLimit}</div>
                 <ul className="mt-5 flex-1 space-y-2.5">
                   {p.capabilities.slice(0, 3).map((c) => (
                     <li key={c} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" /> {c}
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#FB9C1B]" /> {c}
                     </li>
                   ))}
                 </ul>
-                <a href="/pricing" onClick={() => track('pricing_view', { source: 'landing-plan', plan: p.id })} className={`mt-7 min-h-12 w-full rounded-2xl px-5 py-3.5 text-center text-sm font-black transition hover:-translate-y-0.5 ${p.highlighted ? 'bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] text-[#1a1205] shadow-xl shadow-amber-500/25' : 'border border-white/15 bg-white/5 text-slate-100 hover:bg-white/10'}`}>
+                <a href="/pricing" onClick={() => track('pricing_view', { source: 'landing-plan', plan: p.id })} className={`mt-7 min-h-12 w-full rounded-2xl px-5 py-3.5 text-center text-sm font-black transition hover:-translate-y-0.5 ${p.highlighted ? 'bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] text-[#1D0E03] shadow-xl shadow-nk-500/25' : 'border border-white/15 bg-white/5 text-slate-100 hover:bg-white/10'}`}>
                   تفاصيل الباقة
                 </a>
               </div>
@@ -581,7 +581,7 @@ export default function LandingPage({ onLogin, onSignup }) {
             تجربة مجانية ١٤ يوم بكامل المميزات — من غير بطاقة دفع. ولو حابب تسأل الأول، إحنا على واتساب.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'final' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ تجربتك المجانية</a>
+            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'final' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] px-7 text-sm font-black text-[#1D0E03] shadow-xl shadow-nk-500/25 transition hover:-translate-y-0.5">ابدأ تجربتك المجانية</a>
             <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" onClick={() => track('whatsapp_click', { source: 'final' })} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/10 px-7 text-sm font-black text-[#4be08a] transition hover:bg-[#25D366]/20">
               <span aria-hidden="true">◉</span> تواصل معنا عبر واتساب
             </a>
@@ -590,7 +590,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </section>
 
       {/* ── SECTION 17 — FOOTER ── */}
-      <footer className="border-t border-white/10 bg-[#0a1226] px-5 py-12 sm:px-8">
+      <footer className="border-t border-white/10 bg-[#09142E] px-5 py-12 sm:px-8">
         <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <div className="flex items-center gap-3">

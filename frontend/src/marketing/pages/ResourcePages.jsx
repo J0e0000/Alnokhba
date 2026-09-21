@@ -28,10 +28,10 @@ export function ResourcesPage() {
           {ARTICLES.map((a) => (
             <article key={a.slug} className="lp-glow-card flex flex-col rounded-3xl border border-white/10 bg-white/[0.05] p-7">
               <h2 className="text-xl font-black leading-8">
-                <a href={a.path} className="transition hover:text-[#e8bd63]">{a.title}</a>
+                <a href={a.path} className="transition hover:text-[#FBBF6D]">{a.title}</a>
               </h2>
               <p className="mt-3 flex-1 text-sm leading-7 text-slate-300/90">{a.description}</p>
-              <a href={a.path} className="mt-5 inline-flex items-center gap-2 text-sm font-black text-[#e8bd63]">
+              <a href={a.path} className="mt-5 inline-flex items-center gap-2 text-sm font-black text-[#FBBF6D]">
                 اقرأ الدليل <span aria-hidden="true">←</span>
               </a>
             </article>
@@ -50,7 +50,7 @@ function ArticleBlock({ b }) {
   if (kind === 'qa') {
     return (
       <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-        <h3 className="font-black text-[#e8bd63]">{a}</h3>
+        <h3 className="font-black text-[#FBBF6D]">{a}</h3>
         <p className="mt-2 text-sm leading-7 text-slate-300/90">{bb}</p>
       </div>
     )
@@ -65,7 +65,7 @@ function ArticleBlock({ b }) {
           <thead>
             <tr>
               {a.map((h) => (
-                <th key={h} className="border-b border-white/15 bg-white/[0.06] px-4 py-3 text-right font-black text-[#e8bd63]">{h}</th>
+                <th key={h} className="border-b border-white/15 bg-white/[0.06] px-4 py-3 text-right font-black text-[#FBBF6D]">{h}</th>
               ))}
             </tr>
           </thead>
@@ -104,11 +104,11 @@ export function ArticlePage({ article }) {
           <span className="text-slate-300">{article.title.slice(0, 40)}…</span>
         </nav>
         <h1 className="mt-6 text-3xl font-black leading-[1.3] tracking-tight sm:text-4xl">{article.title}</h1>
-        <p className="mt-4 border-r-2 border-[#e3b04b]/50 pr-4 text-base leading-8 text-slate-300">{article.description}</p>
+        <p className="mt-4 border-r-2 border-[#FB9C1B]/50 pr-4 text-base leading-8 text-slate-300">{article.description}</p>
         <div className="mt-8">
           {article.body.map((b, i) => <ArticleBlock key={i} b={b} />)}
         </div>
-        <div className="mt-12 rounded-3xl border border-amber-300/25 bg-gradient-to-b from-amber-400/[0.08] to-transparent p-7 text-center">
+        <div className="mt-12 rounded-3xl border border-nk-300/25 bg-gradient-to-b from-nk-400/[0.08] to-transparent p-7 text-center">
           <h2 className="text-xl font-black">جرّب النظام ده على مركزك — مجانًا.</h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-300">
             ١٤ يوم تجربة كاملة بدون بطاقة دفع — وشوف الفرق بين الملف والنظام بنفسك.

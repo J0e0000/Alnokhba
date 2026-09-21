@@ -69,7 +69,7 @@ export default class ProductionErrorBoundary extends React.Component {
         minHeight: '100vh',
         padding: '40px 16px',
         background: '#f4f7fb',
-        color: '#172033',
+        color: '#142D62',
         fontFamily: "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif",
         direction: 'rtl',
         display: 'flex',
@@ -103,7 +103,7 @@ export default class ProductionErrorBoundary extends React.Component {
       desc: { margin: '0 0 22px', fontSize: 14, lineHeight: 1.9, color: '#64748b' },
       retry: {
         display: 'inline-block',
-        background: '#172033',
+        background: '#142D62',
         color: '#ffffff',
         border: 'none',
         borderRadius: 14,

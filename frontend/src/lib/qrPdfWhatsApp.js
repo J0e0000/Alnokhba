@@ -329,7 +329,7 @@ export async function generateStudentQR(qrUrl) {
     const QRCode = await loadQRCode()
     return await QRCode.toDataURL(qrUrl, {
       width: 200, margin: 4,
-      color: { dark: '#0E2954', light: '#FFFFFF' },
+      color: { dark: '#142D62', light: '#FFFFFF' },
       errorCorrectionLevel: 'M',
     })
   } catch (err) {
@@ -368,15 +368,15 @@ export async function generateStudentQRImage(student, qrUrl) {
   `
 
   container.innerHTML = `
-    <div style="border: 3px solid #0E2954; border-radius: 20px; padding: 28px; position: relative; overflow: hidden; background: linear-gradient(180deg, #ffffff 0%, #F8FAFC 100%);">
+    <div style="border: 3px solid #142D62; border-radius: 20px; padding: 28px; position: relative; overflow: hidden; background: linear-gradient(180deg, #ffffff 0%, #F8FAFC 100%);">
       <div style="position: absolute; top: 0; right: 0; width: 60px; height: 60px; border-bottom: 3px solid #F59E0B; border-left: 3px solid #F59E0B; border-bottom-left-radius: 20px;"></div>
       <div style="position: absolute; bottom: 0; left: 0; width: 60px; height: 60px; border-top: 3px solid #F59E0B; border-right: 3px solid #F59E0B; border-top-right-radius: 20px;"></div>
       <div style="text-align: center; padding-bottom: 16px; margin-bottom: 16px; border-bottom: 2px solid #F59E0B;">
-        <div style="font-size: 28px; font-weight: 900; color: #0E2954; margin-bottom: 4px;">النخبة</div>
+        <div style="font-size: 28px; font-weight: 900; color: #142D62; margin-bottom: 4px;">النخبة</div>
         <div style="font-size: 12px; color: #64748B;">إدارة الحصص الذكية</div>
       </div>
       <div style="text-align: center; margin-bottom: 20px;">
-        <div style="font-size: 22px; font-weight: 800; color: #0E2954; line-height: 1.3;">${escapeReportHtml(student.name)}</div>
+        <div style="font-size: 22px; font-weight: 800; color: #142D62; line-height: 1.3;">${escapeReportHtml(student.name)}</div>
         <div style="display: inline-block; background: #FEF3C7; color: #D97706; font-size: 11px; font-weight: 700; padding: 3px 12px; border-radius: 20px; margin-top: 6px;">طالب</div>
         ${student.stage ? `<div style="color: #64748B; font-size: 13px; margin-top: 6px;">${escapeReportHtml(student.stage)}${student.group_name ? ' · ' + escapeReportHtml(student.group_name) : ''}</div>` : ''}
         ${student.code ? `<div style="color: #94A3B8; font-size: 11px; margin-top: 2px; font-family: monospace;">${escapeReportHtml(student.code)}</div>` : ''}
@@ -386,7 +386,7 @@ export async function generateStudentQRImage(student, qrUrl) {
           <img src="${qrDataUrl}" style="width: 180px; height: 180px; display: block;" />
         </div>
       </div>
-      <div style="text-align: center; color: #0E2954; font-size: 13px; font-weight: 700; padding-top: 14px; border-top: 1px solid #E2E8F0;">
+      <div style="text-align: center; color: #142D62; font-size: 13px; font-weight: 700; padding-top: 14px; border-top: 1px solid #E2E8F0;">
         📷 امسح لتسجيل الحضور
       </div>
       <div style="text-align: center; color: #94A3B8; font-size: 10px; margin-top: 8px;">${today}</div>
@@ -926,7 +926,7 @@ export async function generateStudentReportPDF(student, { isDark = false, ranks,
     const headingColor = '#F5C542'
     const textColor = isDark ? '#E2E8F0' : '#1E293B'
     const subtleColor = isDark ? '#94A3B8' : '#64748B'
-    const accentNavy = '#0E2954'
+    const accentNavy = '#142D62'
     const accentGold = '#F5C542'
 
     const container = document.createElement('div')

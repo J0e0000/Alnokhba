@@ -34,11 +34,24 @@
 
   /* Pipeline semantic palette (from the prototype) */
   --color-nk-navy: #10182d;
-  --color-nk-gold: #d4a373;
-  --color-nk-gold-soft: #f3d7a8;
+  --color-nk-gold: #e07f00;
+  --color-nk-gold-soft: #ffbd4e;
   --color-nk-green: #159570;
   --color-nk-blue: #3182ce;
   --color-nk-rose: #d45a68;
+
+  /* Logo orange scale (from the approved Alnokhba mark: A navy #142D62 +
+     orange gradient centered #FB9C1B). Marketing pages use these as
+     bg-nk-400 / text-nk-200 etc. */
+  --color-nk-50: #fff6e8;
+  --color-nk-100: #ffe9c7;
+  --color-nk-200: #fdd49a;
+  --color-nk-300: #fbbf6d;
+  --color-nk-400: #fb9c1b;
+  --color-nk-500: #e07f00;
+  --color-nk-600: #b86800;
+  --color-nk-700: #945000;
+  --color-nk-950: #1d0e03;
 }
 
 * { font-family: 'Cairo', ui-sans-serif, system-ui, sans-serif; }
@@ -50,12 +63,12 @@
 :root, html.light {
   color-scheme: light;
   --app-bg: #f5f8fc;
-  --brand-navy: #14213f;
-  --brand-navy-light: #25355c;
-  --brand-gold: #a06b2a;          /* gold-as-TEXT on light: ≥4.5:1 */
-  --brand-gold-hover: #8a5a22;
-  --brand-gold-deep: #b07c33;
-  --brand-gold-surface: #fff8ea;  /* gold-as-BACKGROUND chips */
+  --brand-navy: #142d62;          /* logo navy (sampled from the mark) */
+  --brand-navy-light: #24418c;    /* lighter logo-navy for gradients/hover */
+  --brand-gold: #a65700;          /* logo orange as TEXT on light: ≥4.5:1 */
+  --brand-gold-hover: #8c4900;
+  --brand-gold-deep: #dd7e06;
+  --brand-gold-surface: #fff4e5;  /* orange-as-BACKGROUND chips */
   --brand-cyan: #0e7f74;
   --accent-strong: #0e7f74;
   --accent-blue: #2b6cb0;
@@ -66,7 +79,7 @@
   --surface-container-high: #eef2f9;
   --surface-container-highest: #e3e9f3;
   --surface-border: rgba(148, 163, 184, 0.28);
-  --surface-border-hover: rgba(160, 107, 42, 0.5);
+  --surface-border-hover: rgba(221, 126, 6, 0.5);
   --input-bg: #ffffff;
   --input-border: #c3cddd;
   --fg: #1a2338;
@@ -81,7 +94,7 @@
   --danger: #bb3a48;     --danger-strong: #a52f3c; --danger-bg: #fdeef0; --danger-border: #f3c8ce;
 
   /* Session workspace header (navy band like the prototype) */
-  --ws-head-bg: linear-gradient(135deg, #121b35, #1a2947);
+  --ws-head-bg: linear-gradient(135deg, #13224d, #1d3168);
   --ws-head-fg: #ffffff;
   --ws-head-muted: #b9c6da;
   --ws-mini-bg: rgba(255, 255, 255, 0.07);
@@ -95,12 +108,12 @@
 html.dark {
   color-scheme: dark;
   --app-bg: #0e1424;
-  --brand-navy: #101a30;
-  --brand-navy-light: #1a2745;
-  --brand-gold: #f3d7a8;          /* gold-as-TEXT on dark: ≥7:1 */
-  --brand-gold-hover: #f8e3bd;
-  --brand-gold-deep: #d4a373;
-  --brand-gold-surface: rgba(212, 163, 115, 0.12);
+  --brand-navy: #16234e;          /* logo-navy chip/button surface on dark */
+  --brand-navy-light: #22336b;
+  --brand-gold: #fb9c1b;          /* logo orange as TEXT on dark: ≈7.5:1 */
+  --brand-gold-hover: #ffbd4e;
+  --brand-gold-deep: #f38800;
+  --brand-gold-surface: rgba(251, 156, 27, 0.13);
   --brand-cyan: #4fd1c5;
   --accent-strong: #46c8b8;
   --accent-blue: #6fa8ea;
@@ -111,7 +124,7 @@ html.dark {
   --surface-container-high: #232e4e;
   --surface-container-highest: #2b3759;
   --surface-border: rgba(163, 181, 216, 0.16);
-  --surface-border-hover: rgba(212, 163, 115, 0.45);
+  --surface-border-hover: rgba(251, 156, 27, 0.45);
   --input-bg: #131a2e;
   --input-border: #33405f;
   --fg: #e9eef8;
@@ -125,7 +138,7 @@ html.dark {
   --info: #8ab8f0;       --info-strong: #9ec6f3; --info-bg: rgba(49, 130, 206, 0.16); --info-border: rgba(49, 130, 206, 0.45);
   --danger: #f19aa4;     --danger-strong: #f6adb5; --danger-bg: rgba(212, 90, 104, 0.16); --danger-border: rgba(212, 90, 104, 0.45);
 
-  --ws-head-bg: linear-gradient(135deg, #0c1327, #131f3d);
+  --ws-head-bg: linear-gradient(135deg, #0d1730, #16234e);
   --ws-head-fg: #f2f5fb;
   --ws-head-muted: #a7b4cc;
   --ws-mini-bg: rgba(255, 255, 255, 0.05);
@@ -1208,11 +1221,11 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
 .lp-timeline::before {
   content: ""; position: absolute; top: 2.4rem; bottom: 2.4rem;
   inset-inline-start: 1.35rem; width: 2px;
-  background: linear-gradient(180deg, rgba(224,173,75,.55), rgba(224,173,75,.06));
+  background: linear-gradient(180deg, rgba(251,156,27,.55), rgba(251,156,27,.06));
 }
 /* Gold gradient display text (on dark surfaces only) */
 .lp-gold-text {
-  background: linear-gradient(105deg, #f4d089 8%, #e3b04b 48%, #c98f2e 92%);
+  background: linear-gradient(105deg, #FDD49A 8%, #FB9C1B 48%, #E07F00 92%);
   -webkit-background-clip: text; background-clip: text;
   color: transparent;
 }

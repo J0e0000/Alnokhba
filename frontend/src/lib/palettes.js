@@ -24,13 +24,15 @@
 export const PALETTES = [
   {
     key: 'nokhba-navy-gold',
-    name_ar: 'النخبة الكلاسيكي',
-    name_en: 'Nokhba Classic',
-    primary: '#001f43',
-    primaryLight: '#1f3a60',
-    accent: '#FFD700',
-    accentHover: '#e6c200',
-    bg: '#00132d',
+    name_ar: 'النخبة الرسمي',
+    name_en: 'Nokhba Official',
+    // Colors sampled from the approved logo: A-mark navy #142D62 +
+    // orange gradient centered #FB9C1B.
+    primary: '#142d62',
+    primaryLight: '#24418c',
+    accent: '#fb9c1b',
+    accentHover: '#e07f00',
+    bg: '#0d1c3d',
     bgLight: '#f8fafc',
   },
   {

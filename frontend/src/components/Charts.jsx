@@ -5,7 +5,7 @@ Chart.defaults.color = '#94A3B8'
 Chart.defaults.font.family = "'Cairo', sans-serif"
 Chart.defaults.animation = { duration: 700, easing: 'easeOutQuart' }
 Chart.defaults.plugins.tooltip = {
-  backgroundColor: '#0E2954',
+  backgroundColor: '#142D62',
   titleColor: '#D4A373',
   bodyColor: '#ffffff',
   padding: 10,

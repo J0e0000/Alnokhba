@@ -432,9 +432,8 @@ export default function InsightsReport() {
 
   return (
     <div id="nk-insights-report">
-      {/* ── section head ── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h2 className="text-[.92rem] font-black m-0">✦ {ws.isArabic ? 'فريق التحليل' : 'Insights team'}</h2>
+      {/* ── action row (title lives in the SettingsArea section band) ── */}
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-1">
         <button
           type="button"
           className="btn-navy rounded-xl px-3.5 py-2 text-[.72rem] font-extrabold disabled:opacity-50"
@@ -642,7 +641,7 @@ export default function InsightsReport() {
                   type="button"
                   className="rounded-lg px-3 py-1.5 text-[.68rem] font-extrabold"
                   style={periodDays === d
-                    ? { background: 'var(--brand-navy, #0E2954)', color: '#fff', border: '1px solid var(--brand-navy, #0E2954)' }
+                    ? { background: 'var(--brand-navy, #142D62)', color: '#fff', border: '1px solid var(--brand-navy, #142D62)' }
                     : { background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--surface-border)' }}
                   onClick={() => setPeriodDays(d)}
                   aria-pressed={periodDays === d}

@@ -39,14 +39,14 @@ export function SolutionsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {PERSONAS.map((p) => (
             <article key={p.title} className="lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-7">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e3b04b]/25 to-[#e3b04b]/5 text-xl font-black text-[#e8bd63] ring-1 ring-amber-300/30">{p.icon}</div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FB9C1B]/25 to-[#FB9C1B]/5 text-xl font-black text-[#FBBF6D] ring-1 ring-nk-300/30">{p.icon}</div>
               <h2 className="mt-5 text-lg font-black">{p.title}</h2>
               <p className="mt-3 text-sm leading-7 text-slate-300/90">{p.text}</p>
             </article>
           ))}
         </div>
       </section>
-      <section className="border-y border-white/10 bg-[#0c1631]/60 px-5 py-16 sm:px-8">
+      <section className="border-y border-white/10 bg-[#0D1C3D]/60 px-5 py-16 sm:px-8">
         <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-2">
           <SectionHead
             eyebrow="مثال حي"
@@ -94,12 +94,12 @@ export function AboutPage() {
             ['الموبايل مواطن أول', 'المدرّس شغال من الهاتف وسط الحصة — فالتصميم بيبدأ من الشاشة الصغيرة.'],
           ].map(([t, d]) => (
             <div key={t} className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="font-black text-[#e8bd63]">{t}</h2>
+              <h2 className="font-black text-[#FBBF6D]">{t}</h2>
               <p className="mt-2 text-sm leading-7 text-slate-300/90">{d}</p>
             </div>
           ))}
         </div>
-        <div className="mt-10 rounded-2xl border border-white/10 bg-[#0c1631]/70 p-6 text-sm leading-7 text-slate-300">
+        <div className="mt-10 rounded-2xl border border-white/10 bg-[#0D1C3D]/70 p-6 text-sm leading-7 text-slate-300">
           <b className="font-black text-slate-100">بياناتك ملكك:</b> كل بيانات المركز — الطلاب، الحضور، الدرجات،
           التقارير — محفوظة في بنية تحتية محمية بصلاحيات صارمة على مستوى الصف (RLS)، ومحدش غيرك يقدر يوصلها
           حتى لو عرف روابط النظام.
@@ -125,7 +125,7 @@ export function ContactPage() {
         <span className="lp-eyebrow">تواصل</span>
         <h1 className="mt-5 text-4xl font-black leading-[1.2] tracking-tight sm:text-5xl">إحنا على واتساب — قريبين منك.</h1>
         <p className="mt-6 leading-8 text-slate-300">
-          أسرع طريقة توصلنا هي واتساب على الرقم <b dir="ltr" className="font-black text-[#e8bd63]">+{WA_NUMBER.slice(0, 2)} {WA_NUMBER.slice(2)}</b>.
+          أسرع طريقة توصلنا هي واتساب على الرقم <b dir="ltr" className="font-black text-[#FBBF6D]">+{WA_NUMBER.slice(0, 2)} {WA_NUMBER.slice(2)}</b>.
           اكتبلنا اسمك واسم مركزك وسؤالك، وهنرد عليك.
         </p>
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -139,14 +139,14 @@ export function ContactPage() {
           <ul className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
             {['اسمك واسم المركز أو الأكاديمية', 'عدد الطلاب النشطين تقريبًا', 'إيه أكبر تحدي عندك دلوقتي (حضور؟ تقارير؟ متابعة؟)', 'لو عندك سؤال أسعار: عدد اللي بيشتغلوا معاك'].map((t) => (
               <li key={t} className="flex items-start gap-2.5">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" aria-hidden="true" /> {t}
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#FB9C1B]" aria-hidden="true" /> {t}
               </li>
             ))}
           </ul>
           <p className="mt-6 text-sm leading-7 text-slate-400">
             بتحب تشوف المنصة بنفسك قبل ما تسأل؟ جرّب{' '}
-            <a href="/?auth=signup" onClick={demoLink} className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">التجربة المجانية</a>{' '}
-            — أو شوف صفحة <a href="/features" className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">المميزات</a>.
+            <a href="/?auth=signup" onClick={demoLink} className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">التجربة المجانية</a>{' '}
+            — أو شوف صفحة <a href="/features" className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">المميزات</a>.
           </p>
         </div>
       </section>
@@ -183,7 +183,7 @@ export function TrialPage() {
             ['شغّل مركزك', 'افتح حصة اليوم وسجّل الحضور والتقارير — وشوف تقرير فريق التحليل أول أسبوع.', 'run'],
           ].map(([t, d, k], i) => (
             <li key={k} className="relative rounded-2xl border border-white/10 bg-white/[0.05] p-5 pr-16">
-              <span className="absolute right-4 top-5 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] font-black text-[#1a1205]">{i + 1}</span>
+              <span className="absolute right-4 top-5 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#FB9C1B] to-[#E07F00] font-black text-[#1D0E03]">{i + 1}</span>
               <h2 className="font-black">{t}</h2>
               <p className="mt-1 text-sm leading-7 text-slate-300/90">{d}</p>
             </li>
@@ -197,16 +197,16 @@ export function TrialPage() {
             ['مساعدة في الإعداد', 'عطّال؟ واتساب مفتوح — بنساعدك تجهز مركزك خطوة بخطوة.'],
           ].map(([t, d]) => (
             <div key={t} className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
-              <h3 className="font-black text-[#e8bd63]">{t}</h3>
+              <h3 className="font-black text-[#FBBF6D]">{t}</h3>
               <p className="mt-1.5 text-sm leading-7 text-slate-300/90">{d}</p>
             </div>
           ))}
         </div>
         <p className="mt-6 text-sm leading-7 text-slate-400">
           بعد التجربة: تختار باقتك (تبدأ من ٣٩٩ جنيه/شهر) وتتفق على التفاصيل على{' '}
-          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">واتساب</a> —
+          <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">واتساب</a> —
           والتفعيل بيتم فور تأكيد الدفع. الشرح الكامل في صفحة{' '}
-          <a href="/pricing" className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">الأسعار</a>.
+          <a href="/pricing" className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">الأسعار</a>.
         </p>
       </section>
     </MarketingLayout>

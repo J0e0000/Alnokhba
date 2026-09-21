@@ -189,7 +189,7 @@ export default function Signup({ onSwitchToLogin }) {
           <aside className="order-2 relative bg-brand-navy p-6 sm:p-10" style={{ color: '#ffffff' }}>
             <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-40" style={{ background: 'radial-gradient(600px 300px at 80% 0%, rgba(227,176,75,0.14), transparent 60%)' }} />
             <div className="relative">
-              <span className="inline-block rounded-full border border-[#e3b04b]/40 bg-[#e3b04b]/10 px-3.5 py-1.5 text-xs font-black text-[#e8bd63]">
+              <span className="inline-block rounded-full border border-[#FB9C1B]/40 bg-[#FB9C1B]/10 px-3.5 py-1.5 text-xs font-black text-[#FBBF6D]">
                 تجربة مجانية {DAYS_AR} يوم — بدون بطاقة
               </span>
               <h2 className="mt-5 text-2xl font-black leading-snug">
@@ -202,7 +202,7 @@ export default function Signup({ onSwitchToLogin }) {
               <ul className="mt-7 space-y-4">
                 {TRIAL_FEATURES.map(([t, d]) => (
                   <li key={t} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#e3b04b]/15 text-xs font-black text-[#e8bd63] ring-1 ring-[#e3b04b]/30" aria-hidden="true">✓</span>
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#FB9C1B]/15 text-xs font-black text-[#FBBF6D] ring-1 ring-[#FB9C1B]/30" aria-hidden="true">✓</span>
                     <div>
                       <p className="text-sm font-black leading-6">{t}</p>
                       <p className="text-xs leading-6 text-slate-300/85">{d}</p>
@@ -212,7 +212,7 @@ export default function Signup({ onSwitchToLogin }) {
               </ul>
 
               <div className="mt-8 rounded-2xl border border-white/12 bg-white/[0.06] p-5">
-                <p className="text-sm font-black text-[#e8bd63]">بعد الـ{DAYS_AR} يوم؟</p>
+                <p className="text-sm font-black text-[#FBBF6D]">بعد الـ{DAYS_AR} يوم؟</p>
                 <p className="mt-1.5 text-xs leading-6 text-slate-300">
                   الحساب بيتوقف مؤقتًا — مش حذف. بياناتك تفضل محفوظة {RETENTION_AR} يوم،
                   ولو كملت باقة تبدأ من ٣٩٩ جنيه/شهر وبتتفعل على واتساب. مفيش تجديد تلقائي.

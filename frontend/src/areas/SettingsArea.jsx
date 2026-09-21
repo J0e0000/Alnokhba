@@ -77,10 +77,34 @@ export default function SettingsArea() {
           Settings — ONE simple infographic report anyone can read, with the
           weekly window auto-running when due and «استنتج المستوى الحالي»
           for the on-demand pass. Deep tools collapse into one <details>. */}
-      <section className="mb-4">
-        <Suspense fallback={<div className="glass-card p-4 text-[.74rem] text-fg-muted">{isArabic ? 'جاري فتح فريق التحليل…' : 'Loading insights…'}</div>}>
-          <InsightsReport />
-        </Suspense>
+      <section className="mb-4 rounded-3xl border border-outline bg-surface overflow-hidden">
+        <div
+          className="flex items-center gap-3 px-4 py-3.5 border-b border-outline"
+          style={{ background: 'linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-navy-light) 100%)' }}
+        >
+          <span
+            className="h-10 w-10 shrink-0 rounded-2xl grid place-items-center text-lg"
+            style={{ background: 'var(--brand-gold-surface)', color: 'var(--brand-gold)', border: '1px solid var(--brand-gold)' }}
+            aria-hidden="true"
+          >
+            ✦
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[.95rem] font-black m-0" style={{ color: '#fff' }}>
+              {isArabic ? 'فريق التحليل' : 'Insights Team'}
+            </h2>
+            <p className="text-[.68rem] m-0 mt-0.5" style={{ color: 'rgba(255,255,255,.72)' }}>
+              {isArabic
+                ? 'بيقلب بيانات حصصك لتقرير واحد بسيط — الوضع عامل إزاي، واللي بس يستاهل انتباهك.'
+                : 'Turns your session data into one simple report — how things are going and what needs your attention.'}
+            </p>
+          </div>
+        </div>
+        <div className="p-4">
+          <Suspense fallback={<div className="text-[.74rem] text-fg-muted">{isArabic ? 'جاري فتح فريق التحليل…' : 'Loading insights…'}</div>}>
+            <InsightsReport />
+          </Suspense>
+        </div>
       </section>
 
       {/* FREQUENCY-BASED UI (spec 5, 34): theme / language / undo / history

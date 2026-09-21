@@ -15,7 +15,7 @@ export function TrialCta({ className = '', big = false, source = 'generic' }) {
     <a
       href={signupHref}
       onClick={() => track('trial_cta_click', { source })}
-      className={`inline-flex items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5 ${big ? 'min-h-14 px-7 text-sm' : 'min-h-11 px-5 text-sm'} ${className}`}
+      className={`inline-flex items-center justify-center rounded-2xl bg-gradient-to-l from-[#FB9C1B] to-[#E07F00] font-black text-[#1D0E03] shadow-xl shadow-nk-500/25 transition hover:-translate-y-0.5 ${big ? 'min-h-14 px-7 text-sm' : 'min-h-11 px-5 text-sm'} ${className}`}
     >
       ابدأ التجربة المجانية
     </a>
@@ -72,7 +72,7 @@ export function FaqList({ faqs, source }) {
             aria-expanded={open === i}
           >
             <span>{q}</span>
-            <span className="text-xl text-[#e8bd63]" aria-hidden="true">{open === i ? '−' : '+'}</span>
+            <span className="text-xl text-[#FBBF6D]" aria-hidden="true">{open === i ? '−' : '+'}</span>
           </button>
           {open === i && <p className="border-t border-white/10 px-5 pb-5 pt-4 text-sm leading-7 text-slate-300/90">{a}</p>}
         </div>
@@ -99,7 +99,7 @@ export function CtaBand({ title, sub }) {
 function Header({ active }) {
   const [open, setOpen] = useState(false)
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0c1631]/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0D1C3D]/85 backdrop-blur-xl">
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8" aria-label="التنقل الرئيسي">
         <a href="/" className="flex items-center gap-3" aria-label={`${SITE_NAME} — الرئيسية`}>
           <img src="/nokhba-mark.svg" alt={`شعار ${SITE_NAME}`} className="h-9 w-9 rounded-xl shadow-lg shadow-black/30" />
@@ -126,7 +126,7 @@ function Header({ active }) {
         </button>
       </nav>
       {open && (
-        <div className="border-t border-white/10 bg-[#0c1631] px-5 pb-5 pt-3 lg:hidden">
+        <div className="border-t border-white/10 bg-[#0D1C3D] px-5 pb-5 pt-3 lg:hidden">
           <div className="grid gap-1">
             {NAV.map((n) => (
               <a key={n.href} href={n.href} className={`min-h-11 rounded-xl px-3 text-sm font-bold leading-[2.75rem] text-slate-200 transition hover:bg-white/10 ${active === n.href ? 'bg-white/10 text-white' : ''}`}>
@@ -167,7 +167,7 @@ function Footer() {
     },
   ]
   return (
-    <footer className="border-t border-white/10 bg-[#0a1226] px-5 py-12 sm:px-8">
+    <footer className="border-t border-white/10 bg-[#09142E] px-5 py-12 sm:px-8">
       <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <div className="flex items-center gap-3">

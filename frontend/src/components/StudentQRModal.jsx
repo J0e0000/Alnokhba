@@ -34,7 +34,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
         setLink(url)
         return makeQR(url, {
           width: 320, margin: 4,
-          color: { dark: '#0E2954', light: '#FFFFFF' },
+          color: { dark: '#142D62', light: '#FFFFFF' },
           errorCorrectionLevel: 'M',
         }).then((dataUrl) => { if (alive) { setQrDataUrl(dataUrl); setStatus('ready') } })
       })
@@ -92,14 +92,14 @@ export default function StudentQRModal({ open, student, template, onClose, showT
           <p className="text-sm font-extrabold mb-3" style={{ color: 'var(--danger-strong)' }}>
             {isArabic ? 'تعذر إنشاء رابط الطالب. حاول تاني.' : 'Could not create the student link. Try again.'}
           </p>
-          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); makeQR(u, { width: 320, margin: 4, color: { dark: '#0E2954', light: '#FFFFFF' }, errorCorrectionLevel: 'M' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
+          <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => { setStatus('loading'); if (student?.id) { getOrCreateStudentToken(student.id).then((t) => { if (t) { const u = buildStudentQRLink(t); setLink(u); makeQR(u, { width: 320, margin: 4, color: { dark: '#142D62', light: '#FFFFFF' }, errorCorrectionLevel: 'M' }).then((d) => { setQrDataUrl(d); setStatus('ready') }) } else setStatus('error') }).catch(() => setStatus('error')) } }}>
             {isArabic ? 'إعادة المحاولة' : 'Retry'}
           </button>
         </div>
       )}
       {status === 'ready' && (
         <div className="flex flex-col items-center gap-4">
-          <div className="rounded-2xl p-3" style={{ background: '#FFFFFF', border: '3px solid var(--brand-navy, #0E2954)' }}>
+          <div className="rounded-2xl p-3" style={{ background: '#FFFFFF', border: '3px solid var(--brand-navy, #142D62)' }}>
             {qrDataUrl && <img src={qrDataUrl} alt={isArabic ? 'QR الطالب' : 'Student QR'} style={{ width: 240, height: 240, display: 'block' }} />}
           </div>
           <input

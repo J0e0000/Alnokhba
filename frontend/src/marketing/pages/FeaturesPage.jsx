@@ -104,7 +104,7 @@ export default function FeaturesPage() {
               <ul className="mt-5 space-y-2.5">
                 {c.points.map((p) => (
                   <li key={p} className="flex items-start gap-2.5 text-sm leading-7 text-slate-200">
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" aria-hidden="true" /> {p}
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#FB9C1B]" aria-hidden="true" /> {p}
                   </li>
                 ))}
               </ul>
@@ -114,7 +114,7 @@ export default function FeaturesPage() {
             ) : (
               <div className="grid gap-3 sm:grid-cols-2" aria-hidden="true">
                 {c.points.slice(0, 4).map((p, j) => (
-                  <div key={p} className={`rounded-2xl border border-white/10 bg-[#0c1631]/70 p-4 text-xs font-bold leading-6 text-slate-300 ${j === 0 ? 'sm:col-span-2' : ''}`}>
+                  <div key={p} className={`rounded-2xl border border-white/10 bg-[#0D1C3D]/70 p-4 text-xs font-bold leading-6 text-slate-300 ${j === 0 ? 'sm:col-span-2' : ''}`}>
                     {p}
                   </div>
                 ))}
