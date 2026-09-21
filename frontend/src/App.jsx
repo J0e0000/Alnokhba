@@ -31,6 +31,7 @@ const StatusPage = lazy(() => import('./pages/StatusPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const AuthAction = lazy(() => import('./pages/AuthAction'))
 const Signup = lazy(() => import('./pages/Signup'))
+const MarketingRouter = lazy(() => import('./marketing/MarketingRouter'))
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-brand-bg text-fg-subtle text-sm">
@@ -82,6 +83,13 @@ function isPrivacyPath() {
   return window.location.pathname === '/privacy'
 }
 
+// Public marketing site pages (Phase 2 architecture): /features /solutions
+// /pricing /resources/* /about /contact /trial — no auth, rendered outside
+// the auth Gate so the operational app stays fully separated.
+function isMarketingPath() {
+  return /^\/(features|solutions|pricing|resources|about|contact|trial)(\/.*)?$/.test(window.location.pathname)
+}
+
 function Gate() {
   const { session, profile, loading, isSubscriptionActive, passwordRecovery, supportSession, retryProfile } = useAuth()
   const [authView, setAuthView] = useState(getRequestedAuthView)
@@ -100,6 +108,17 @@ function Gate() {
   }
 
   if (isPrivacyPath()) return <Suspense fallback={<PageFallback />}><PrivacyPage /></Suspense>
+
+  // Public marketing pages — outside the auth gate entirely.
+  if (isMarketingPath()) {
+    return (
+      <ProductionErrorBoundary>
+        <ThemeProvider>
+          <Suspense fallback={<PageFallback />}><MarketingRouter /></Suspense>
+        </ThemeProvider>
+      </ProductionErrorBoundary>
+    )
+  }
 
   if (passwordRecovery) return <Suspense fallback={<PageFallback />}><ResetPassword /></Suspense>
 

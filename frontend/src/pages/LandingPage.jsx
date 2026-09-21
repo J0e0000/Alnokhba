@@ -1,118 +1,125 @@
 import { useEffect, useRef, useState } from 'react'
 import { animate, stagger, useAnimeScope } from '../lib/animeMotion'
+import { setSeo, faqSchema, softwareAppSchema, websiteSchema, orgSchema } from '../marketing/seo.js'
+import { WHATSAPP_URL, SCREENS, track } from '../marketing/config.js'
+import { PLANS } from '../marketing/pricing.js'
+import { FaqList } from '../marketing/MarketingLayout.jsx'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LANDING — "School Elite" premium SaaS landing (dark navy + gold identity).
-// Built to the Lovable-style landing language: glowing hero + product mockup,
-// animated stats, bento features, how-it-works, insights spotlight, WhatsApp
-// deep-dive, plans, FAQ, CTA band. Every CTA is wired to a REAL flow:
-// onLogin / onSignup (App.jsx routes), /privacy, and the real WhatsApp number.
-// Copy is professional Egyptian Arabic, RTL. No testimonials/fake reviews.
-// Stats sell SPEED — the teacher's saved time, not WhatsApp mechanics:
-// 85% less time sending reports, 92% better follow-up & accuracy (owner-set
-// numbers), plus auto-generated reports and one-tap attendance.
+// LANDING — 17-section conversion architecture (Arabic-first, RTL).
+// Identity: the product's own navy + gold system. Every claim is verified:
+// no testimonials, no customer logos, no invented metrics. The stats band
+// carries the owner-set speed numbers (85% / 92% / 10× / 60s). Product
+// visuals are REAL screenshots captured from the running app (demo data).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const WHATSAPP_URL = 'https://wa.me/201014996636?text=مرحبًا، أريد معرفة المزيد عن منصة النخبة'
-
-// Speed stats (owner-set): the story is what the teacher saves, not how the
-// queue works internally.
+// Owner-set speed stats (LANDING-4) — the teacher's saved time.
 const STATS = [
-  { value: 85, suffix: '٪', label: 'وقت أقل في إرسال التقارير', note: 'طابور واحد يجهّز كل الرسايل وتمشي عليها بالترتيب' },
+  { value: 85, suffix: '٪', label: 'وقت أقل في إرسال التقارير', note: 'التقرير بيتولد من بيانات الحصة تلقائيًا' },
   { value: 92, suffix: '٪', label: 'متابعة ودقة أعلى مع أولياء الأمور', note: 'كل طالب برسالته الصح: حضوره وواجبه ونتيجته' },
-  { value: 10, suffix: ' أضعاف', label: 'أسرع من الطريقة اليدوية', note: 'التقرير بيتولد تلقائي من بيانات الحصة — بدون كتابة يدوية' },
-  { value: 60, suffix: ' ثانية', label: 'تسجيل حضور مجموعة كاملة', note: 'لمسة لكل طالب، والحفظ التلقائي فوري' },
+  { value: 10, suffix: ' أضعاف', label: 'أسرع من الطريقة اليدوية', note: 'من غير نسخ ولصق ولا كتابة يدوية' },
+  { value: 60, suffix: ' ثانية', label: 'تسجيل حضور مجموعة كاملة', note: 'لمسة لكل طالب والحفظ التلقائي فوري' },
+]
+
+const PROBLEMS = [
+  ['▤', 'الحضور في دفتر', 'ورقة بتمر في الحصة، ومراجعة الغياب بقت ذاكرة لا ملف.'],
+  ['▦', 'الطلاب في ملف Excel', 'ملف عند كل مدرّس بنسخة مختلفة — ومحدش عارف أنهي النسخة الصح.'],
+  ['✉', 'واتساب متفرق', 'رسايل يدوية واحدة واحدة، ومفيش حاجة بتوثّق إيه اللي اتبعت فعلاً.'],
+  ['◎', 'المدفوعات والحصص مش واضحة', 'مين دفع ومين تأخر — سؤال بياخد معركة تتبع كل شهر.'],
+  ['✎', 'نتايج متفرقة', 'الامتحان بيتسجل في ورقة، والتحليل بيضل مؤجل لآخر الترم.'],
+  ['◔', 'تقارير بتتجمع إيدوي', 'آخر كل أسبوع معركة تجميع: حضور وواجب ودرجات من تلات مصادر.'],
+]
+
+const WORKFLOW = [
+  ['أنشئ المجموعة', 'المرحلة والجدول والألوان'],
+  ['حدد مواعيد الحصص', 'أسبوعيًا وبتكرار تلقائي'],
+  ['الحضور', 'لمسة لكل طالب أو QR'],
+  ['التفاعل', 'نقاط وملاحظات لحظية'],
+  ['الواجب', 'مكتمل · ناقص · لم يتم'],
+  ['الامتحان والدرجات', 'بأقسام ومرتبط بالحصة'],
+  ['التقرير', 'يتولد تلقائيًا ويُراجع'],
+  ['إنهاء الحصة', 'كل حاجة محفوظة وموثقة'],
 ]
 
 const FEATURES = [
-  { icon: '⌁', kind: 'attendance', title: 'الحضور في ثوانٍ', text: 'قائمة سريعة بالبحث، علامة حاضر أو غائب بلمسة واحدة، والحفظ تلقائي فورًا — من غير خطوة إضافية.', big: true },
-  { icon: '✉', kind: 'reports', title: 'تقارير واتساب أدبية', text: 'الرسالة بتتغير حسب حالة الطالب: الحاضر مالهوش رسالة الغائب، والنتيجة بتشرح نفسها بدل ما تظهر كرقم.', big: true },
-  { icon: '↻', kind: 'queue', title: 'قائمة إرسال محصّنة', text: 'لو الصفحة اتقفلت أو الموبايل نقلّك لواتساب، القائمة تكمّل من حيث توقفت — وتنبهك لو الرسالة اتبعتت قبل كده.' },
-  { icon: '◷', kind: 'lesson', title: 'الحصص والواجبات', text: 'موضوع الدرس والواجب مع كل حصة، ومتابعة الواجب بثلاث حالات واضحة: مكتمل، ناقص، لم يتم.' },
-  { icon: '▤', kind: 'exam', title: 'الامتحانات والدرجات', text: 'أنشئ الامتحان، سجّل الدرجات، وخلي النتيجة توصل للطالب بشرح مفهوم وخطوة للتحسين.' },
-  { icon: '◉', kind: 'portal', title: 'بوابة الطالب وولي الأمر', text: 'رابط QR واحد يفتح صفحة واضحة: الحضور، الواجب، النتائج، والإشعارات — من غير ما حد يدخل لوحتك.' },
-  { icon: '✦', kind: 'insight', title: 'فريق التحليل', text: 'مرة كل أسبوع بيراجع أداء كل مجموعة ويطلعلك بس اللي يستاهل الاهتمام — بسببه وأرقامه وخطته.' },
-  { icon: '◎', kind: 'notifications', title: 'إشعارات فورية', text: 'الإعلانات والتحديثات المهمة توصل أول بأول لأولياء الأمور والطلاب، من غير مجموعات ولا دلائلية.' },
+  ['إدارة الطلاب', 'ملف كامل لكل طالب: مجموعته ونقاطه وإنذاراته وسجل حضوره وواجباته — وبحث فوري بالاسم أو الكود.'],
+  ['مسار الحصة', 'حضور وتفاعل وواجب وامتحان وتقرير في مساحة واحدة — من غير تنقل بين شاشات.'],
+  ['الحضور والغياب', 'لمسة لكل طالب أو مسح QR، وقاعدة أسبوع موحدة من الجمعة للخميس لكل المركز.'],
+  ['الواجبات', 'ثلاث حالات واضحة لكل طالب في كل حصة، ومتابعة التسليم أسبوع بأسبوع.'],
+  ['الامتحانات والدرجات', 'امتحان بأقسام ودرجة قصوى لكل قسم، ومرتبط بحصته — بيقيس الجزء اللي اتشرح.'],
+  ['التقارير', 'تقارير أولياء أمور بتتبني تلقائيًا من البيانات، مع تصدير Excel عندك تحت إيدك.'],
+  ['التواصل عبر واتساب', 'قائمة إرسال منظمة بمراجعة قبل الإرسال واستكمال بعد أي مقاطعة.'],
+  ['فريق التحليل', 'مراجعة أسبوعية بترصد الأنماط المهمة بس — بسببه وأرقامه وخطته المقترحة.'],
 ]
 
-const STEPS = [
-  ['١', 'افتح لوحة اليوم', 'المجموعة والحصة وما يحتاج انتباهك قدامك من أول شاشة.'],
-  ['٢', 'سجّل الحضور والواجب', 'لمسة لكل طالب، حفظ تلقائي، وتقدر تراجع وتعدل براحتك.'],
-  ['٣', 'أرسل التقارير والروابط', 'طابور واحد يفتح واتساب لكل طالب برسالته، ويراقب المتبقي معاك.'],
+const TEACHER_FLOW = [
+  ['حصص اليوم', 'من أول شاشة: المجموعة والوقت والحصة الجاهزة.'],
+  ['افتح الحصة', 'مساحة واحدة فيها كل تبويبات الشغل.'],
+  ['الحضور', 'لمسة لكل طالب — حفظ تلقائي فوري.'],
+  ['التفاعل والواجب', 'نقاط وملاحظات وحالة واجب لكل طالب.'],
+  ['الامتحان', 'درجات بأقسام من نفس المسار.'],
+  ['التقرير', 'بيتبنى تلقائيًا — تراجعه وت بعته.'],
+  ['إنهاء الحصة', 'تثبيت كل حاجة — والحصة تفضل قابلة للاستكمال قبل الإنهاء.'],
 ]
 
-const PLANS = [
-  {
-    name: 'الأساسية', tag: 'للبداية', highlight: false,
-    points: ['مجموعتان وطلاب حتى ٤٠', 'الحضور والواجبات والحصص', 'بوابة الطالب برابط QR', 'تقارير واتساب أساسية'],
-    cta: 'ابدأ مجانًا', action: 'signup',
-  },
-  {
-    name: 'الاحترافية', tag: 'الأكثر اختيارًا', highlight: true,
-    points: ['طلاب بلا حد عملي', 'الامتحانات ودرجات كاملة', 'قائمة الإرسال المحصّنة', 'فريق التحليل الأسبوعي', 'إشعارات أولياء الأمور'],
-    cta: 'ابدأ مجانًا', action: 'signup',
-  },
-  {
-    name: 'المراكز والفرق', tag: 'لمؤسسة كاملة', highlight: false,
-    points: ['مساعدون بصلاحيات محددة', 'متابعة مركزية لكل المجموعات', 'سجل عمليات وتقارير موسعة', 'دعم مباشر على واتساب'],
-    cta: 'كلمنا على واتساب', action: 'whatsapp',
-  },
+const OWNER_POINTS = [
+  ['صورة لحظية', 'الحضور والواجبات والنتايج محدثة أول بأول — من غير ما تستدعي حد.'],
+  ['متابعة بلا لاحقة', 'كل مدرّس شغال في مساحته، والبيانات بتتجمع عندك تلقائيًا.'],
+  ['تقارير جاهزة', 'تقرير أي طالب أو مجموعة بضغطة — للمعاينة أو لأولياء الأمور.'],
+  ['تحليل أسبوعي', 'ملخص بيقولك الوضع عامل إزاي وأنهي نقاط تستاهل تدخلك.'],
+]
+
+const HOW = [
+  ['١', 'ابدأ حسابك', 'اسمك وإيميلك وكلمة مرور — من غير بطاقة دفع. التجربة المجانية ٧ أيام بكامل المميزات.'],
+  ['٢', 'جهّز بيانات مركزك', 'أنشئ مجموعاتك، ضيف طلابك (دفعة واحدة)، واضبط جدول الأسبوع — في جلسة واحدة.'],
+  ['٣', 'شغّل مركزك', 'افتح حصة اليوم وسجّل الشغل منه — والتقارير والتحليل بيتكفلوا بنفسهم.'],
+]
+
+const AUDIENCE = [
+  ['السنتر الصغير', 'مجموعتين ودفتر حضور؟ ابدأ منظم من أول يوم — بدون أي تعقيد.'],
+  ['المركز النامي', 'الطلاب بيزيدوا؟ مركز البيانات قبل ما الكبر يتحول فوضى.'],
+  ['مدير أكاديمي', 'تابع كل المجموعات والمدرسين من مكان واحد بتحديث لحظي.'],
+  ['صاحب المركز', 'اعرف اللي بيحصل من غير ما تلاحق الفريق — التقارير جاهزة عندك.'],
+  ['المدرّس', 'شغلك اليومي كله في مساحة حصة واحدة — من موبايلك.'],
+  ['فريق العمل', 'مساعدون بصلاحيات محددة وبيانات مفصولة بأمان على مستوى السيرفر.'],
 ]
 
 const FAQS = [
-  ['هل أحتاج إلى تغيير طريقة عملي؟', 'لا. تبدأ من حصة اليوم، تختار المجموعة، تسجل الحضور، ثم تنتقل للواجب أو النتيجة من نفس المسار. المنصة بتتبع طريقة شغلك مش العكس.'],
-  ['بياناتي وبيانات طلابي محفوظة إزاي؟', 'بياناتك على قواعد بيانات محمية بصلاحيات صارمة على مستوى الصف نفسه: كل مدرّس يقدر يوصل لطلابه هو بس — حتى لو حد غيّر روابط أو أرقام في الطلب، السيرفر يرفض.'],
-  ['هل يعمل QR الحالي مع بوابة الطالب؟', 'نعم. الـ QR يفتح رابط الطالب المعتاد، وكل الروابط الموجودة عند أولياء الأمور تفضل شغالة زي ما هي من غير أي إعادة إعداد.'],
-  ['إيه اللي بيخلي قائمة الإرسال مختلفة؟', 'القائمة بتتحفظ مع تقدمك: لو الموبايل نقلّك لواتساب أو الصفحة اتعملها reload، ترجع تلاقيها مكملة من نفس الرسالة، مع تنبيه للي اتبعت فعلًا وللي اتخطى.'],
-  ['فريق التحليل بيراجع إيه بالظبط؟', 'مرة كل أسبوع بيمر على حضور وواجبات وامتحانات كل مجموعة، ويطلع بس الموضوعات اللي ليها أثر حقيقي — زي انخفاض متكرر أو غياب متراكم — كل واحدة معاها السبب والأرقام وخطوة مقترحة.'],
-  ['أقدر أضيف مساعد يشغّل معايا؟', 'أيوه. نظام فريق العمل بيديك صلاحيات محددة لكل مساعد، والسيرفر بيفصل بيانات كل حساب عن التاني بشكل نهائي.'],
-  ['هل أستطخدم المنصة من الهاتف؟', 'المنصة مصممة للموبايل الأول: كل شاشة — من الحضور لتقارير واتساب — بتشتغل بكفاءة على شاشة صغيرة، وتقدر تضيفها للشاشة الرئيسية كتطبيق.'],
+  ['النخبة إيه بالظبط؟', 'منصة عربية لإدارة مراكز التعليم: بتدير الطلاب والمجموعات ومسار الحصة (حضور، تفاعل، واجب، امتحان) وبتولد تقارير واتساب لأولياء الأمور وبتعمل مراجعة أسبوعية لأداء كل مجموعة — كل ده من مكان واحد ومن الموبايل.'],
+  ['لِمين مناسبة؟', 'لأي حد بيدير مجموعة طلاب أو أكتر: سنتر دروس، أكاديمية، مدرّس خصوصي بقائمة بتطول، أو مدير أكاديمي بيدير فريق مدرسين.'],
+  ['أقدر أدير كام طالب؟', 'الباقة الاحترافية بتشتغل مع عدد طلاب بلا حد عملي — من عشرات لمئات. الباقة الأساسية بتغطي حتى ٤٠ طالبًا للي بيبدأ.'],
+  ['بتدعم الفروع المتعددة؟', 'المنصة بيدعم فريق عمل بمساعدون بصلاحيات محددة ومساحة مشتركة — ودي طريقة عمل المراكز اللي بيتوسع دلوقتي. لو عندك بنية فروع أكبر، كلمنا على واتساب ونراجع وضعك معاك.'],
+  ['المدرسين بيشتغلوا من الموبايل؟', 'أيوه — المنصة مصممة موبايل-أول: كل شاشة من الحضور للتقارير شغالة بكفاءة على الهاتف، وتقدر تضيفها للشاشة الرئيسية كتطبيق.'],
+  ['الحضور بيشتغل إزاي؟', 'من جوه مسار الحصة نفسه: قايمة سريعة بالبحث ولمسة لكل طالب أو مسح QR — والحفظ تلقائي فوري. والأسبوع بيتلخص من الجمعة للخميس بقاعدة موحدة.'],
+  ['أقدر أنقل طلابي الحاليين؟', 'أيوه — ضيفهم دفعة واحدة من شاشة الإضافة السريعة (اسم ورقم اختياري لكل طالب)، أو دخّلهم من ملف Excel عبر أدوات الاستيراد الموجودة في المنصة.'],
+  ['في تجربة مجانية؟', `أيوه — ${7} أيام بكامل المميزات، من غير بطاقة دفع ومن غير تجديد تلقائي. تعرف تحكم لو النظام مناسب قبل أي قرار. شوف صفحة التجربة المجانية للتفاصيل.`],
+  ['الأسعار إزاي؟', 'الباقات واضحة حسب حجم مركزك (شوف صفحة الأسعار)، والسعر النهائي بيتأكد معك شخصيًا على واتساب قبل أي التزام — مفيش دفع أونلاين ولا خصم صامت.'],
+  ['بياناتي وطلابي محمية إزاي؟', 'كل حساب مفصول على مستوى صفوف قاعدة البيانات نفسها (RLS): محدش غيرك يقدر يوصل بيانات مركزك حتى لو غيّر روابط في الطلب — السيرفر هو اللي بيرفض، مش الواجهة.'],
+  ['أقدر ألغي؟', 'أي وقت — مفيش عقد ولا التزام. وبما إن مفيش تجديد تلقائي، مجرد ما ما تكملش الدفع الحساب بيتوقف وبياناتك تفضل محفوظة.'],
+  ['بتدعم واتساب إزاي؟', 'بتوليد تقارير جاهزة من بيانات الطالب، مراجعتها قبل الإرسال، وبعتهم عبر واتساب بقائمة منظمة بتكمّل من حيث توقفت حتى لو غلقت الصفحة — مع حماية من الإرسال المكرر.'],
 ]
 
-// ─── Small building blocks ──────────────────────────────────────────────────
-
-function Eyebrow({ children }) {
-  return <span className="lp-eyebrow">{children}</span>
-}
-
-function SectionHead({ eyebrow, title, sub, center = false }) {
-  return (
-    <div className={`lp-section-head max-w-2xl ${center ? 'mx-auto text-center' : ''}`}>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-4 text-3xl font-black leading-[1.25] tracking-tight sm:text-4xl">{title}</h2>
-      {sub && <p className="mt-4 leading-8 text-slate-300/90">{sub}</p>}
-    </div>
-  )
-}
-
-// Animated counter — IntersectionObserver + rAF, Arabic-Indic digits.
-// Respects prefers-reduced-motion (jumps straight to the final value).
+// ── Small building blocks ──────────────────────────────────────────────────
 function Counter({ value, suffix = '' }) {
   const ref = useRef(null)
   const [shown, setShown] = useState(0)
   useEffect(() => {
     const el = ref.current
     if (!el) return undefined
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (reduce) { setShown(value); return undefined }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setShown(value); return undefined }
     let raf = 0
     let started = false
     const run = () => {
       const t0 = performance.now()
-      const dur = 1100
       const tick = (t) => {
-        const p = Math.min(1, (t - t0) / dur)
+        const p = Math.min(1, (t - t0) / 1100)
         setShown(Math.round(value * (1 - Math.pow(1 - p, 3))))
         if (p < 1) raf = requestAnimationFrame(tick)
       }
       raf = requestAnimationFrame(tick)
     }
     const io = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting) && !started) {
-        started = true
-        run()
-        io.disconnect()
-      }
+      if (entries.some((e) => e.isIntersecting) && !started) { started = true; run(); io.disconnect() }
     }, { threshold: 0.4 })
     io.observe(el)
     return () => { io.disconnect(); cancelAnimationFrame(raf) }
@@ -120,169 +127,119 @@ function Counter({ value, suffix = '' }) {
   return <span ref={ref}>{shown.toLocaleString('ar-EG')}{suffix}</span>
 }
 
-function ActionButton({ onClick, hint, className = '', children }) {
+function SectionHead({ eyebrow, title, sub, center = false }) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <button type="button" onClick={onClick} className={className}>{children}</button>
-      {hint && <span className="max-w-[200px] text-center text-[11px] font-bold leading-4 text-slate-400">{hint}</span>}
+    <div className={`lp-section-head max-w-2xl ${center ? 'mx-auto text-center' : ''}`}>
+      <span className="lp-eyebrow">{eyebrow}</span>
+      <h2 className="mt-4 text-3xl font-black leading-[1.25] tracking-tight sm:text-4xl">{title}</h2>
+      {sub && <p className="mt-4 leading-8 text-slate-300/90">{sub}</p>}
     </div>
   )
 }
 
-// Mockup mini-scenes (pure CSS, no images)
-function MiniScene({ kind }) {
-  const scenes = {
-    attendance: (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="flex items-center justify-between text-xs font-black"><span>حضور الحصة</span><span className="text-emerald-300">٢٤ / ٢٦</span></div>
-        <div className="mt-3 h-2 rounded-full bg-white/10"><div className="h-2 w-[92%] rounded-full bg-emerald-400" /></div>
-      </div>
-    ),
-    reports: (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="text-xs font-black">طابور التقارير</div>
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-300"><span className="lp-pulse-dot h-2 w-2 rounded-full bg-emerald-400" /> ١٢ تقرير جاهز · تم إرسال ٨ ✓</div>
-      </div>
-    ),
-    exam: (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-        <div className="flex justify-between text-xs font-black"><span>متوسط النتيجة</span><span className="text-amber-300">٩٢٪</span></div>
-        <div className="mt-3 h-2 rounded-full bg-white/10"><div className="h-2 w-[92%] rounded-full bg-amber-400" /></div>
-      </div>
-    ),
-    portal: (
-      <div className="rounded-2xl bg-white/95 p-3 text-slate-800">
-        <div className="text-[10px] font-bold text-slate-400">Student Portal</div>
-        <div className="mt-1 text-xs font-black">الحضور · الواجب · النتيجة</div>
-      </div>
-    ),
-  }
-  return scenes[kind] || scenes.attendance
+function Shot({ s, alt, className = '', priority = false }) {
+  return (
+    <img
+      src={s.src} width={s.w} height={s.h} alt={alt}
+      loading={priority ? 'eager' : 'lazy'} decoding="async"
+      className={`rounded-2xl border border-white/10 bg-white shadow-2xl shadow-black/40 ${className}`}
+    />
+  )
 }
 
-// ─── Page ───────────────────────────────────────────────────────────────────
+const signup = () => '/?auth=signup'
 
 export default function LandingPage({ onLogin, onSignup }) {
   const root = useRef(null)
-  const [openFaq, setOpenFaq] = useState(0)
+  useEffect(() => {
+    const cleanup = setSeo({
+      title: 'النخبة — شغّل مركزك التعليمي كله من مكان واحد | برنامج إدارة السنتر',
+      description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ٧ أيام بدون بطاقة.',
+      path: '/',
+      jsonLd: [orgSchema, websiteSchema, softwareAppSchema, faqSchema(FAQS)],
+    })
+    return cleanup
+  }, [])
   useAnimeScope(root, () => {
     animate('.lp-nav', { opacity: [0, 1], translateY: [-14, 0], duration: 560, ease: 'out(3)' })
     animate('.lp-hero-copy', { opacity: [0, 1], translateY: [26, 0], duration: 720, ease: 'out(4)' })
     animate('.lp-hero-visual', { opacity: [0, 1], translateY: [34, 0], duration: 800, delay: 150, ease: 'out(4)' })
     animate('.lp-stat', { opacity: [0, 1], translateY: [16, 0], delay: stagger(80, { start: 160 }), duration: 520, ease: 'out(3)' })
     animate('.landing-feature-card', { opacity: [0, 1], translateY: [18, 0], delay: stagger(60, { start: 120 }), duration: 520, ease: 'out(3)' })
-    animate('.landing-step-card', { opacity: [0, 1], translateX: [20, 0], delay: stagger(90, { start: 160 }), duration: 520, ease: 'out(3)' })
     animate('.lp-reveal', { opacity: [0, 1], translateY: [20, 0], delay: stagger(90, { start: 100 }), duration: 560, ease: 'out(3)' })
   }, [])
   const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  const planAction = (action) => {
-    if (action === 'signup') onSignup()
-    else window.open(WHATSAPP_URL, '_blank', 'noopener')
-  }
-
   return (
     <main ref={root} className="lp-dark min-h-screen text-[#eef2fb]" dir="rtl">
-
-      {/* ── NAV ── */}
+      {/* ── NAV (§2 architecture: simple, real links) ── */}
       <header className="lp-nav sticky top-0 z-40 border-b border-white/10 bg-[#0c1631]/80 backdrop-blur-xl">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-8">
-          <button onClick={() => scrollTo('top')} className="flex items-center gap-3" aria-label="الرئيسية">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-8" aria-label="التنقل الرئيسي">
+          <a href="/" className="flex items-center gap-3" aria-label="النخبة — الرئيسية">
             <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-10 w-10 rounded-xl shadow-lg shadow-black/30" />
             <span className="font-black tracking-tight">النخبة</span>
-          </button>
+          </a>
           <div className="hidden items-center gap-7 text-sm font-bold text-slate-300 lg:flex">
-            <button className="transition hover:text-white" onClick={() => scrollTo('features')}>المميزات</button>
-            <button className="transition hover:text-white" onClick={() => scrollTo('how')}>كيف تعمل</button>
+            <a className="transition hover:text-white" href="/features">المميزات</a>
+            <a className="transition hover:text-white" href="/solutions">الحلول</a>
+            <a className="transition hover:text-white" href="/pricing">الأسعار</a>
             <button className="transition hover:text-white" onClick={() => scrollTo('insights')}>فريق التحليل</button>
-            <button className="transition hover:text-white" onClick={() => scrollTo('plans')}>الباقات</button>
-            <button className="transition hover:text-white" onClick={() => scrollTo('faq')}>الأسئلة</button>
+            <a className="transition hover:text-white" href="/resources">المصادر</a>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onLogin} className="min-h-11 rounded-xl px-3 text-sm font-black text-slate-200 transition hover:bg-white/10 sm:px-4">تسجيل الدخول</button>
-            <button onClick={onSignup} className="min-h-11 min-w-[120px] rounded-xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-5 text-sm font-black text-[#1a1205] shadow-lg shadow-amber-500/20 transition hover:-translate-y-0.5">ابدأ مجانًا</button>
+            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'nav' })} className="inline-flex min-h-11 min-w-[120px] items-center justify-center rounded-xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-5 text-sm font-black text-[#1a1205] shadow-lg shadow-amber-500/20 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
           </div>
         </nav>
       </header>
 
-      {/* ── HERO ── */}
+      {/* ── SECTION 1 — HERO ── */}
       <section id="top" className="relative overflow-hidden">
         <div className="lp-hero-bg" aria-hidden="true" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-24 pt-16 sm:px-8 lg:grid-cols-[1.02fr_.98fr] lg:gap-16 lg:pb-32 lg:pt-24">
+        <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-16 sm:px-8 lg:grid-cols-[1.02fr_.98fr] lg:gap-16 lg:pb-28 lg:pt-24">
           <div className="lp-hero-copy">
-            <Eyebrow>منصة المدرس اليومية · حضور · واجبات · تقارير</Eyebrow>
+            <span className="lp-eyebrow">منصة إدارة مراكز التعليم · حضور · واجبات · تقارير · تحليل</span>
             <h1 className="mt-6 text-4xl font-black leading-[1.18] tracking-tight sm:text-6xl">
-              شغل المدرس كله —
+              شغّل مركزك التعليمي كله —
               <br />
-              من الحضور للتقرير —
-              <br />
-              <span className="lp-gold-text">في منصة واحدة.</span>
+              <span className="lp-gold-text">من مكان واحد.</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-8 text-slate-300 sm:text-lg">
-              النخبة بتسجل الحضور والواجبات والامتحانات، وتبعت تقارير واتساب يفهمها ولي الأمر،
-              وتديك تحليل أسبوعي حقيقي لأداء كل مجموعة — وكل ده من هاتفيك.
+              الطلاب والمدرسين والحصص والحضور والواجبات والامتحانات وتقارير أولياء الأمور وتحليل الأداء —
+              النخبة بتجمع مسار الشغل اليومي كله في نظام واحد بيفهمه المدرس ويستخدمه من موبايله.
             </p>
-            <div className="mt-9 flex flex-wrap items-start gap-4">
-              <ActionButton onClick={onSignup} hint="أنشئ حساب المدرس وابدأ إعداد مجموعاتك" className="min-h-14 min-w-[170px] rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-6 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ مجانًا</ActionButton>
+            <div className="mt-9 flex flex-wrap items-center gap-4">
+              <a href={signup()} onClick={() => track('trial_cta_click', { source: 'hero' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ التجربة المجانية</a>
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" onClick={() => track('whatsapp_click', { source: 'hero' })} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/10 px-7 text-sm font-black text-[#4be08a] transition hover:bg-[#25D366]/20">
+                <span aria-hidden="true">◉</span> تواصل معنا عبر واتساب
+              </a>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs font-bold text-slate-400">
-              <span>✓ إعداد في دقائق</span>
-              <span>✓ بياناتك محمية بصلاحيات صارمة</span>
+              <span>✓ تجربة ٧ أيام من غير بطاقة</span>
+              <span>✓ بيانات محمية على مستوى قاعدة البيانات</span>
               <span>✓ مصممة للموبايل الأول</span>
             </div>
           </div>
 
-          {/* Hero product mockup */}
+          {/* REAL product interface — captured from the running app */}
           <div className="lp-hero-visual relative">
-            <div className="relative rounded-[26px] border border-white/12 bg-white/[0.06] p-4 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400">لوحة اليوم</div>
-                  <div className="mt-1 text-lg font-black">صباح الخير، أستاذ أحمد</div>
-                </div>
-                <span className="rounded-xl border border-emerald-300/25 bg-emerald-400/15 px-3 py-2 text-xs font-black text-emerald-300">جاهز للعمل</span>
+            <div className="relative rounded-[26px] border border-white/12 bg-white/[0.06] p-3 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-4">
+              <div className="mb-3 flex items-center justify-between px-1">
+                <div className="text-[11px] font-bold text-slate-400">مسار الحصة — واجهة حقيقية من المنصة</div>
+                <span className="rounded-xl border border-emerald-300/25 bg-emerald-400/15 px-3 py-1.5 text-[10px] font-black text-emerald-300">لقطة حية</span>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-[#0c1631]/80 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-xs text-slate-400">الحصة التالية</div>
-                    <div className="mt-1 font-black">أولى ثانوي · مجموعة الأحد</div>
-                  </div>
-                  <div className="rounded-xl bg-white/10 px-3 py-2 text-sm font-black">٥:٠٠ م</div>
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <MiniScene kind="attendance" />
-                  <MiniScene kind="exam" />
-                </div>
-                <div className="mt-3"><MiniScene kind="reports" /></div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5">
-                  <div className="text-xl font-black">١٣٦</div>
-                  <div className="mt-1 text-[11px] text-slate-400">إجمالي الطلاب</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3.5">
-                  <div className="text-xl font-black text-emerald-300">٩٢٪</div>
-                  <div className="mt-1 text-[11px] text-slate-400">نسبة الحضور</div>
-                </div>
-              </div>
+              <Shot s={SCREENS.session} alt="مساحة الحصة الحقيقية في منصة النخبة: تبويبات الحضور والتفاعل والواجب والامتحانات والتقرير" priority className="w-full" />
             </div>
-
-            {/* Floating accent chips */}
             <div className="lp-float absolute -right-3 -top-5 rounded-2xl border border-emerald-300/30 bg-[#0c1631]/95 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur sm:-right-6">
-              <div className="flex items-center gap-2 text-xs font-black"><span className="lp-pulse-dot h-2.5 w-2.5 rounded-full bg-[#25D366]" /> واتساب · طابور التقارير</div>
-              <div className="mt-1 text-[11px] text-slate-300">تم إرسال ٨ · متبقي ٤ — يكمّل ولو الصفحة اتقفلت ✓</div>
-            </div>
-            <div className="lp-float-slow absolute -bottom-6 -left-3 max-w-[240px] rounded-2xl border border-amber-300/30 bg-[#0c1631]/95 px-4 py-3 shadow-xl shadow-black/40 backdrop-blur sm:-left-6">
-              <div className="flex items-center gap-2 text-xs font-black text-amber-200">✦ فريق التحليل</div>
-              <div className="mt-1 text-[11px] leading-5 text-slate-300">الواجبات نازلة بشكل متكرر في مجموعة الأحد — محتاج مراجعة قبل ما يستمر.</div>
+              <div className="flex items-center gap-2 text-xs font-black"><span className="lp-pulse-dot h-2.5 w-2.5 rounded-full bg-[#25D366]" /> واتساب · قائمة الإرسال</div>
+              <div className="mt-1 text-[11px] text-slate-300">بتكمّل من حيث توقفت — حتى لو الصفحة اتقفلت ✓</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── STATS ── */}
-      <section className="border-y border-white/10 bg-[#0c1631]/60 px-5 py-10 sm:px-8">
+      {/* ── SECTION 2 — OWNER-SET SPEED STATS ── */}
+      <section className="border-y border-white/10 bg-[#0c1631]/60 px-5 py-10 sm:px-8" aria-label="مؤشرات السرعة">
         <div className="mx-auto grid max-w-7xl gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {STATS.map((s) => (
             <div key={s.label} className="lp-stat text-center sm:text-right">
@@ -294,82 +251,151 @@ export default function LandingPage({ onLogin, onSignup }) {
         </div>
       </section>
 
-      {/* ── FEATURES (bento) ── */}
-      <section id="features" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-24 sm:px-8">
+      {/* ── SECTION 3 — PRODUCT SHOWCASE (real screenshots) ── */}
+      <section id="showcase" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-24 sm:px-8">
         <SectionHead
-          eyebrow="كل ما تحتاجه يوميًا"
-          title="أدوات أساسية — مظبوطة لشغل المدرس الحقيقي."
-          sub="جمعنا المهام اللي بتتكرر كل يوم في تجربة واحدة سريعة، ونقلنا التفاصيل الثانوية بعيد عن طريقك."
+          eyebrow="شوف المنصة نفسها"
+          title="واجهات حقيقية — مش تصميمات دعائية."
+          sub="دي شاشات المنصة الفعلية بأسماء وبيانات تجريبية: من لوحة اليوم لحد تقرير فريق التحليل."
         />
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((f) => (
-            <article key={f.title} className={`landing-feature-card lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6 ${f.big ? 'lg:col-span-2' : ''}`}>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e3b04b]/25 to-[#e3b04b]/5 text-xl font-black text-[#e8bd63] ring-1 ring-amber-300/30">{f.icon}</div>
-              <h3 className="mt-5 text-lg font-black">{f.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-slate-300/90">{f.text}</p>
-            </article>
+        <div className="mt-12 space-y-16">
+          {[
+            [SCREENS.dashboard, 'لوحة اليوم', 'مجموعاتك وحصصك وما يحتاج انتباهك — قدامك من أول شاشة كل ما تفتح المنصة.', 'لوحة اليوم في منصة النخبة تعرض حصص اليوم ونظرة عامة'],
+            [SCREENS.students, 'إدارة الطلاب', 'ملف كامل لكل طالب، بحث فوري، وإضافة مجموعة طلاب دفعة واحدة من شاشة الحضور.', 'قائمة الطلاب في منصة النخبة مع البحث وأزرار QR'],
+            [SCREENS.reports, 'التقارير', 'تقارير أولياء الأمور بتتبنى تلقائيًا من حضور الطالب وواجبه ونتايجه — تراجعها وتبعتها.', 'شاشة التقارير في منصة النخبة مع قوالب الرسائل'],
+            [SCREENS.insights, 'فريق التحليل', 'ملخص أسبوعي بيقولك الوضع عامل إزاي — ويسيبك للنقاط المهمة بس.', 'تقرير فريق التحليل الأسبوعي في منصة النخبة'],
+          ].map(([s, t, d, alt], i) => (
+            <div key={t} className={`grid items-center gap-8 lg:grid-cols-[.9fr_1.1fr] ${i % 2 ? '' : ''}`}>
+              <div className={i % 2 ? 'lg:order-2' : ''}>
+                <h3 className="text-2xl font-black">{t}</h3>
+                <p className="mt-3 leading-8 text-slate-300/90">{d}</p>
+                <a href="/features" className="mt-4 inline-flex items-center gap-2 text-sm font-black text-[#e8bd63]">كل المميزات <span aria-hidden="true">←</span></a>
+              </div>
+              <Shot s={s} alt={alt} className={`w-full ${i % 2 ? 'lg:order-1' : ''}`} />
+            </div>
           ))}
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section id="how" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
-        <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[.95fr_1.05fr]">
-          <div>
-            <SectionHead
-              eyebrow="كيف تعمل المنصة؟"
-              title="من تسجيل الحضور إلى فهم ولي الأمر للنتيجة."
-              sub="بوابة الطالب هي الرابط اللي بيفتح أمام الطالب أو ولي الأمر صفحة بسيطة: الحصة، الواجب، متابعة الحضور، ونتيجة مفهومة — من غير الدخول للوحة المدرس."
-            />
-            <div className="lp-timeline mt-9 space-y-4">
-              {STEPS.map(([num, title, text]) => (
-                <div key={num} className="landing-step-card relative rounded-2xl border border-white/10 bg-white/[0.05] p-4 pr-16">
-                  <div className="absolute right-4 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-base font-black text-[#1a1205] shadow-lg shadow-amber-500/20">{num}</div>
-                  <h3 className="font-black">{title}</h3>
-                  <p className="mt-1 text-sm leading-6 text-slate-300/90">{text}</p>
-                </div>
-              ))}
-            </div>
+      {/* ── SECTION 4 — THE PROBLEM ── */}
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+        <div className="mx-auto max-w-7xl">
+          <SectionHead
+            center
+            eyebrow="المشكلة اللي كل مركز بيعرفها"
+            title="كل يوم المركز بيكبر… والبيانات بتتوزع أكتر."
+            sub="الطلاب في مكان، والحضور في مكان تاني، والمدفوعات في ملف، والتقارير بتتجمع إيدويًا. ومحدش شايل الصورة الكاملة."
+          />
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {PROBLEMS.map(([icon, t, d]) => (
+              <div key={t} className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-400/10 text-lg text-rose-300 ring-1 ring-rose-300/25">{icon}</div>
+                <h3 className="mt-4 font-black">{t}</h3>
+                <p className="mt-2 text-sm leading-7 text-slate-300/90">{d}</p>
+              </div>
+            ))}
           </div>
-          <div className="lp-reveal relative">
-            <div className="absolute -left-10 -top-10 h-36 w-36 rounded-full bg-amber-400/15 blur-3xl" aria-hidden="true" />
-            <div className="relative mx-auto max-w-lg rounded-[26px] border border-white/12 bg-white/[0.06] p-4 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-6">
-              <div className="flex items-center gap-3 border-b border-white/10 pb-4">
-                <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-11 w-11 rounded-2xl" />
-                <div>
-                  <p className="text-[11px] font-bold text-slate-400">Student Portal</p>
-                  <p className="text-lg font-black">بوابة يوسف أحمد</p>
-                </div>
-                <span className="mr-auto rounded-full border border-emerald-300/25 bg-emerald-400/15 px-3 py-1.5 text-xs font-black text-emerald-300">مفتوحة</span>
+          <p className="mx-auto mt-10 max-w-2xl text-center text-sm leading-8 text-slate-300">
+            النتيجة: وقت المدرس بيتاكل في تنسيق بدل تدريس، وولي الأمر مش متابع، والمشاكل المهمة —
+            غياب متراكم أو مستوى نازل — بتظهر متأخرة.
+          </p>
+        </div>
+      </section>
+
+      {/* ── SECTION 5 — THE ALNOKHBA APPROACH: ONE CONNECTED WORKFLOW ── */}
+      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <SectionHead
+          center
+          eyebrow="طريقة النخبة"
+          title="مش مجموعة ميزات — مسار شغل واحد متصل."
+          sub="كل خطوة بتغذي اللي بعدها: الحضور بيدخل في التقرير، والواجب والدرجات بيدخلوا في التحليل. من غير نسخ بين الشاشات."
+        />
+        <ol className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="مسار الشغل المتصل">
+          {WORKFLOW.map(([t, d], i) => (
+            <li key={t} className="lp-reveal relative rounded-2xl border border-white/10 bg-white/[0.05] p-5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-sm font-black text-[#1a1205]">{i + 1}</span>
+                <h3 className="font-black">{t}</h3>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs font-bold text-slate-400">حالة اليوم</div>
-                  <div className="mt-2 text-lg font-black text-emerald-300">حاضر ✓</div>
-                  <p className="mt-1 text-[11px] text-slate-400">مجموعة الأحد · ٥:٠٠ م</p>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-xs font-bold text-slate-400">الواجب</div>
-                  <div className="mt-2 text-lg font-black">مراجعة الدرس</div>
-                  <p className="mt-1 text-[11px] text-slate-400">موعد التسليم اليوم</p>
-                </div>
-              </div>
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-black">نتيجة الامتحان</span>
-                  <span className="rounded-lg bg-emerald-400/15 px-2 py-1 text-sm font-black text-emerald-300">٩٢٪</span>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-slate-300/90">مستوى جيد جدًا. استمر على نفس المراجعة وركز على الأسئلة اللي غلطت فيها.</p>
-              </div>
-              <div className="mt-4 flex items-center justify-center gap-2 text-xs font-black text-slate-400">
-                <span className="lp-pulse-dot h-2 w-2 rounded-full bg-emerald-400" /> رابط واحد، معلومات واضحة، بدون تعقيد
-              </div>
-            </div>
+              <p className="mt-2 text-xs leading-6 text-slate-400">{d}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* ── SECTION 6 — CORE FEATURES (categories → /features) ── */}
+      <section id="features" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+        <div className="mx-auto max-w-7xl">
+          <SectionHead
+            eyebrow="قدرات المنصة"
+            title="أدوات أساسية — مظبوطة لشغل المدرس الحقيقي."
+            sub="جمعنا المهام اللي بتتكرر كل يوم في تجربة واحدة سريعة، ونقلنا التفاصيل الثانوية بعيد عن طريقك."
+          />
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {FEATURES.map(([t, d]) => (
+              <article key={t} className="landing-feature-card lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6">
+                <h3 className="text-lg font-black text-[#e8bd63]">{t}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-300/90">{d}</p>
+              </article>
+            ))}
+          </div>
+          <div className="mt-10 text-center">
+            <a href="/features" className="inline-flex min-h-12 items-center rounded-2xl border border-white/15 bg-white/5 px-7 text-sm font-black text-slate-100 transition hover:bg-white/10">استعرض كل المميزات بالتفصيل</a>
           </div>
         </div>
       </section>
 
-      {/* ── SMART INSIGHTS SPOTLIGHT ── */}
+      {/* ── SECTION 7 — TEACHER WORKFLOW ── */}
+      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <div className="grid items-center gap-14 lg:grid-cols-[.95fr_1.05fr]">
+          <div>
+            <SectionHead
+              eyebrow="شغل المدرس داخل الحصة"
+              title="الحصة بتفتح مرة… وبتقفل لما تخلص شغلك."
+              sub="مسار واضح من أول شاشة لحد التقرير — والحفظ التلقائي معاك في كل خطوة. لو الموبايل نقلك لواتساب وسط الشغل، ترجع تلاقي كل حاجة زي ما هي."
+            />
+            <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-400/[0.07] p-4 text-sm leading-7 text-amber-100/90">
+              <b className="font-black">الحفظ مش الإنهاء:</b> الحصة تفضل مفتوحة وقابلة للاستكمال في أي وقت —
+              الإنهاء بتحسمه أنت لما تخلص، وساعتها كل حاجة بتتثبت في السجل.
+            </div>
+          </div>
+          <div className="lp-timeline space-y-3">
+            {TEACHER_FLOW.map(([t, d], i) => (
+              <div key={t} className="relative rounded-2xl border border-white/10 bg-white/[0.05] p-4 pr-16">
+                <div className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-sm font-black text-[#1a1205]">{i + 1}</div>
+                <h3 className="font-black">{t}</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-300/90">{d}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECTION 8 — OWNER / MANAGEMENT VIEW ── */}
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
+          <div className="order-2 lg:order-1">
+            <Shot s={SCREENS.dashboard} alt="لوحة اليوم في منصة النخبة — نظرة المدير على حصص اليوم والطلاب" className="w-full" />
+          </div>
+          <div className="order-1 lg:order-2">
+            <SectionHead
+              eyebrow="لصاحب المركز والمدير"
+              title="اعرف اللي بيحصل من غير ما تلاحق الفريق."
+              sub="البيانات بتتحدث لحظيًا مع شغل المدرسين — وإنت بتشوف الصورة الكاملة من مكانك."
+            />
+            <ul className="mt-7 space-y-3.5">
+              {OWNER_POINTS.map(([t, d]) => (
+                <li key={t} className="flex gap-3">
+                  <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span>
+                  <div><b className="font-black">{t}</b><p className="mt-0.5 text-sm leading-6 text-slate-300/90">{d}</p></div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECTION 9 — SMART INSIGHTS (rules + validation, NOT "AI") ── */}
       <section id="insights" className="mx-auto max-w-7xl scroll-mt-24 px-5 py-24 sm:px-8">
         <div className="grid items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
           <div className="order-2 lg:order-1">
@@ -380,36 +406,36 @@ export default function LandingPage({ onLogin, onSignup }) {
               </div>
               <div className="mt-4 space-y-3">
                 <div className="rounded-2xl border border-white/10 bg-[#0c1631]/70 p-4">
-                  <div className="text-sm font-black">أداء الطلاب بدأ ينخفض بشكل مستمر في آخر ٣ اختبارات</div>
-                  <p className="mt-2 text-xs leading-6 text-slate-300/90">الانخفاض ظاهر عند ٦٤٪ من طلاب المجموعة — الموضوع محتاج مراجعة قبل ما يستمر أكتر.</p>
+                  <div className="text-sm font-black">غياب مجموعة الأحد عالي وزايد</div>
+                  <p className="mt-2 text-xs leading-6 text-slate-300/90">الغياب وصل ٣٤٪ في آخر ٤ أسابيع مقابل ١٨٪ الشهر اللي فاته — وبيأثر على ٧٧ طالب.</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">آخر ٣ اختبارات</span>
-                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">١٤ طالبًا</span>
-                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">تكرار مؤكد</span>
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">نسبة الغياب فوق الحد المقلق</span>
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">ارتفاع ١٦ نقطة</span>
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">٧٧ طالب متأثر</span>
                   </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-[#0c1631]/70 p-4">
-                  <div className="text-sm font-black">غياب متراكم في مجموعة الثلاثاء</div>
-                  <p className="mt-2 text-xs leading-6 text-slate-300/90">٥ طلاب غيابهم عدّى حد التحذير خلال آخر أسبوعين — يفضّل التواصل قبل ما يكبر.</p>
+                  <div className="text-sm font-black">تسليم الواجب نازل بشكل ملحوظ</div>
+                  <p className="mt-2 text-xs leading-6 text-slate-300/90">النسبة نزلت لـ ٣٥٪ في آخر ٤ أسابيع بعد ما كانت ٨٢٪ — مراجعة نوع الواجب والتواصل مع أولياء الأمور أول خطوة.</p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">خطوة مقترحة: رسالة متابعة</span>
+                    <span className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] font-bold text-slate-300">خطوة مقترحة: تذكير لأولياء الأمور</span>
                   </div>
                 </div>
               </div>
-              <p className="mt-4 text-center text-[11px] font-bold text-slate-400">مرة كل أسبوع — من غير إشعارات مزعجة، ومن مكان خاص في حسابك</p>
+              <p className="mt-4 text-center text-[11px] font-bold text-slate-400">مرة كل أسبوع — في مكان خاص جوه حسابك، من غير إشعارات مزعجة</p>
             </div>
           </div>
           <div className="order-1 lg:order-2">
             <SectionHead
-              eyebrow="تحليل حقيقي — مش كلام"
+              eyebrow="تحليل مبني على قواعد وتحقق — مش ذكاء اصطناعي عام"
               title="فريق التحليل: عينك على الصورة الكبيرة."
-              sub="مش كل رقم يستاهل انتباهك. فريق التحليل بيراجع بياناتك مرة كل أسبوع، ويطلعلك بس اللي ليه أثر حقيقي على المجموعة."
+              sub="مش كل رقم يستاهل انتباهك. كل نمط بيمر بسلسلة تحقق: قياس ← اكتشاف ← تحقق ← اتجاه ← أثر — ومش بيوصلك غير اللي عدّى الكل."
             />
             <ul className="mt-7 space-y-3.5">
               {[
-                ['مدروس بعمق', 'بيقارن آخر الحصص والامتحانات، ومش بيبعتلك إلا لما التكرار والتأثير يتأكدوا.'],
-                ['بسببه وأرقامه', 'كل نتيجة معاها أسبابها وعدد الطلاب المتأثرين — تقرر بسرعة وبثقة.'],
-                ['في مكانه المظبوط', 'مكانة خاص جوه حسابك من غير إشعارات ولا رسايل — تبصله وقت ما تناسبك.'],
+                ['ما هو «أثر مادي»؟', 'انخفاض بسيط في أسبوع واحد مش رؤية. الانخفاض المستمر اللي بيلمس جزء كبير من المجموعة — ده اللي بيوصللك.'],
+                ['بسببه وأرقامه', 'كل رؤية معاها نسبة التغير وعدد الطلاب المتأثرين والفترة — تقرر بسرعة وبثقة.'],
+                ['بيتعرف على التحسن', 'لما الموقف يتحسن، الرؤية بتتعلّم «بتتحسّن» وبعدين بتتحل لوحدها — من غير تكرار مزعج.'],
               ].map(([t, d]) => (
                 <li key={t} className="flex gap-3">
                   <span className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span>
@@ -421,7 +447,7 @@ export default function LandingPage({ onLogin, onSignup }) {
         </div>
       </section>
 
-      {/* ── WHATSAPP DEEP-DIVE ── */}
+      {/* ── SECTION 10 — WHATSAPP ── */}
       <section id="whatsapp" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
           <SectionHead
@@ -446,89 +472,153 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="lp-reveal mt-4 flex flex-wrap items-center justify-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] px-6 py-5 text-sm font-bold text-slate-300">
             <span className="rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-black text-emerald-300">تم إرسال حديثًا ✓</span>
             <span className="rounded-full bg-amber-400/10 px-3 py-1.5 text-xs font-black text-amber-200">استكمال من حيث توقفت</span>
-            <span className="rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-black text-sky-300">١٠٠ رسالة بالدفعة مع استراحة تلقائية</span>
-            <span className="text-xs text-slate-400">— كل ده بيشتغل معاك حتى لو الموبايل نقلك لواتساب وسط القائمة</span>
+            <span className="rounded-full bg-sky-400/10 px-3 py-1.5 text-xs font-black text-sky-300">قوالب قابلة للتخصيص</span>
+            <span className="text-xs text-slate-400">— وكل ده بيشتغل من موبايلك</span>
           </div>
         </div>
       </section>
 
-      {/* ── PLANS ── */}
-      <section id="plans" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+      {/* ── SECTION 11 — MOBILE ── */}
+      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <div className="grid items-center gap-14 lg:grid-cols-[.9fr_1.1fr]">
+          <div>
+            <SectionHead
+              eyebrow="مصمم للموبايل الأول"
+              title="مركزك مش بيقف لما تسيب المكتب."
+              sub="وسط الحصة، في المواصلات، ولا في قعدة مع ولي أمر — الشغل كله من موبايلك: الحضور، البحث، الواجب، الامتحانات، والتقارير."
+            />
+            <ul className="mt-7 grid gap-3 sm:grid-cols-2">
+              {['حضور بلمسة واحدة', 'بحث فوري بين الطلاب', 'قائمة الإرسال من الجيب', 'بوابة الطالب على الموبايل', 'إضافة للشاشة الرئيسية (PWA)', 'يعمل مع شبكات الموبايل الضعيفة'].map((t) => (
+                <li key={t} className="flex items-center gap-2.5 text-sm font-bold text-slate-200">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-400/15 text-xs font-black text-amber-300 ring-1 ring-amber-300/30">✓</span> {t}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="relative mx-auto w-full max-w-[340px]">
+            <div className="rounded-[36px] border border-white/12 bg-white/[0.06] p-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
+              <Shot s={SCREENS.mobile} alt="تسجيل الحضور من الموبايل في منصة النخبة" className="w-full rounded-[26px]" priority={false} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SECTION 12 — HOW IT WORKS ── */}
+      <section className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
-          <SectionHead center eyebrow="الباقات" title="ابدأ مجانًا — وكبّر لما تشوف الفايدة." sub="مش محتاج تقرار كبير من البداية: جرّب المنصة ببيانات حقيقية، واختار الباقة اللي على قد شغلك." />
-          <div className="mt-12 grid gap-5 lg:grid-cols-3">
-            {PLANS.map((p) => (
-              <div key={p.name} className={`lp-reveal relative flex flex-col rounded-3xl border p-8 ${p.highlight ? 'border-amber-300/45 bg-gradient-to-b from-amber-400/[0.10] to-white/[0.03] shadow-2xl shadow-amber-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
-                {p.highlight && <span className="absolute -top-3.5 right-6 rounded-full bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-3.5 py-1.5 text-[11px] font-black text-[#1a1205] shadow-lg shadow-amber-500/25">{p.tag}</span>}
-                <div className="text-sm font-black text-slate-400">{p.tag}</div>
-                <h3 className="mt-1 text-2xl font-black">{p.name}</h3>
-                <ul className="mt-6 flex-1 space-y-3">
-                  {p.points.map((pt) => (
-                    <li key={pt} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" /> {pt}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => planAction(p.action)}
-                  className={`mt-8 min-h-13 w-full rounded-2xl px-5 py-3.5 text-sm font-black transition hover:-translate-y-0.5 ${p.highlight ? 'bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] text-[#1a1205] shadow-xl shadow-amber-500/25' : 'border border-white/15 bg-white/5 text-slate-100 hover:bg-white/10'}`}
-                >
-                  {p.cta}
-                </button>
+          <SectionHead center eyebrow="إزاي تبدأ؟" title="٣ خطوات — ومركزك شغال." />
+          <div className="mt-12 grid gap-4 md:grid-cols-3">
+            {HOW.map(([n, t, d]) => (
+              <div key={n} className="relative rounded-3xl border border-white/10 bg-white/[0.05] p-7">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#e3b04b] to-[#c98f2e] text-lg font-black text-[#1a1205] shadow-lg shadow-amber-500/20">{n}</div>
+                <h3 className="mt-5 text-lg font-black">{t}</h3>
+                <p className="mt-3 text-sm leading-7 text-slate-300/90">{d}</p>
               </div>
             ))}
           </div>
-          <p className="mt-6 text-center text-xs text-slate-400">تفاصيل الباقات والأسعار بتتأكد معك شخصيًا على واتساب قبل أي التزام.</p>
+          <div className="mt-10 text-center"><a href="/trial" className="text-sm font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">تفاصيل التجربة المجانية</a></div>
         </div>
       </section>
 
-      {/* ── FAQ ── */}
-      <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-5 pb-24 pt-24 sm:px-8">
-        <SectionHead center eyebrow="أسئلة شائعة" title="كل ما تحتاج معرفته قبل البدء." />
-        <div className="mt-10 space-y-3">
-          {FAQS.map(([question, answer], index) => (
-            <div key={question} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05]">
-              <button
-                onClick={() => setOpenFaq(openFaq === index ? -1 : index)}
-                className="flex w-full items-center justify-between gap-4 p-5 text-right font-black transition hover:bg-white/[0.03]"
-                aria-expanded={openFaq === index}
-              >
-                <span>{question}</span>
-                <span className="text-xl text-[#e8bd63]">{openFaq === index ? '−' : '+'}</span>
-              </button>
-              {openFaq === index && <p className="border-t border-white/10 px-5 pb-5 pt-4 text-sm leading-7 text-slate-300/90">{answer}</p>}
+      {/* ── SECTION 13 — WHO IT'S FOR ── */}
+      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <SectionHead center eyebrow="لِمين النخبة؟" title="من مجموعة صغيرة… لمركز بيدير فريق." />
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {AUDIENCE.map(([t, d]) => (
+            <div key={t} className="rounded-3xl border border-white/10 bg-white/[0.05] p-6">
+              <h3 className="font-black text-[#e8bd63]">{t}</h3>
+              <p className="mt-2 text-sm leading-7 text-slate-300/90">{d}</p>
             </div>
           ))}
         </div>
+        <div className="mt-10 text-center"><a href="/solutions" className="text-sm font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">شوف الحلول حسب دورك في المركز</a></div>
       </section>
 
-      {/* ── FINAL CTA ── */}
+      {/* ── SECTION 14 — PRICING TEASER (config-driven) ── */}
+      <section id="plans" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
+        <div className="mx-auto max-w-7xl">
+          <SectionHead center eyebrow="الباقات" title="ابدأ مجانًا — وكبّر لما تشوف الفايدة." sub="تجربة مجانية ٧ أيام بكل المميزات ومن غير بطاقة. بعدها تختار الباقة اللي على قد شغلك — والتفعيل بيتم على واتساب." />
+          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+            {PLANS.map((p) => (
+              <div key={p.id} className={`lp-reveal relative flex flex-col rounded-3xl border p-8 ${p.highlighted ? 'border-amber-300/45 bg-gradient-to-b from-amber-400/[0.10] to-white/[0.03] shadow-2xl shadow-amber-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
+                {p.highlighted && <span className="absolute -top-3.5 right-6 rounded-full bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-3.5 py-1.5 text-[11px] font-black text-[#1a1205] shadow-lg shadow-amber-500/25">الأكثر اختيارًا</span>}
+                <div className="text-sm font-black text-slate-400">{p.who}</div>
+                <h3 className="mt-1 text-2xl font-black">{p.name}</h3>
+                <div className="mt-3 text-sm font-black text-[#e8bd63]">{p.studentLimit}</div>
+                <ul className="mt-5 flex-1 space-y-2.5">
+                  {p.capabilities.slice(0, 4).map((c) => (
+                    <li key={c} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" /> {c}
+                    </li>
+                  ))}
+                </ul>
+                <a href="/pricing" onClick={() => track('pricing_view', { source: 'landing-plan', plan: p.id })} className={`mt-7 min-h-12 w-full rounded-2xl px-5 py-3.5 text-center text-sm font-black transition hover:-translate-y-0.5 ${p.highlighted ? 'bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] text-[#1a1205] shadow-xl shadow-amber-500/25' : 'border border-white/15 bg-white/5 text-slate-100 hover:bg-white/10'}`}>
+                  تفاصيل الباقة
+                </a>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-xs text-slate-400">مفيش دفع أونلاين ولا تجديد تلقائي — السعر النهائي بيتأكد معك شخصيًا على واتساب.</p>
+        </div>
+      </section>
+
+      {/* ── SECTION 15 — FAQ (high-intent, verified answers) ── */}
+      <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-5 pb-24 pt-24 sm:px-8">
+        <SectionHead center eyebrow="أسئلة شائعة" title="كل ما تحتاج معرفته قبل البدء." />
+        <div className="mt-10" onClick={() => {}}>
+          <FaqList faqs={FAQS} source="landing" />
+        </div>
+      </section>
+
+      {/* ── SECTION 16 — FINAL CTA ── */}
       <section className="px-5 pb-20 sm:px-8">
         <div className="lp-cta-band lp-reveal mx-auto max-w-7xl rounded-[30px] border border-white/10 px-6 py-16 text-center sm:px-10">
-          <h2 className="text-3xl font-black sm:text-4xl">جاهز تبدأ يومك بوضوح؟</h2>
+          <h2 className="text-3xl font-black sm:text-4xl">جاهز تشغّل مركزك من مكان واحد؟</h2>
           <p className="mx-auto mt-4 max-w-xl text-sm leading-8 text-slate-300">
-            جرّب طريقة أبسط لإدارة الحصص والطلاب والتواصل — وسيب المنصة تقولك الخطوة الجاية إيه.
+            تجربة مجانية ٧ أيام بكامل المميزات — من غير بطاقة دفع. ولو حابب تسأل الأول، إحنا على واتساب.
           </p>
-          <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <ActionButton onClick={onSignup} hint="ابدأ حسابك الحقيقي في دقائق" className="min-h-14 min-w-[180px] rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ مجانًا</ActionButton>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+            <a href={signup()} onClick={() => track('trial_cta_click', { source: 'final' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ تجربتك المجانية</a>
+            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" onClick={() => track('whatsapp_click', { source: 'final' })} className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-[#25D366]/30 bg-[#25D366]/10 px-7 text-sm font-black text-[#4be08a] transition hover:bg-[#25D366]/20">
+              <span aria-hidden="true">◉</span> تواصل معنا عبر واتساب
+            </a>
           </div>
         </div>
       </section>
 
-      {/* ── FOOTER ── */}
-      <footer className="border-t border-white/10 px-5 py-9 sm:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 text-center text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:text-right">
-          <div className="flex items-center justify-center gap-2 sm:justify-start">
-            <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-7 w-7 rounded-lg" />
-            <span>النخبة — البساطة والتحكم والرؤية.</span>
+      {/* ── SECTION 17 — FOOTER ── */}
+      <footer className="border-t border-white/10 bg-[#0a1226] px-5 py-12 sm:px-8">
+        <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <img src="/nokhba-mark.svg" alt="شعار النخبة" className="h-9 w-9 rounded-xl" />
+              <span className="font-black">النخبة</span>
+            </div>
+            <p className="mt-4 text-sm leading-7 text-slate-400">منصة عربية لإدارة مراكز التعليم: الطلاب والحصص والحضور والامتحانات والتقارير والتحليل — من مكان واحد.</p>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-5">
-            <button className="transition hover:text-white" onClick={onLogin}>تسجيل الدخول</button>
-            <button className="transition hover:text-white" onClick={onSignup}>إنشاء حساب</button>
-            <button className="transition hover:text-white" onClick={() => scrollTo('faq')}>الأسئلة الشائعة</button>
-            <a href="/privacy" className="transition hover:text-white">سياسة الخصوصية</a>
-          </div>
+          {[
+            ['المنتج', [['المميزات', '/features'], ['الأسعار', '/pricing'], ['الحلول', '/solutions'], ['المصادر', '/resources']]],
+            ['الشركة', [['من نحن', '/about'], ['تواصل معنا', '/contact'], ['التجربة المجانية', '/trial']]],
+            ['قانوني', [['سياسة الخصوصية', '/privacy'], ['تسجيل الدخول', '/?auth=login'], ['إنشاء حساب', '/?auth=signup']]],
+          ].map(([title, links]) => (
+            <nav key={title} aria-label={title}>
+              <h3 className="text-sm font-black text-slate-200">{title}</h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-slate-400">
+                {links.map(([label, href]) => (
+                  <li key={href + label}>
+                    {href.startsWith('/?') ? (
+                      <button className="transition hover:text-white" onClick={href === '/?auth=login' ? onLogin : onSignup}>{label}</button>
+                    ) : (
+                      <a className="transition hover:text-white" href={href}>{label}</a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ))}
+        </div>
+        <div className="mx-auto mt-10 max-w-7xl border-t border-white/10 pt-6 text-center text-xs text-slate-500">
+          © {new Date().getFullYear()} النخبة — كل الحقوق محفوظة.
         </div>
       </footer>
 
@@ -536,14 +626,13 @@ export default function LandingPage({ onLogin, onSignup }) {
         href={WHATSAPP_URL}
         target="_blank"
         rel="noreferrer"
+        onClick={() => track('whatsapp_click', { source: 'floating' })}
         aria-label="التواصل عبر WhatsApp على رقم 01014996636"
-        className="fixed bottom-5 left-5 z-50 inline-flex min-h-14 items-center gap-2 rounded-2xl bg-[#25D366] px-4 text-sm font-black text-[#06231a] shadow-xl shadow-emerald-900/30 transition hover:-translate-y-0.5 hover:bg-[#20bd5a]"
+        className="fixed bottom-5 left-5 z-50 inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#25D366] px-4 text-sm font-black text-[#06231a] shadow-xl shadow-emerald-900/30 transition hover:-translate-y-0.5 hover:bg-[#20bd5a]"
       >
         <span aria-hidden="true" className="text-lg leading-none">◉</span>
-        <span className="hidden sm:inline">تواصل على WhatsApp</span>
-        <span className="sm:hidden">واتساب</span>
+        <span className="hidden sm:inline">واتساب</span>
       </a>
     </main>
   )
 }
-
