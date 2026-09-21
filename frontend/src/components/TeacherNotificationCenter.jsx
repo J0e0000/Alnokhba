@@ -64,7 +64,7 @@ function SwipeRow({ onRemove, children }) {
   )
 }
 
-export default function TeacherNotificationCenter({ onSelectStudent }) {
+export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsights }) {
   const { effectiveTeacherId } = useAuth()
   const { isArabic } = useLanguage()
   const { showToast } = useToast()
@@ -143,19 +143,58 @@ export default function TeacherNotificationCenter({ onSelectStudent }) {
     return () => { if (channel) supabase.removeChannel(channel) }
   }, [effectiveTeacherId, isArabic, showToast])
 
-  const markRead = async (id) => {
-    await supabase.from('teacher_notification_events').update({ is_read: true }).eq('id', id)
-    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, is_read: true } : e)))
-    setUnreadCount((prev) => Math.max(0, prev - 1))
+  // FIX (read state kept resetting on reload): two root causes —
+  //   1) the update result was never checked: an RLS/permission/network failure
+  //      flipped the row locally, then the reload refetch brought it back unread;
+  //   2) the portal→teacher bridge (migration 031) inserts a NEW event row for
+  //      every student notification, so identical copies kept arriving — reading
+  //      one left its duplicates unread ("same notification keeps showing").
+  // Now: update is verified (error → toast, local state untouched), and ALL
+  // unread copies with the same title+body are read together with the row.
+  const markRead = async (event) => {
+    const id = event.id
+    const { error, count } = await supabase
+      .from('teacher_notification_events')
+      .update({ is_read: true })
+      .eq('id', id)
+      .eq('is_read', false)
+      .select('id', { count: 'exact' })
+    if (error) {
+      console.warn('mark-read failed:', error.message)
+      showToast(isArabic ? 'تعذر حفظ حالة القراءة — حاول تاني.' : 'Could not save the read state — try again.', 'error')
+      return
+    }
+    const sameContent = (e) => e.title === event.title && (e.body || '') === (event.body || '')
+    // ALWAYS sweep identical unread copies (title+body): the portal→teacher
+    // bridge inserts a row per student notification, so the same logical
+    // notification often exists as several unread copies — reading one must
+    // read them all or the rest keep re-appearing after reload.
+    await supabase
+      .from('teacher_notification_events')
+      .update({ is_read: true })
+      .eq('title', event.title)
+      .eq('body', event.body || '')
+      .eq('is_read', false)
+      .then(({ error: sweepError }) => { if (sweepError) console.warn('mark-read sweep failed:', sweepError.message) })
+      .catch(() => {})
+    const next = events.map((e) => (e.id === id || sameContent(e) ? { ...e, is_read: true } : e))
+    setEvents(next)
+    // Recompute from the swept list so duplicates don't leave a ghost badge.
+    setUnreadCount(next.filter((e) => !e.is_read).length)
   }
 
   const markAllRead = async () => {
     if (!effectiveTeacherId) return
-    await supabase
+    const { error } = await supabase
       .from('teacher_notification_events')
       .update({ is_read: true })
       .eq('teacher_id', effectiveTeacherId)
       .eq('is_read', false)
+    if (error) {
+      console.warn('mark-all-read failed:', error.message)
+      showToast(isArabic ? 'تعذر حفظ حالة القراءة — حاول تاني.' : 'Could not save the read state — try again.', 'error')
+      return
+    }
     setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })))
     setUnreadCount(0)
   }
@@ -253,7 +292,14 @@ export default function TeacherNotificationCenter({ onSelectStudent }) {
                   <SwipeRow key={event.id} onRemove={() => removeEvent(event)}>
                   <button
                     onClick={() => {
-                      if (!event.is_read) markRead(event.id)
+                      if (!event.is_read) markRead(event)
+                      // فريق التحليل report events (InsightsNotifier): jump to the
+                      // insights TAB inside Settings — never a popup over it.
+                      if ((event.title || '').startsWith('فريق التحليل') && onOpenInsights) {
+                        onOpenInsights()
+                        setExpanded(false)
+                        return
+                      }
                       if (event.related_student_id && onSelectStudent) {
                         onSelectStudent(event.related_student_id, event.event_type)
                         setExpanded(false)

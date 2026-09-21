@@ -670,12 +670,26 @@ export function WorkspaceProvider({ children }) {
   }
 
   // ══════════════════════════ LESSON LIFECYCLE ════════════════════════════════
-  const openLessonForGroup = useCallback(async (groupName, { silent = false, forceNew = false } = {}) => {
+  // `date` (owner request — Overview day timeline): a date OTHER than today
+  // means REVIEW — an existing lesson for that day opens as-is (completed or
+  // still open), and we NEVER create sessions in the past. Only today keeps
+  // the open-or-create flow.
+  const openLessonForGroup = useCallback(async (groupName, { silent = false, forceNew = false, date } = {}) => {
     if (!groupName || !teacherIdRef.current) return null
     const lessonSessions = lessonSessionsRef.current
     const groupMeta = settingsRef.current?.group_meta || {}
     const isArabic = isArabicRef.current
     const today = todayISO()
+    const reviewDay = date && date !== today ? date : null
+    if (reviewDay) {
+      const existing = lessonSessions.find((lesson) => lesson.group_name === groupName && lesson.session_date === reviewDay)
+      if (existing) {
+        setActiveLessonId(existing.id)
+        return existing
+      }
+      if (!silent) showToast(isArabic ? 'لا توجد حصة محفوظة لهذا اليوم.' : 'No saved session for this day.', 'info')
+      return null
+    }
     const existingOpen = lessonSessions.find((lesson) => lesson.group_name === groupName && lesson.session_date === today && lesson.status === 'open')
     if (existingOpen) { setActiveLessonId(existingOpen.id); return existingOpen }
     if (!forceNew) {

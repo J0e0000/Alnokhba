@@ -1,14 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import { runInsightAnalysis } from '../lib/insights/engine'
-import { computeDomainMetrics, buildCurrentState, diffInsights } from '../lib/insights/pipeline'
 import { weekStart } from '../lib/week'
 import {
   readLocalSnapshot, fetchRemoteState, fetchFreshAnalysisData,
-  saveWeeklyAnalysis, saveOnDemandAnalysis, fetchReportSnapshot, dismissInsight,
+  saveOnDemandAnalysis, fetchReportSnapshot, dismissInsight,
   analysisDue,
 } from '../lib/insights/dbStore'
+import { runWeeklyPipeline, openShape, buildInsightInputs } from '../lib/insights/runWeekly'
+import { computeDomainMetrics, buildCurrentState } from '../lib/insights/pipeline'
 import { downloadCSV, localDateStr } from '../lib/csv'
 
 // PERF: chart.js stays a lazy chunk (only when the exam trend opens).
@@ -70,15 +70,6 @@ function formatWhen(isoStr) {
   return d.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
     + ' — '
     + d.toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' })
-}
-
-function openShape(list) {
-  return (list || []).map((i) => ({
-    dedupe_key: i.id || i.dedupe_key,
-    evidence: { metrics: i.metrics || i.evidence?.metrics || {} },
-    first_detected_at: i.firstDetectedAt || i.first_detected_at,
-    dbId: i.dbId || i.id,
-  }))
 }
 
 // ── infographic building blocks ─────────────────────────────────────────────
@@ -257,56 +248,28 @@ export default function InsightsReport() {
     return () => { alive = false }
   }, [teacherId])
 
-  const buildInputs = useCallback((fresh) => ({
-    students: ws.students,
-    allAttendance: fresh?.attendance?.length ? fresh.attendance : (ws.allAttendance || []),
-    lessonSessions: fresh?.sessions?.length ? fresh.sessions : (ws.lessonSessions || []),
-    examScoresByStudent: ws.examScoresByStudent,
-    exams: ws.examsList || [],
-    settings: ws.settings,
-    behaviorLogs: fresh?.behaviorLogs || [],
-    now: new Date(),
-  }), [ws.students, ws.allAttendance, ws.lessonSessions, ws.examScoresByStudent, ws.examsList, ws.settings])
+  // Same input contract as before, now shared with InsightsNotifier (one
+  // pipeline for both surfaces — see lib/insights/runWeekly.js).
+  const buildInputs = useCallback((fresh) => buildInsightInputs(ws, fresh),
+    [ws.students, ws.allAttendance, ws.lessonSessions, ws.examScoresByStudent, ws.examsList, ws.settings])
 
   // ── WEEKLY: full pipeline + lifecycle + storage ────────────────────────────
   const analyzeWeekly = useCallback(async () => {
     setRunning(true)
     try {
-      const t0 = performance.now()
-      const fresh = await fetchFreshAnalysisData(teacherId)
-      const inputs = buildInputs(fresh)
-      const computed = runInsightAnalysis(inputs)
-      const domains = computeDomainMetrics(inputs)
-      const currentState = buildCurrentState({ students: ws.students, domains, insights: computed.insights })
-      const prevOpen = openShape(remoteRef.current?.openInsights || [])
-      const dismissedList = [...dismissedKeys]
-      const saved = await saveWeeklyAnalysis(teacherId, {
-        computed,
-        domains,
-        currentState,
-        period: { start: domains.periodStart, end: domains.periodEnd },
-        durationMs: performance.now() - t0,
-      }, prevOpen, dismissedList)
-      const snapshot = saved?.snapshot || {
-        report: {
-          id: null,
-          analysisType: 'weekly',
-          periodStart: domains.periodStart,
-          periodEnd: domains.periodEnd,
-          generatedAt: new Date().toISOString(),
-          summary: currentState.headline,
-          situation: { domains, currentState },
-          insights: diffInsights(prevOpen, computed.insights, dismissedList).upserts,
-        },
-        run: { id: null, runType: 'weekly', completedAt: new Date().toISOString(), durationMs: Math.round(performance.now() - t0), findingsTotal: computed.meta?.findingsTotal ?? 0, insightsTotal: computed.insights.length },
-      }
+      const snapshot = await runWeeklyPipeline({
+        teacherId,
+        ws,
+        prevOpen: openShape(remoteRef.current?.openInsights || []),
+        dismissedKeys,
+      })
       setWeekly(snapshot)
       setViewSnap(null)
       setOpenInsights(snapshot.report.insights.filter((i) => i.status !== 'resolved'))
     } finally {
       setRunning(false)
     }
-  }, [teacherId, buildInputs, ws.students, dismissedKeys])
+  }, [teacherId, ws, dismissedKeys])
 
   // Weekly window: auto-run ONCE per mount when due (never during render)
   useEffect(() => {

@@ -78,7 +78,9 @@ export default function SessionWorkspace({ params }) {
     if (!groupId) { setOpening(false); return }
     if (ws.loading) return undefined
     setOpening(true)
-    ws.openLessonForGroup(groupId, { silent: true }).finally(() => { if (alive) setOpening(false) })
+    // date (Overview day timeline): a past-day review passes its date through —
+    // openLessonForGroup never CREATES for other days, it only re-opens saved ones.
+    ws.openLessonForGroup(groupId, { silent: true, date: params?.date }).finally(() => { if (alive) setOpening(false) })
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId, ws.loading])

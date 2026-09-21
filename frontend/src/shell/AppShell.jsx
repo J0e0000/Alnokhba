@@ -6,6 +6,7 @@ import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from './UIContext'
 import NotificationBell from '../components/NotificationBell'
 import TeacherNotificationCenter from '../components/TeacherNotificationCenter'
+import InsightsNotifier from '../components/InsightsNotifier'
 import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
 import HistoryModal from '../components/HistoryModal'
@@ -332,7 +333,7 @@ export default function AppShell({ onOpenAdmin }) {
       {notifCenterOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 pt-16" onClick={() => setNotifCenterOpen(false)}>
           <div className="glass-card w-full max-w-lg p-4 max-h-[75vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <TeacherNotificationCenter />
+            <TeacherNotificationCenter onOpenInsights={() => { setNotifCenterOpen(false); ui.openInsights() }} />
           </div>
         </div>
       )}
@@ -367,6 +368,10 @@ export default function AppShell({ onOpenAdmin }) {
           <button className="text-fg-subtle hover:text-fg leading-none" onClick={ui.discardQueue} aria-label="إلغاء القائمة المتبقية">✕</button>
         </div>
       )}
+      {/* فريق التحليل greeting (owner request): when the weekly window is due
+          the analysis runs quietly in the background and ONE non-blocking
+          entry lands in the notification bell — never a popup over the UI. */}
+      <InsightsNotifier />
       <UndoSnackbar
         visible={wsMeta.undoSnackbar.visible}
         message={wsMeta.undoSnackbar.message}

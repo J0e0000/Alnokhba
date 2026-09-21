@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
@@ -29,6 +29,11 @@ export default function SettingsArea() {
   const { isDark, toggleTheme } = useTheme()
   const { lang, toggleLang } = useLanguage()
   const { isArabic } = ws
+  // TABS (owner request): فريق التحليل is a real TAB — opening Settings shows
+  // the regular settings first, never the report, and nothing auto-runs on
+  // open. The insights tab renders lazily (its chunk + its weekly window) only
+  // when the teacher actually opens it — or via the bell notification.
+  const [tab, setTab] = useState(() => (ui.area === 'insights' || ui.area === 'analytics') ? 'insights' : 'general')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [brandingOpen, setBrandingOpen] = useState(false)
@@ -46,6 +51,16 @@ export default function SettingsArea() {
     setEditingGroup(g)
     setEditForm({ name: g, stage: meta.stage || '', day: meta.day !== undefined && meta.day !== '' ? Number(meta.day) : 0, time: meta.time || '16:30' })
   }
+
+  // Bell notification intent: a pending "open insights" request from the
+  // notification center switches to the insights tab — and is CONSUMED, so a
+  // later normal visit to Settings lands on the general tab again.
+  useEffect(() => {
+    if (ui.insightsIntent > 0) {
+      setTab('insights')
+      ui.clearInsightsIntent?.()
+    }
+  }, [ui.insightsIntent])
 
   const saveGroupEdit = async () => {
     if (!editingGroup || busyGroup) return
@@ -73,10 +88,29 @@ export default function SettingsArea() {
       <h1 className="text-lg font-black m-0 mb-1">{isArabic ? 'الإعدادات' : 'Settings'}</h1>
       <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'المجموعات، الجدول الأسبوعي، النقاط والرتب، والقوالب.' : 'Groups, weekly schedule, points & ranks, templates.'}</p>
 
-      {/* فريق التحليل (owner request): the analytics product lives INSIDE
-          Settings — ONE simple infographic report anyone can read, with the
-          weekly window auto-running when due and «استنتج المستوى الحالي»
-          for the on-demand pass. Deep tools collapse into one <details>. */}
+      {/* TAB BAR — فريق التحليل lives in its own tab (owner request): opening
+          Settings always lands on the regular settings, nothing pops up. */}
+      <div className="flex gap-1.5 mb-4" role="tablist" aria-label={isArabic ? 'أقسام الإعدادات' : 'Settings sections'}>
+        {([
+          ['general', isArabic ? 'الإعدادات' : 'Settings'],
+          ['insights', `✦ ${isArabic ? 'فريق التحليل' : 'Insights Team'}`],
+        ]).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            className="rounded-xl px-4 py-2 text-[.76rem] font-extrabold transition"
+            style={tab === key
+              ? { background: 'var(--brand-navy)', color: '#fff', border: '1px solid var(--brand-navy)' }
+              : { background: 'transparent', color: 'var(--fg-muted)', border: '1px solid var(--surface-border)' }}
+            onClick={() => setTab(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'insights' && (
       <section className="mb-4 rounded-3xl border border-outline bg-surface overflow-hidden">
         <div
           className="flex items-center gap-3 px-4 py-3.5 border-b border-outline"
@@ -106,7 +140,9 @@ export default function SettingsArea() {
           </Suspense>
         </div>
       </section>
+      )}
 
+      {tab === 'general' && (<>
       {/* FREQUENCY-BASED UI (spec 5, 34): theme / language / undo / history
           are low-frequency — they live HERE on mobile (the header keeps them
           on desktop only). Account controls incl. logout stay below. */}
@@ -288,6 +324,7 @@ export default function SettingsArea() {
           ⎋ {isArabic ? 'تسجيل الخروج' : 'Sign out'}
         </button>
       </section>
+      </>)}
 
       <SettingsModal
         open={settingsOpen}

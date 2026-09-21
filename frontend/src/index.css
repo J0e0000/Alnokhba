@@ -568,6 +568,44 @@ html.dark .btn-glow { background: #223055; }
 .nk-timeline__step--active .nk-timeline__label { color: var(--brand-gold); }
 .nk-timeline__step--done .nk-timeline__label { color: var(--ok-strong); }
 
+/* DAY TIMELINE (Overview — restored by owner request): the horizontal day
+   strip above the stats. Selecting a day filters the session cards with ZERO
+   network cost (everything is already in the store). Today = dot indicator;
+   selected chip filled navy; ‹ › step one day; «اليوم» jumps back. */
+.nk-dayline { display: flex; align-items: center; gap: .5rem; }
+.nk-dayline__nav {
+  width: 2.2rem; height: 2.6rem; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid var(--surface-border); background: var(--surface-container);
+  color: var(--fg-muted); font-size: 1.2rem; font-weight: 900; cursor: pointer;
+}
+.nk-dayline__nav:hover { color: var(--fg); border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent); }
+.nk-dayline__nav:active { transform: scale(.96); }
+.nk-dayline__strip { display: flex; gap: .4rem; overflow-x: auto; padding: 2px; flex: 1; scrollbar-width: none; }
+.nk-dayline__strip::-webkit-scrollbar { display: none; }
+.nk-dayline__day {
+  position: relative; flex: 0 0 auto; min-width: 3.6rem;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: .45rem .5rem; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--surface-border); background: var(--surface-container); color: var(--fg-muted);
+  transition: transform .15s ease, border-color .15s ease;
+}
+.nk-dayline__day small { font-size: .6rem; font-weight: 800; }
+.nk-dayline__day b { font-size: .92rem; font-weight: 900; color: var(--fg); }
+.nk-dayline__day:hover { border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent); transform: translateY(-1px); }
+.nk-dayline__day:active { transform: scale(.97); }
+.nk-dayline__day--sel { background: var(--brand-navy); border-color: var(--brand-navy); }
+.nk-dayline__day--sel small { color: color-mix(in srgb, #fff 82%, transparent); }
+.nk-dayline__day--sel b { color: #fff; }
+.nk-dayline__day--today::after {
+  content: ''; position: absolute; top: 6px; inset-inline-end: 6px;
+  width: 7px; height: 7px; border-radius: 999px; background: var(--brand-gold);
+}
+.nk-dayline__today-btn {
+  flex-shrink: 0; border: 1px dashed color-mix(in srgb, var(--brand-gold) 60%, transparent);
+  color: var(--brand-gold); background: var(--brand-gold-surface);
+  font-size: .68rem; font-weight: 900; padding: .5rem .7rem; border-radius: 12px; cursor: pointer;
+}
+
 /* Attendance rows */
 .nk-row {
   display: flex;

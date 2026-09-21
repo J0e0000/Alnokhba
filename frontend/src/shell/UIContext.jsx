@@ -85,6 +85,10 @@ export function UIProvider({ teacherId, children }) {
   const [sessionParams, setSessionParams] = useState(() => readNavState(teacherId).sessionParams)
   const [historyStudentId, setHistoryStudentId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  // فريق التحليل deep-open intent: the notification center (and any helper
+  // entry) bumps this counter to land the teacher on the insights TAB inside
+  // Settings — SettingsArea watches the counter and switches tabs itself.
+  const [insightsIntent, setInsightsIntent] = useState(0)
   const [tourActive, setTourActive] = useState(false)
   const [confirmState, setConfirmState] = useState(null)
   const [queue, setQueue] = useState(() => readStoredQueue(teacherId))
@@ -134,6 +138,17 @@ export function UIProvider({ teacherId, children }) {
   }, [])
 
   const clearHistoryStudent = useCallback(() => setHistoryStudentId(null), [])
+
+  const openInsights = useCallback(() => {
+    setAreaState('settings')
+    setSessionParams(null)
+    persistNav('settings', null)
+    setInsightsIntent((n) => n + 1)
+  }, [persistNav])
+
+  // SettingsArea consumes the intent after switching tabs, so a LATER normal
+  // visit to الإعدادات always lands on the general tab (never auto-insights).
+  const clearInsightsIntent = useCallback(() => setInsightsIntent(0), [])
 
   const askConfirm = useCallback((message, opts = {}) => new Promise((resolve) => {
     setConfirmState({ message, ...opts, resolve })
@@ -197,8 +212,9 @@ export function UIProvider({ teacherId, children }) {
     queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
+    insightsIntent, openInsights, clearInsightsIntent,
     tourActive, setTourActive,
-  }), [area, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, tourActive])
+  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
 
   return (
     <UIContext.Provider value={value}>

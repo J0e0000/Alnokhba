@@ -102,9 +102,16 @@ export async function handleScannedPayload(decodedText, callbacks) {
   if (resolution.err) return { type: 'error', text: resolution.message }
 
   const resolved = resolution.ok.student || {}
-  if (resolution.ok.already_present_today === true) {
-    return { type: 'info', text: `ℹ️ ${resolved.name || 'الطالب'} مسجل حضور النهارده بالفعل` }
-  }
+  // FIX (QR shows on the system): «already present today» used to RETURN EARLY
+  // here — a student marked present earlier in the day (another session, a
+  // daily record) scanned into the CURRENT session and the scanner refused to
+  // write anything, so the open session's list never showed them. The server
+  // (set_student_attendance / _upsert_attendance_day, migration 039) is built
+  // for exactly this: ONE record per student per DAY, upserted race-safely and
+  // repointed to the session the student physically attends. So we no longer
+  // block on it — we mark (idempotent) and adjust the success wording below.
+  const alreadyToday = resolution.ok.already_present_today === true
+
   // Merge with the local row (keeps warnings/points fresh) — server wins on conflicts.
   const local = students?.find((s) => s.id === resolved.id)
   const merged = { ...local, ...resolved }
@@ -158,6 +165,14 @@ export async function handleScannedPayload(decodedText, callbacks) {
       text: isArabic
         ? `تعذر حفظ حضور ${merged.name} — حاول مرة تانية.`
         : `Could not save attendance for ${merged.name} — please try again.`,
+    }
+  }
+  if (alreadyToday) {
+    return {
+      type: 'success',
+      text: isArabic
+        ? `✅ ${merged.name} مؤكد حضوره في الحصة دي${payText}`
+        : `✅ ${merged.name} confirmed in this session${payText}`,
     }
   }
   return {
