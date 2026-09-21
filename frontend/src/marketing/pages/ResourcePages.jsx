@@ -38,7 +38,7 @@ export function ResourcesPage() {
           ))}
         </div>
       </section>
-      <CtaBand title="طبّق اللي قريته على مركزك مباشرة." sub="ابدأ تجربة مجانية ٧ أيام — وشوف المسار بنفسك." />
+      <CtaBand title="طبّق اللي قريته على مركزك مباشرة." sub="ابدأ تجربة مجانية ١٤ يوم — وشوف المسار بنفسك." />
     </MarketingLayout>
   )
 }
@@ -111,7 +111,7 @@ export function ArticlePage({ article }) {
         <div className="mt-12 rounded-3xl border border-amber-300/25 bg-gradient-to-b from-amber-400/[0.08] to-transparent p-7 text-center">
           <h2 className="text-xl font-black">جرّب النظام ده على مركزك — مجانًا.</h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-300">
-            ٧ أيام تجربة كاملة بدون بطاقة دفع — وشوف الفرق بين الملف والنظام بنفسك.
+            ١٤ يوم تجربة كاملة بدون بطاقة دفع — وشوف الفرق بين الملف والنظام بنفسك.
           </p>
           <div className="mt-5 flex justify-center"><TrialCta big source={`article:${article.slug}`} /></div>
         </div>

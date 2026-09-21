@@ -4,7 +4,7 @@
 import MarketingLayout, { SectionHead, Shot, TrialCta, WaCta, CtaBand } from '../MarketingLayout.jsx'
 import { useSeo, breadcrumbSchema } from '../seo.js'
 import { SCREENS, track, WHATSAPP_URL } from '../config.js'
-import { TRIAL } from '../pricing.js'
+import { TRIAL, fmtAr } from '../pricing.js'
 import { WA_NUMBER } from '../config.js'
 
 // ── SOLUTIONS — who is Alnokhba for (Phase 13) ────────────────────────────
@@ -56,7 +56,7 @@ export function SolutionsPage() {
           <Shot screen={SCREENS.session} alt="مسار الحصة اليومي في منصة النخبة" className="w-full" priority />
         </div>
       </section>
-      <CtaBand title="شوف المنصة على شغل مركزك أنت." sub="تجربة مجانية ٧ أيام على بياناتك الحقيقية — من غير بطاقة." />
+      <CtaBand title="شوف المنصة على شغل مركزك أنت." sub="تجربة مجانية ١٤ يوم على بياناتك الحقيقية — من غير بطاقة." />
     </MarketingLayout>
   )
 }
@@ -105,7 +105,7 @@ export function AboutPage() {
           حتى لو عرف روابط النظام.
         </div>
       </section>
-      <CtaBand title="جرّب المنصة وشوف الفرق بنفسك." sub="٧ أيام تجربة مجانية على بياناتك الحقيقية." />
+      <CtaBand title="جرّب المنصة وشوف الفرق بنفسك." sub="١٤ يوم تجربة مجانية على بياناتك الحقيقية." />
     </MarketingLayout>
   )
 }
@@ -157,8 +157,8 @@ export function ContactPage() {
 // ── TRIAL ─────────────────────────────────────────────────────────────────
 export function TrialPage() {
   useSeo({
-    title: `تجربة مجانية ${TRIAL.days} أيام — بدون بطاقة دفع | النخبة`,
-    description: `افتح حسابك وجرّب كل مميزات النخبة ${TRIAL.days} أيام مجانًا: من غير بطاقة، من غير تجديد تلقائي، وبيانات مركزك تفضل محفوظة.`,
+    title: `تجربة مجانية ${fmtAr(TRIAL.days)} يوم — بدون بطاقة دفع | النخبة`,
+    description: `افتح حسابك وجرّب كل مميزات النخبة ${fmtAr(TRIAL.days)} يوم مجانًا: من غير بطاقة، من غير تجديد تلقائي، والحساب بعد التجربة بيتوقف مش بيتشال — وبيانات مركزك تفضل محفوظة.`,
     path: '/trial',
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'التجربة المجانية', path: '/trial' }]),
   })
@@ -167,7 +167,7 @@ export function TrialPage() {
       <section className="mx-auto max-w-3xl px-5 pb-12 pt-14 sm:px-8">
         <span className="lp-eyebrow">التجربة المجانية</span>
         <h1 className="mt-5 text-4xl font-black leading-[1.2] tracking-tight sm:text-5xl">
-          {TRIAL.days} أيام بكل المميزات — من غير بطاقة دفع.
+          {fmtAr(TRIAL.days)} يوم بكل المميزات — من غير بطاقة دفع.
         </h1>
         <p className="mt-6 leading-8 text-slate-300">
           سجّل باسمك واسم مركزك وابدأ إعداد مجموعاتك فورًا. جرّب مسار الحصة كامل: الحضور، التفاعل، الواجب،
@@ -193,7 +193,7 @@ export function TrialPage() {
           {[
             ['مفيش بطاقة دفع', 'إنشاء الحساب بيحتاج بياناتك الأساسية بس — مفيش أي وسيلة دفع مرتبطة.'],
             ['مفيش تجديد تلقائي', 'التجربة بتنتهي وتسيبك حر — مفيش خصم صامت ولا التزام.'],
-            ['بياناتك محفوظة', 'بعد انتهاء التجربة بياناتك بتفضل محفوظة — التجديد بيرجّع كل حاجة زي ما هي.'],
+            ['بعد التجربة: توقف مش حذف', `لما التجربة تخلص، الحساب بيتوقف مؤقتًا — مش حذف مباشر. بياناتك تفضل محفوظة ${fmtAr(TRIAL.retentionDays)} يوم، والتجديد بيرجّع كل حاجة زي ما هي.`],
             ['مساعدة في الإعداد', 'عطّال؟ واتساب مفتوح — بنساعدك تجهز مركزك خطوة بخطوة.'],
           ].map(([t, d]) => (
             <div key={t} className="rounded-2xl border border-white/10 bg-white/[0.05] p-5">
@@ -203,7 +203,7 @@ export function TrialPage() {
           ))}
         </div>
         <p className="mt-6 text-sm leading-7 text-slate-400">
-          بعد التجربة: تختار باقتك وتتفق على التفاصيل على{' '}
+          بعد التجربة: تختار باقتك (تبدأ من ٣٩٩ جنيه/شهر) وتتفق على التفاصيل على{' '}
           <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">واتساب</a> —
           والتفعيل بيتم فور تأكيد الدفع. الشرح الكامل في صفحة{' '}
           <a href="/pricing" className="font-black text-[#e8bd63] underline decoration-amber-400/40 underline-offset-4">الأسعار</a>.

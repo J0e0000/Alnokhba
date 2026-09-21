@@ -9,8 +9,10 @@ export const SITE_NAME = 'النخبة'
 export const WA_NUMBER = '201014996636'
 export const WA_TEXT = encodeURIComponent('مرحبًا، أريد معرفة المزيد عن منصة النخبة')
 export const WHATSAPP_URL = `https://wa.me/${WA_NUMBER}?text=${WA_TEXT}`
-// Verified in src/pages/Signup.jsx: "حساب جديد — 7 أيام تجربة مجانية"
-export const TRIAL_DAYS = 7
+// Trial model (owner-approved): 14 days, full core product, no card. After the
+// trial the account is paused (not deleted) and data is kept 30 days.
+// Mirrors src/marketing/pricing.js TRIAL — keep both in sync.
+export const TRIAL_DAYS = 14
 // Verified: signup needs email + password + name only — no card, no auto-billing.
 // Verified: renewal/activation happens over WhatsApp after payment confirmation
 // (see SubscriptionGate copy) — there is no self-serve payment gateway yet.

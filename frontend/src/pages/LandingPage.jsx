@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { animate, stagger, useAnimeScope } from '../lib/animeMotion'
 import { setSeo, faqSchema, softwareAppSchema, websiteSchema, orgSchema } from '../marketing/seo.js'
 import { WHATSAPP_URL, SCREENS, track } from '../marketing/config.js'
-import { PLANS } from '../marketing/pricing.js'
+import { PLANS, TRIAL, formatPrice, fmtAr } from '../marketing/pricing.js'
 import { FaqList } from '../marketing/MarketingLayout.jsx'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,7 +70,7 @@ const OWNER_POINTS = [
 ]
 
 const HOW = [
-  ['١', 'ابدأ حسابك', 'اسمك وإيميلك وكلمة مرور — من غير بطاقة دفع. التجربة المجانية ٧ أيام بكامل المميزات.'],
+  ['١', 'ابدأ حسابك', 'اسمك وإيميلك وكلمة مرور — من غير بطاقة دفع. التجربة المجانية ١٤ يوم بكامل المميزات.'],
   ['٢', 'جهّز بيانات مركزك', 'أنشئ مجموعاتك، ضيف طلابك (دفعة واحدة)، واضبط جدول الأسبوع — في جلسة واحدة.'],
   ['٣', 'شغّل مركزك', 'افتح حصة اليوم وسجّل الشغل منه — والتقارير والتحليل بيتكفلوا بنفسهم.'],
 ]
@@ -87,15 +87,15 @@ const AUDIENCE = [
 const FAQS = [
   ['النخبة إيه بالظبط؟', 'منصة عربية لإدارة مراكز التعليم: بتدير الطلاب والمجموعات ومسار الحصة (حضور، تفاعل، واجب، امتحان) وبتولد تقارير واتساب لأولياء الأمور وبتعمل مراجعة أسبوعية لأداء كل مجموعة — كل ده من مكان واحد ومن الموبايل.'],
   ['لِمين مناسبة؟', 'لأي حد بيدير مجموعة طلاب أو أكتر: سنتر دروس، أكاديمية، مدرّس خصوصي بقائمة بتطول، أو مدير أكاديمي بيدير فريق مدرسين.'],
-  ['أقدر أدير كام طالب؟', 'الباقة الاحترافية بتشتغل مع عدد طلاب بلا حد عملي — من عشرات لمئات. الباقة الأساسية بتغطي حتى ٤٠ طالبًا للي بيبدأ.'],
+  ['أقدر أدير كام طالب؟', 'الباقات بتتبع حجم شغلك: Starter حتى ٣٠٠ طالب نشط، Growth حتى ١٬٠٠٠، Pro حتى ٣٬٠٠٠ بفروع غير محدودة، وEnterprise لما تعدّي كده — وكلها بنفس المميزات الأساسية.'],
   ['بتدعم الفروع المتعددة؟', 'المنصة بيدعم فريق عمل بمساعدون بصلاحيات محددة ومساحة مشتركة — ودي طريقة عمل المراكز اللي بيتوسع دلوقتي. لو عندك بنية فروع أكبر، كلمنا على واتساب ونراجع وضعك معاك.'],
   ['المدرسين بيشتغلوا من الموبايل؟', 'أيوه — المنصة مصممة موبايل-أول: كل شاشة من الحضور للتقارير شغالة بكفاءة على الهاتف، وتقدر تضيفها للشاشة الرئيسية كتطبيق.'],
   ['الحضور بيشتغل إزاي؟', 'من جوه مسار الحصة نفسه: قايمة سريعة بالبحث ولمسة لكل طالب أو مسح QR — والحفظ تلقائي فوري. والأسبوع بيتلخص من الجمعة للخميس بقاعدة موحدة.'],
   ['أقدر أنقل طلابي الحاليين؟', 'أيوه — ضيفهم دفعة واحدة من شاشة الإضافة السريعة (اسم ورقم اختياري لكل طالب)، أو دخّلهم من ملف Excel عبر أدوات الاستيراد الموجودة في المنصة.'],
-  ['في تجربة مجانية؟', `أيوه — ${7} أيام بكامل المميزات، من غير بطاقة دفع ومن غير تجديد تلقائي. تعرف تحكم لو النظام مناسب قبل أي قرار. شوف صفحة التجربة المجانية للتفاصيل.`],
-  ['الأسعار إزاي؟', 'الباقات واضحة حسب حجم مركزك (شوف صفحة الأسعار)، والسعر النهائي بيتأكد معك شخصيًا على واتساب قبل أي التزام — مفيش دفع أونلاين ولا خصم صامت.'],
+  ['في تجربة مجانية؟', `أيوه — ${fmtAr(TRIAL.days)} يوم بكامل المميزات الأساسية، من غير بطاقة دفع ومن غير تجديد تلقائي. وبعد التجربة الحساب بيتوقف مؤقتًا (مش حذف) وبياناتك تفضل محفوظة ${fmtAr(TRIAL.retentionDays)} يوم. شوف صفحة التجربة المجانية للتفاصيل.`],
+  ['الأسعار إزاي؟', 'أسعار واضحة بالجنيه المصري: تبدأ من ٣٩٩ ج/شهر لباقة Starter (حتى ٣٠٠ طالب) وبتكبر مع مركزك — والتفعيل بيتأكد معك شخصيًا على واتساب. مفيش دفع أونلاين ولا خصم صامت.'],
   ['بياناتي وطلابي محمية إزاي؟', 'كل حساب مفصول على مستوى صفوف قاعدة البيانات نفسها (RLS): محدش غيرك يقدر يوصل بيانات مركزك حتى لو غيّر روابط في الطلب — السيرفر هو اللي بيرفض، مش الواجهة.'],
-  ['أقدر ألغي؟', 'أي وقت — مفيش عقد ولا التزام. وبما إن مفيش تجديد تلقائي، مجرد ما ما تكملش الدفع الحساب بيتوقف وبياناتك تفضل محفوظة.'],
+  ['أقدر ألغي؟', 'أي وقت — مفيش عقد ولا التزام. وبما إن مفيش تجديد تلقائي، مجرد ما ما تكملش الدفع الحساب بيتوقف مؤقتًا وبياناتك تفضل محفوظة ٣٠ يوم — مش حذف فوري.'],
   ['بتدعم واتساب إزاي؟', 'بتوليد تقارير جاهزة من بيانات الطالب، مراجعتها قبل الإرسال، وبعتهم عبر واتساب بقائمة منظمة بتكمّل من حيث توقفت حتى لو غلقت الصفحة — مع حماية من الإرسال المكرر.'],
 ]
 
@@ -154,7 +154,7 @@ export default function LandingPage({ onLogin, onSignup }) {
   useEffect(() => {
     const cleanup = setSeo({
       title: 'النخبة — شغّل مركزك التعليمي كله من مكان واحد | برنامج إدارة السنتر',
-      description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ٧ أيام بدون بطاقة.',
+      description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ١٤ يوم بدون بطاقة.',
       path: '/',
       jsonLd: [orgSchema, websiteSchema, softwareAppSchema, faqSchema(FAQS)],
     })
@@ -215,7 +215,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               </a>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-xs font-bold text-slate-400">
-              <span>✓ تجربة ٧ أيام من غير بطاقة</span>
+              <span>✓ تجربة ١٤ يوم من غير بطاقة</span>
               <span>✓ بيانات محمية على مستوى قاعدة البيانات</span>
               <span>✓ مصممة للموبايل الأول</span>
             </div>
@@ -537,16 +537,19 @@ export default function LandingPage({ onLogin, onSignup }) {
       {/* ── SECTION 14 — PRICING TEASER (config-driven) ── */}
       <section id="plans" className="scroll-mt-24 border-y border-white/10 bg-[#0c1631]/60 px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-7xl">
-          <SectionHead center eyebrow="الباقات" title="ابدأ مجانًا — وكبّر لما تشوف الفايدة." sub="تجربة مجانية ٧ أيام بكل المميزات ومن غير بطاقة. بعدها تختار الباقة اللي على قد شغلك — والتفعيل بيتم على واتساب." />
-          <div className="mt-12 grid gap-5 lg:grid-cols-3">
+          <SectionHead center eyebrow="الباقات" title="أسعار واضحة — ابدأ مجانًا وكبّر لما تشوف الفايدة." sub={`تجربة مجانية ${fmtAr(TRIAL.days)} يوم بكل المميزات ومن غير بطاقة. بعدها تختار الباقة اللي على قد شغلك — والتفعيل بيتم على واتساب.`} />
+          <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {PLANS.map((p) => (
-              <div key={p.id} className={`lp-reveal relative flex flex-col rounded-3xl border p-8 ${p.highlighted ? 'border-amber-300/45 bg-gradient-to-b from-amber-400/[0.10] to-white/[0.03] shadow-2xl shadow-amber-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
+              <div key={p.id} className={`lp-reveal relative flex flex-col rounded-3xl border p-7 ${p.highlighted ? 'border-amber-300/45 bg-gradient-to-b from-amber-400/[0.10] to-white/[0.03] shadow-2xl shadow-amber-500/10' : 'border-white/10 bg-white/[0.05]'}`}>
                 {p.highlighted && <span className="absolute -top-3.5 right-6 rounded-full bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-3.5 py-1.5 text-[11px] font-black text-[#1a1205] shadow-lg shadow-amber-500/25">الأكثر اختيارًا</span>}
                 <div className="text-sm font-black text-slate-400">{p.who}</div>
                 <h3 className="mt-1 text-2xl font-black">{p.name}</h3>
-                <div className="mt-3 text-sm font-black text-[#e8bd63]">{p.studentLimit}</div>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-[#e8bd63]">{formatPrice(p)}</span>
+                </div>
+                <div className="mt-2 text-sm font-black text-slate-300">{p.studentLimit}</div>
                 <ul className="mt-5 flex-1 space-y-2.5">
-                  {p.capabilities.slice(0, 4).map((c) => (
+                  {p.capabilities.slice(0, 3).map((c) => (
                     <li key={c} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">
                       <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e3b04b]" /> {c}
                     </li>
@@ -558,7 +561,7 @@ export default function LandingPage({ onLogin, onSignup }) {
               </div>
             ))}
           </div>
-          <p className="mt-6 text-center text-xs text-slate-400">مفيش دفع أونلاين ولا تجديد تلقائي — السعر النهائي بيتأكد معك شخصيًا على واتساب.</p>
+          <p className="mt-6 text-center text-xs text-slate-400">مفيش دفع أونلاين ولا تجديد تلقائي — التفعيل بيتأكد معك شخصيًا على واتساب.</p>
         </div>
       </section>
 
@@ -575,7 +578,7 @@ export default function LandingPage({ onLogin, onSignup }) {
         <div className="lp-cta-band lp-reveal mx-auto max-w-7xl rounded-[30px] border border-white/10 px-6 py-16 text-center sm:px-10">
           <h2 className="text-3xl font-black sm:text-4xl">جاهز تشغّل مركزك من مكان واحد؟</h2>
           <p className="mx-auto mt-4 max-w-xl text-sm leading-8 text-slate-300">
-            تجربة مجانية ٧ أيام بكامل المميزات — من غير بطاقة دفع. ولو حابب تسأل الأول، إحنا على واتساب.
+            تجربة مجانية ١٤ يوم بكامل المميزات — من غير بطاقة دفع. ولو حابب تسأل الأول، إحنا على واتساب.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <a href={signup()} onClick={() => track('trial_cta_click', { source: 'final' })} className="inline-flex min-h-14 min-w-[190px] items-center justify-center rounded-2xl bg-gradient-to-l from-[#e3b04b] to-[#c98f2e] px-7 text-sm font-black text-[#1a1205] shadow-xl shadow-amber-500/25 transition hover:-translate-y-0.5">ابدأ تجربتك المجانية</a>
