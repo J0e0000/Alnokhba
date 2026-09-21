@@ -127,7 +127,7 @@ export function WorkspaceProvider({ children }) {
         supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
         supabase.from('behavior_logs').select('*').eq('teacher_id', tid).gte('created_at', todayStart.toISOString()).order('created_at'),
         // PERF + FIX: attendance_date is required by the Analytics 30/90-day
-        // filters (InsightsArea advanced tools) — it used to be missing from this select,
+        // filters (InsightsReport advanced tools) — it used to be missing from this select,
         // which silently made every period-filtered attendance percentage
         // null. Selecting it costs nothing.
         supabase.from('attendance_records').select('student_id, status, recorded_at, lesson_session_id, homework_status, attendance_date').eq('teacher_id', tid).order('recorded_at', { ascending: false }).limit(5000),
@@ -483,7 +483,7 @@ export function WorkspaceProvider({ children }) {
         flashSaved(id)
       }
       setUndoSnackbar({ visible: true, message: `${reason}: ${s.name}` })
-    } catch (error) {
+    } catch {
       patchStudent(id, { points: prevPoints })
       showToast(isArabic ? `تعذر حفظ نقاط ${s.name}. حاول مرة أخرى.` : `Could not save points for ${s.name}. Please try again.`, 'error')
     } finally { setSavingIds((p) => { const n = new Set(p); n.delete(id); return n }) }
@@ -602,7 +602,6 @@ export function WorkspaceProvider({ children }) {
     const lessonAttendanceByStudent = lessonAttendanceRef.current
     const isOnline = isOnlineRef.current
     const isArabic = isArabicRef.current
-    const effectiveTeacherId = teacherIdRef.current
     let lessonId = null
     if (lessonIdOverride !== undefined) {
       lessonId = lessonIdOverride || null

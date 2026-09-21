@@ -17,16 +17,16 @@ import TourOverlay from '../components/TourOverlay'
 
 // PERF (bundle splitting): Home and the Session Workspace stay in the main
 // bundle (they ARE the daily flow — lazy chunks would add a flash to the
-// most-used paths). Secondary destinations load on demand: opening Students,
-// Reports, فريق التحليل, Settings, or History fetches only that area's chunk,
-// so first paint stays light and unrelated area code never runs at startup.
-// ANALYTICS RESTRUCTURE: the old "التحليلات" dashboard area was merged INTO
-// فريق التحليل (InsightsArea) — one dedicated analytics product.
+// first paint). Secondary destinations load on demand: opening Students,
+// Reports, Settings, or History fetches only that area's chunk, so first
+// paint stays light and unrelated area code never runs at startup.
+// ANALYTICS RESTRUCTURE: the old "التحليلات" dashboard area was merged into
+// فريق التحليل, which now lives INSIDE Settings (owner request) — one simple
+// infographic report, no standalone area, no account-menu entry.
 const StudentsArea = lazy(() => import('../areas/StudentsArea'))
 const HistoryArea = lazy(() => import('../areas/HistoryArea'))
 const ReportsArea = lazy(() => import('../areas/ReportsArea'))
 const SettingsArea = lazy(() => import('../areas/SettingsArea'))
-const InsightsArea = lazy(() => import('../areas/InsightsArea'))
 
 const AREA_FALLBACK_AR = 'جاري التحميل...'
 const AREA_FALLBACK_EN = 'Loading...'
@@ -268,8 +268,9 @@ export default function AppShell({ onOpenAdmin }) {
             {ui.area === 'history' && <HistoryArea />}
             {ui.area === 'reports' && <ReportsArea />}
             {ui.area === 'settings' && <SettingsArea />}
-            {/* legacy 'analytics' deep links land in the restructured product */}
-            {(ui.area === 'insights' || ui.area === 'analytics') && <InsightsArea />}
+            {/* legacy 'insights'/'analytics' deep links land in Settings —
+                فريق التحليل lives there now (one infographic report). */}
+            {(ui.area === 'insights' || ui.area === 'analytics') && <SettingsArea />}
           </Suspense>
         </main>
       </div>
@@ -306,17 +307,8 @@ export default function AppShell({ onOpenAdmin }) {
                 <b>{profile.full_name}</b>
                 <small>{roleLabel}{profile.email ? ` · ${profile.email}` : ''}</small>
               </div>
-              {/* Smart Insights destination (spec 3): a deliberate entry in the
-                  More/⋯ account menu — never a dashboard card, popup, or
-                  notification, and never inside the Session Workspace. */}
-              <button
-                className="nk-account-menu__item"
-                role="menuitem"
-                onClick={() => { setAccountOpen(false); ui.setArea('insights') }}
-              >
-                <span aria-hidden="true">⌁</span>
-                <span>{isArabic ? 'فريق التحليل' : 'Smart Insights'}</span>
-              </button>
+              {/* فريق التحليل moved inside الإعدادات (owner request) — the
+                  account menu keeps only the settings destination. */}
               <button
                 className="nk-account-menu__item"
                 role="menuitem"

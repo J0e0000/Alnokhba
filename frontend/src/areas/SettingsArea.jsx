@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useAuth } from '../context/AuthContext'
@@ -10,6 +10,10 @@ import BrandingModal from '../components/BrandingModal'
 import HelpSupportModal from '../components/HelpSupportModal'
 import { IS_DEMO } from '../lib/supabaseClient'
 import { GRADES_BY_STAGE } from '../lib/helpers'
+
+// PERF: the insights report stays its own lazy chunk — it loads only when
+// Settings (its new home) renders, never at startup.
+const InsightsReport = lazy(() => import('../components/InsightsReport'))
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SETTINGS AREA — groups & weekly schedule (multi-slot per group supported),
@@ -68,6 +72,16 @@ export default function SettingsArea() {
     <div>
       <h1 className="text-lg font-black m-0 mb-1">{isArabic ? 'الإعدادات' : 'Settings'}</h1>
       <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'المجموعات، الجدول الأسبوعي، النقاط والرتب، والقوالب.' : 'Groups, weekly schedule, points & ranks, templates.'}</p>
+
+      {/* فريق التحليل (owner request): the analytics product lives INSIDE
+          Settings — ONE simple infographic report anyone can read, with the
+          weekly window auto-running when due and «استنتج المستوى الحالي»
+          for the on-demand pass. Deep tools collapse into one <details>. */}
+      <section className="mb-4">
+        <Suspense fallback={<div className="glass-card p-4 text-[.74rem] text-fg-muted">{isArabic ? 'جاري فتح فريق التحليل…' : 'Loading insights…'}</div>}>
+          <InsightsReport />
+        </Suspense>
+      </section>
 
       {/* FREQUENCY-BASED UI (spec 5, 34): theme / language / undo / history
           are low-frequency — they live HERE on mobile (the header keeps them

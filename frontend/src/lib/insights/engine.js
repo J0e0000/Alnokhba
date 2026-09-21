@@ -10,6 +10,13 @@
 //   DATA → FINDING → VALIDATION → TREND/PERSISTENCE → IMPACT ASSESSMENT
 //        → MATERIALITY CHECK → INSIGHT → RECOMMENDED ACTION
 //
+// EXAM COVERAGE RULE (teacher directive): an exam held at session S tests
+// S's lesson PLUS every lesson of the same group held before it. When the
+// exam rows carry lesson_session_id, exam findings scope their cause-check
+// (absence) to that covered window instead of the generic analysis window —
+// and the insight says so in plain Arabic. When the link is missing the
+// coverage is silently skipped (never fabricated).
+//
 // Design constraints:
 // - Pure functions over data ALREADY loaded in WorkspaceStore. No extra
 //   network calls, no background timers — the analysis runs ONLY inside the
@@ -91,6 +98,9 @@ function recordDate(r) {
  *   lessonSessions    lesson_sessions rows (id, group_name, session_date, status)
  *   examScoresByStudent map student_id → [{ total_score, max_score_per_section,
  *                     section_scores, created_at, exam_id, exam_title }]
+ *   exams             OPTIONAL exams rows (id, lesson_session_id, created_at).
+ *                     Enables the exam-coverage rule: an exam tests its own
+ *                     lesson + the lessons before it. Missing → skipped.
  *   settings          teacher_settings row (insight_config.max_warnings)
  *   behaviorLogs      OPTIONAL behavior_logs rows (student_id, points_delta,
  *                     created_at) covering the current window. When absent
@@ -106,6 +116,7 @@ export function runInsightAnalysis(input = {}) {
   const attendance = Array.isArray(input.allAttendance) ? input.allAttendance : []
   const sessions = Array.isArray(input.lessonSessions) ? input.lessonSessions : []
   const scoresByStudent = input.examScoresByStudent || {}
+  const exams = Array.isArray(input.exams) ? input.exams : []
   const behaviorLogs = Array.isArray(input.behaviorLogs) ? input.behaviorLogs : []
   const maxWarnings = Number(input.settings?.insight_config?.max_warnings ?? 3) || 3
 
@@ -116,7 +127,6 @@ export function runInsightAnalysis(input = {}) {
 
   const completed = sessions.filter((s) => s.status === 'completed' && s.session_date && s.group_name)
   const sessionById = new Map(sessions.map((s) => [s.id, s]))
-  void sessionById
   const studentsById = new Map(students.map((s) => [s.id, s]))
 
   const insights = []
@@ -130,6 +140,25 @@ export function runInsightAnalysis(input = {}) {
     if (!r.lesson_session_id) continue
     if (!recordsBySession.has(r.lesson_session_id)) recordsBySession.set(r.lesson_session_id, [])
     recordsBySession.get(r.lesson_session_id).push(r)
+  }
+
+  // ── Exam coverage (the exam tests its lesson + the lessons before it) ────
+  const sessionOfExam = new Map()
+  for (const e of exams) {
+    if (e?.id && e.lesson_session_id) sessionOfExam.set(e.id, e.lesson_session_id)
+  }
+  // Returns { examSessionDate, sessions } — every completed session of the
+  // exam's group with session_date <= the exam's session date — or null when
+  // the exam is not linked to a session (coverage is never fabricated).
+  const coveredForExam = (examId) => {
+    const sid = sessionOfExam.get(examId)
+    if (!sid) return null
+    const ses = sessionById.get(sid)
+    if (!ses?.group_name || !ses.session_date) return null
+    return {
+      examSessionDate: ses.session_date,
+      sessions: completed.filter((s) => s.group_name === ses.group_name && s.session_date <= ses.session_date),
+    }
   }
 
   const groups = [...new Set(completed.map((s) => s.group_name))]
@@ -368,20 +397,30 @@ export function runInsightAnalysis(input = {}) {
         const hit = (scoresByStudent[s.id] || []).find((sc) => sc.exam_id === sharedExamId)
         if (hit) { examTitle = hit.exam_title || ''; break }
       }
+      // Coverage: the shared exam tests its lesson + the lessons before it —
+      // so the collective drop measures understanding of THAT part exactly.
+      const sharedCoverage = coveredForExam(sharedExamId)
+      const difficultyLines = [
+        'أغلب الطلاب اللي نزل مستواهم نزل مع بعض في نفس الامتحان — ده بيوحي إن صعوبة الامتحان هي السبب مش مستوى الطلاب.',
+        `عدد الطلاب المتأثرين: ${sharedCount}.`,
+      ]
+      if (sharedCoverage?.sessions.length) {
+        difficultyLines.push(`والامتحان ده بيختبر حصته والحصص اللي قبلها (${arNum(sharedCoverage.sessions.length)} حصص) — فالنزول فيه بيقيس فهم الجزء ده تحديدًا.`)
+      }
       push({
         id: `exam-difficulty:${group}`,
         type: 'exam-difficulty',
         group,
         severity: 'watch',
         title: `امتحان ${examTitle || 'الأخير'} كان أصعب من العادة في مجموعة ${group}`,
-        lines: [
-          'أغلب الطلاب اللي نزل مستواهم نزل مع بعض في نفس الامتحان — ده بيوحي إن صعوبة الامتحان هي السبب مش مستوى الطلاب.',
-          `عدد الطلاب المتأثرين: ${sharedCount}.`,
-        ],
+        lines: difficultyLines,
         action: 'راجع الامتحان نفسه: لو فعلاً كان أصعب، اشرح الأسئلة الصعبة في الحصة الجاية — مفيش داعي تتعامل مع الموضوع كمشكلة عند الطلاب.',
         students: [],
-        metrics: { affected: sharedCount, eligible: withScores.length },
-        reasons: [`نفس الامتحان هو نقطة النزول لـ ${sharedCount} طلاب`, `عدد الطلاب اللي عندهم تاريخ امتحانات كافي: ${withScores.length}`],
+        metrics: { affected: sharedCount, eligible: withScores.length, coveredSessions: sharedCoverage?.sessions.length ?? null },
+        reasons: [
+          `نفس الامتحان هو نقطة النزول لـ ${sharedCount} طلاب`,
+          `عدد الطلاب اللي عندهم تاريخ امتحانات كافي: ${withScores.length}`,
+        ],
       })
       continue
     }
@@ -389,6 +428,36 @@ export function runInsightAnalysis(input = {}) {
     if (list.length < needed) continue
     list.sort((a, b) => b.drop - a.drop)
     const names = list.slice(0, 5).map((d) => d.student.name).join('، ') + (list.length > 5 ? ` و${list.length - 5} تانيين` : '')
+
+    // Coverage window (the exam tests its lesson + the lessons before it):
+    // scope the cause-check to the part actually tested. We use the latest
+    // scopeable last-exam among the declining students and count how many of
+    // them were absent inside its covered lessons — observed fact only, no
+    // invented causation. Skipped silently when exams/session links are missing.
+    let coverage = null
+    for (const d of list) {
+      const arr = (scoresByStudent[d.student.id] || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      const last = arr[arr.length - 1]
+      if (!last?.exam_id) continue
+      const cov = coveredForExam(last.exam_id)
+      if (cov?.sessions.length && (!coverage || cov.examSessionDate > coverage.examSessionDate)) coverage = cov
+    }
+    let coverageLine = null
+    let absentInCovered = null
+    if (coverage) {
+      const decliningIds = new Set(list.map((d) => d.student.id))
+      const absentSet = new Set()
+      for (const s of coverage.sessions) {
+        for (const r of (recordsBySession.get(s.id) || [])) {
+          if (r.status === 'غائب' && decliningIds.has(r.student_id)) absentSet.add(r.student_id)
+        }
+      }
+      absentInCovered = absentSet.size
+      coverageLine = absentInCovered > 0
+        ? `و${arNum(absentInCovered)} منهم كانوا غايبين في حصص من الجزء اللي الامتحان بيختبره (حصة الامتحان والحصص اللي قبلها — ${arNum(coverage.sessions.length)} حصص) — دي أول فجوة تراجعها.`
+        : `ومفيش غياب في الجزء اللي الامتحان بيختبره (حصة الامتحان والحصص اللي قبلها — ${arNum(coverage.sessions.length)} حصص) — فمراجعة المستوى نفسها أهم هنا من متابعة الحضور.`
+    }
+
     push({
       id: `exam-decline:${group}`,
       type: 'exam-decline',
@@ -398,12 +467,24 @@ export function runInsightAnalysis(input = {}) {
       lines: [
         `الأسامي: ${names}.`,
         `كل واحد فيهم نزل ${pct(cfg.examDeclineShare)}% أو أكتر بين آخر امتحانين ومتوسط الامتحانات اللي قبلهم — والنزول متكرر مش يوم وحيد.`,
+        ...(coverageLine ? [coverageLine] : []),
         'لو الاستمرار كده، هيوصلوا لمرحلة تعجز فيها عن متابعة المنهج.',
       ],
       action: 'حدد موعد مراجعة سريعة مع الطلاب دول قبل الامتحان الجاي، وابعت لأولياء الأمور تقرير بمستوى ولادهم بالظبط.',
       students: list.map((d) => ({ id: d.student.id, name: d.student.name })),
-      metrics: { students: list.length, needed, eligible: withScores.length },
-      reasons: [`عدد الطلاب ${list.length} >= الحد المطلوب ${needed}`, `النزول متكرر في آخر ${cfg.examRecent} امتحانات وليس امتحان واحد`, `النسبة >= ${pct(cfg.examDeclineShare)}%`],
+      metrics: {
+        students: list.length,
+        needed,
+        eligible: withScores.length,
+        coveredSessions: coverage?.sessions.length ?? null,
+        absentInCovered,
+      },
+      reasons: [
+        `عدد الطلاب ${list.length} >= الحد المطلوب ${needed}`,
+        `النزول متكرر في آخر ${cfg.examRecent} امتحانات وليس امتحان واحد`,
+        `النسبة >= ${pct(cfg.examDeclineShare)}%`,
+        ...(coverage ? [`امتحان الحصة بيختبر حصته والحصص اللي قبلها (${arNum(coverage.sessions.length)} حصة) — الغياب اتحسب جوه الجزء ده بس`] : []),
+      ],
     })
   }
 
