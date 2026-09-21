@@ -1,5 +1,6 @@
 import { Suspense, lazy, useMemo, useState, useEffect } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import Modal from '../../components/Modal'
 
 // PERF (performance round): html5-qrcode (~230 KB minified) streams in the
 // first time the teacher actually opens the scanner — never up front.
@@ -39,6 +40,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
@@ -135,6 +137,15 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
         <button className="nk-wf-ghost shrink-0" onClick={() => setQrOpen(true)} title={isArabic ? 'مسح QR الطالب' : 'Scan student QR'}>
           ⛶ QR
         </button>
+        {/* Quick multi-add (teacher request): students added here land in the
+            session's group instantly and show up in this attendance list. */}
+        <button
+          className="nk-wf-ghost shrink-0"
+          onClick={() => setAddOpen(true)}
+          title={isArabic ? 'إضافة أكتر من طالب للمجموعة' : 'Add multiple students'}
+        >
+          ＋
+        </button>
       </div>
 
       {/* Filter chips + live counts — compact, horizontally scrollable */}
@@ -226,7 +237,11 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
           )
         })}
         {visible.length === 0 && (
-          <p className="text-center py-6 text-sm text-fg-muted">{isArabic ? 'لا نتائج مطابقة' : 'No matching students'}</p>
+          <p className="text-center py-6 text-sm text-fg-muted">
+            {students.length === 0
+              ? (isArabic ? `مفيش طلاب في مجموعة «${groupId}» لسه — ضيفهم من زرار ＋ فوق` : `No students in “${groupId}” yet — add them with the ＋ button above`)
+              : (isArabic ? 'لا نتائج مطابقة' : 'No matching students')}
+          </p>
         )}
       </div>
 
@@ -248,6 +263,119 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
         />
       </Suspense>
 
+      {addOpen && <QuickAddStudentsModal groupId={groupId} onClose={() => setAddOpen(false)} />}
+
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUICK MULTI-ADD (attendance tab, teacher request): a small ＋ button in the
+// attendance tools opens this compact modal — add several students at once
+// WITHOUT leaving the session. The group is FIXED to the current session's
+// group (that is the whole point: they must appear in THIS list immediately);
+// the stage inherits the group's stage (group is authoritative, same rule as
+// StudentModal). Validation + storage are the SAME pure helpers StudentsArea
+// uses (validateBulkRows / bulkAddStudents) — one source of truth, no second
+// student-creation path. QR link generation is intentionally NOT repeated
+// here — it stays a StudentsArea concern, this flow stays light.
+// ═══════════════════════════════════════════════════════════════════════════
+function QuickAddStudentsModal({ groupId, onClose }) {
+  const ws = useWorkspace()
+  const { isArabic } = ws
+  const [rows, setRows] = useState([{ name: '', phone: '' }, { name: '', phone: '' }, { name: '', phone: '' }])
+  const [saving, setSaving] = useState(false)
+  const [problems, setProblems] = useState([])
+
+  const setRow = (i, patch) => setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  // Group + stage are bound at save time from the session's group — nothing
+  // per-row to configure, so the modal stays tiny.
+  const filled = rows
+    .map((r) => ({ ...r, group: groupId, stage: ws.groupMeta?.[groupId]?.stage || '' }))
+    .filter((r) => String(r.name || '').trim() || String(r.phone || '').trim())
+
+  const save = async () => {
+    if (saving) return
+    if (!filled.length) {
+      setProblems([{ index: -1, reason: isArabic ? 'أدخل طالبًا واحدًا على الأقل' : 'Enter at least one student' }])
+      return
+    }
+    setSaving(true)
+    try {
+      // Pure validation first (duplicates + phone format) — nothing is
+      // written until it passes, then ONE batched insert via the store.
+      const found = ws.validateBulkRows(filled)
+      if (found.length) { setProblems(found); return }
+      const res = await ws.bulkAddStudents(filled, () => {})
+      if (res.ok) onClose()
+      else setProblems(res.problems || [])
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={isArabic ? `إضافة طلاب — ${groupId}` : `Add students — ${groupId}`}>
+      <p className="text-[.72rem] text-fg-muted mt-0 mb-3">
+        {isArabic
+          ? `هيتم إضافتهم في مجموعة «${groupId}» ويظهروا في قائمة الحضور فورًا بعد الحفظ.`
+          : `They will be added to “${groupId}” and appear in the attendance list right after saving.`}
+      </p>
+      <div className="grid gap-2">
+        {rows.map((r, i) => (
+          <div key={i} className="flex gap-1.5 items-center">
+            <input
+              className="glass-input rounded-xl px-3 py-2 text-sm flex-1 min-w-0"
+              placeholder={isArabic ? 'اسم الطالب' : 'Student name'}
+              value={r.name}
+              onChange={(e) => setRow(i, { name: e.target.value })}
+              autoComplete="off"
+            />
+            <input
+              className="glass-input rounded-xl px-3 py-2 text-[.8rem] w-[9.5rem] shrink-0"
+              placeholder={isArabic ? 'الهاتف (اختياري)' : 'Phone (optional)'}
+              value={r.phone}
+              inputMode="tel"
+              onChange={(e) => setRow(i, { phone: e.target.value })}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="btn-ghost !min-h-0 rounded-lg px-2 py-1.5 text-[.7rem] shrink-0"
+              disabled={rows.length === 1 || saving}
+              onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+              title={isArabic ? 'إزالة الصف' : 'Remove row'}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold mt-2"
+        onClick={() => setRows((prev) => [...prev, { name: '', phone: '' }])}
+      >
+        ＋ {isArabic ? 'إضافة صف' : 'Add row'}
+      </button>
+      {problems.length > 0 && (
+        <div className="nk-notice mt-3" style={{ borderColor: 'var(--danger, #ef4444)' }} role="alert">
+          <ul className="m-0 pe-4 text-[.7rem] leading-6">
+            {problems.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'طالب' : 'Student'} ${p.index + 1}: ` : ''}{p.reason}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="flex justify-end gap-2 mt-4">
+        <button type="button" className="btn-ghost rounded-xl px-4 py-2.5 text-[.74rem] font-extrabold" onClick={onClose}>
+          {isArabic ? 'إلغاء' : 'Cancel'}
+        </button>
+        <button
+          type="button"
+          className="btn-navy rounded-xl px-4 py-2.5 text-[.74rem] font-extrabold disabled:opacity-50"
+          disabled={saving}
+          onClick={save}
+        >
+          {saving ? (isArabic ? 'جاري الحفظ…' : 'Saving…') : (isArabic ? 'حفظ الطلاب' : 'Save students')}
+        </button>
+      </div>
+    </Modal>
   )
 }
