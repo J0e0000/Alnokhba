@@ -491,7 +491,11 @@ export function WorkspaceProvider({ children }) {
     } finally { setSavingIds((p) => { const n = new Set(p); n.delete(id); return n }) }
   }
 
-  const setAttendance = async (id, status, lessonIdOverride) => {
+  // opts.allowCompleted — EDIT PAST SESSION (owner request): the explicit
+  // per-session edit mode (SessionWorkspace) passes this so a COMPLETED
+  // lesson's attendance can be corrected through the same battle-tested
+  // write path (points diff stays symmetric against the lesson's own rows).
+  const setAttendance = async (id, status, lessonIdOverride, opts = {}) => {
     const s = studentsRef.current.find((x) => x.id === id); if (!s) return
     if (savingIdsRef.current.has(id)) return
     const lessonSessions = lessonSessionsRef.current
@@ -508,7 +512,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonSessions.find((lesson) => lesson.group_name === s.group_name && lesson.session_date === today && lesson.status === 'open')?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
-    if (lessonId && targetLesson?.status === 'completed') {
+    if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
       showToast(isArabic ? 'الحصة دي منتهية بالفعل — افتح حصة جديدة عشان تسجل الحضور.' : 'This lesson is already completed — open a new lesson to record attendance.', 'error')
       return
     }
@@ -597,7 +601,7 @@ export function WorkspaceProvider({ children }) {
     } finally { setSavingIds((p) => { const n = new Set(p); n.delete(id); return n }) }
   }
 
-  const updateHW = async (id, status, lessonIdOverride) => {
+  const updateHW = async (id, status, lessonIdOverride, opts = {}) => {
     const s = studentsRef.current.find((x) => x.id === id); if (!s) return
     if (savingIdsRef.current.has(id)) return
     const lessonSessions = lessonSessionsRef.current
@@ -612,7 +616,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonSessions.find((lesson) => lesson.group_name === s.group_name && lesson.session_date === today && lesson.status === 'open')?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
-    if (lessonId && targetLesson?.status === 'completed') {
+    if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
       showToast(isArabic ? 'الحصة دي منتهية بالفعل — افتح حصة جديدة عشان تسجل الواجب.' : 'This lesson is already completed — open a new lesson to record homework.', 'error')
       return
     }
@@ -715,10 +719,10 @@ export function WorkspaceProvider({ children }) {
     return data
   }, [showToast])
 
-  const saveSessionContent = async (lessonId, draft) => {
+  const saveSessionContent = async (lessonId, draft, opts = {}) => {
     if (!lessonId) return false
     const lesson = lessonSessionsRef.current.find((l) => l.id === lessonId)
-    if (lesson?.status === 'completed') { showToast(isArabicRef.current ? 'الحصة منتهية ولا يمكن تعديلها' : 'This session is completed and cannot be edited', 'error'); return false }
+    if (lesson?.status === 'completed' && !opts?.allowCompleted) { showToast(isArabicRef.current ? 'الحصة منتهية ولا يمكن تعديلها' : 'This session is completed and cannot be edited', 'error'); return false }
     const payload = {
       lesson_topic: draft.lesson_topic || '', homework_text: draft.homework_text || '',
       video_link: draft.video_link || '', updated_at: new Date().toISOString(),
@@ -879,7 +883,7 @@ export function WorkspaceProvider({ children }) {
   // per-student write path as manual marking and markAllPresent (autosave,
   // points, offline queue): mark every UNRECORDED student of the group's
   // lesson as غائب, in parallel (same wall-clock as one round-trip).
-  const markGroupAbsences = async (groupName, lessonIdOverride) => {
+  const markGroupAbsences = async (groupName, lessonIdOverride, opts = {}) => {
     const isArabic = isArabicRef.current
     if (!groupName) return 0
     const list = studentsRef.current.filter((s) => s.group_name === groupName)
@@ -888,7 +892,7 @@ export function WorkspaceProvider({ children }) {
       const current = lessonIdOverride ? attendance[s.id]?.status : s.attendance_status
       return current !== 'حاضر' && current !== 'غائب'
     })
-    await Promise.all(pending.map((s) => setAttendance(s.id, 'غائب', lessonIdOverride)))
+    await Promise.all(pending.map((s) => setAttendance(s.id, 'غائب', lessonIdOverride, opts)))
     const count = pending.length
     if (count > 0) showToast(isArabic ? `تم رصد ${count} طالب غائب` : `Marked ${count} students absent`, 'success')
     else showToast(isArabic ? 'لا يوجد طلاب غير مرصدين — الكل مسجل بالفعل' : 'No unmarked students left', 'info')
@@ -900,14 +904,14 @@ export function WorkspaceProvider({ children }) {
   // 30-student group present took 90 serialized round-trips. Each student's
   // write is fully independent (per-student RPC + per-student points row),
   // so they now run in parallel: wall-clock ≈ 1 round-trip.
-  const markAllPresent = async (groupName, lessonIdOverride) => {
+  const markAllPresent = async (groupName, lessonIdOverride, opts = {}) => {
     const list = studentsRef.current.filter((s) => s.group_name === groupName)
     const lessonAttendanceByStudent = lessonAttendanceRef.current
     const pending = list.filter((s) => {
       const current = lessonIdOverride ? lessonAttendanceByStudent[s.id]?.status : s.attendance_status
       return current !== 'حاضر'
     })
-    await Promise.all(pending.map((s) => setAttendance(s.id, 'حاضر', lessonIdOverride)))
+    await Promise.all(pending.map((s) => setAttendance(s.id, 'حاضر', lessonIdOverride, opts)))
     const count = pending.length
     if (count > 0) showToast(isArabicRef.current ? `تم تسجيل ${count} طالب حاضر` : `Marked ${count} students present`, 'success')
     else showToast(isArabicRef.current ? 'الكل مسجل حاضر بالفعل' : 'Everyone is already marked present', 'info')

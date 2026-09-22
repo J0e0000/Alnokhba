@@ -22,11 +22,14 @@ import RecipientPickerModal from '../../components/RecipientPickerModal'
 // ═══════════════════════════════════════════════════════════════════════════
 const reportDraftKey = (lessonId) => `nokhba_report_draft_v1_${lessonId || 'none'}`
 
-export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, counts, teacherName, onViewAbsent }) {
+export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted, editingPast, counts, teacherName, onViewAbsent }) {
   const ws = useWorkspace()
   const ui = useUI()
   const { isArabic } = ws
   const restoredRef = useRef(false)
+  // EDIT PAST SESSION: lesson details (topic/homework/video) become editable
+  // again in the workspace's explicit edit mode — same fields, same save.
+  const detailsEditable = lessonOpen || Boolean(editingPast)
   const [draft, setDraft] = useState(() => {
     const base = { lesson_topic: lesson?.lesson_topic || '', homework_text: lesson?.homework_text || '', video_link: lesson?.video_link || '' }
     try {
@@ -66,9 +69,9 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
   }
 
   useEffect(() => {
-    if (!dirty || !lessonOpen || !lesson?.id) return undefined
+    if (!dirty || !detailsEditable || !lesson?.id) return undefined
     const t = setTimeout(async () => {
-      const ok = await ws.saveSessionContent(lesson.id, draft)
+      const ok = await ws.saveSessionContent(lesson.id, draft, lessonOpen ? undefined : { allowCompleted: true })
       if (ok) {
         setDirty(false)
         try { localStorage.removeItem(reportDraftKey(lesson.id)) } catch { /* ignore */ }
@@ -76,14 +79,14 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
     }, 900)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, dirty, lessonOpen, lesson?.id])
+  }, [draft, dirty, detailsEditable, lessonOpen, lesson?.id])
 
   const groupStudents = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
 
   const save = async () => {
     setSaving(true)
-    const ok = await ws.saveSessionContent(lesson?.id, draft)
+    const ok = await ws.saveSessionContent(lesson?.id, draft, lessonOpen ? undefined : { allowCompleted: true })
     setSaving(false)
     if (ok) {
       setDirty(false)
@@ -227,9 +230,17 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
         )}
       </div>
 
-      {/* Lesson details — SAVE (not finish) */}
-      {lessonOpen ? (
+      {/* Lesson details — SAVE (not finish). Past-edit mode reuses the exact
+          same fields; the save path carries the explicit completed-bypass. */}
+      {detailsEditable ? (
         <div className="grid gap-3 mb-5">
+          {!lessonOpen && (
+            <div className="nk-notice mb-0" style={{ borderColor: 'var(--warn, #f59e0b)' }}>
+              {isArabic
+                ? '✎ أنت بتعدّل بيانات حصة محفوظة — التعديل بيتحدث في نفس السجل ويظهر للطالب في بوابته فورًا.'
+                : '✎ Editing a saved session — changes update the original record and the student portal instantly.'}
+            </div>
+          )}
           <label className="block">
             <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'درس اليوم' : "Today's lesson"}</span>
             <input className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={draft.lesson_topic} onChange={(e) => updateDraft({ lesson_topic: e.target.value })} placeholder={isArabic ? 'موضوع الحصة...' : 'Lesson topic...'} />
@@ -261,6 +272,7 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
               <a dir="ltr" href={lesson.video_link} target="_blank" rel="noreferrer" className="text-[.72rem] underline" style={{ color: 'var(--accent-blue)' }}>{lesson.video_link}</a>
             </>
           )}
+          <p className="m-0 mt-2 text-[.68rem] text-fg-subtle">{isArabic ? 'لتعديل البيانات دي اضغط «✎ تعديل بيانات هذه الحصة» فوق.' : 'Press “Edit this session” above to change these.'}</p>
         </div>
       )}
 

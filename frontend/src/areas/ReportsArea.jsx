@@ -5,6 +5,7 @@ import TemplatesModal from '../components/TemplatesModal'
 import AnnouncementsModal from '../components/AnnouncementsModal'
 import RecipientPickerModal from '../components/RecipientPickerModal'
 import ReportStudioModal from '../components/ReportStudioModal'
+import CustomMessageModal from '../components/CustomMessageModal'
 import { REPORT_KINDS } from '../lib/reportBuilders'
 import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
@@ -29,7 +30,8 @@ export default function ReportsArea() {
   const [announcementsOpen, setAnnouncementsOpen] = useState(false)
   const [studioKind, setStudioKind] = useState(null) // REPORT_KINDS key
   const [busy, setBusy] = useState('')
-  const [picker, setPicker] = useState(null) // { candidates, title, subtitle, preselect }
+  const [picker, setPicker] = useState(null) // { candidates, title, subtitle, preselect, custom? }
+  const [composer, setComposer] = useState(null) // CustomMessageModal students
 
   const completedLessons = useMemo(
     () => ws.lessonSessions.filter((l) => l.group_name === group && l.status === 'completed')
@@ -155,6 +157,30 @@ export default function ReportsArea() {
     })
   }
 
+  // Custom message → SPECIFIC people (owner request): pick a group (the
+  // select above), pick the exact students, write the text once, and the
+  // send queue personalizes it per student ({studentName} {group} {date}).
+  const openCustomMessagePicker = () => {
+    const groupStudents = ws.students.filter((s) => s.group_name === group)
+    if (!groupStudents.length) { ws.showToast?.(isArabic ? 'مفيش طلاب في المجموعة دي' : 'No students in this group', 'error'); return }
+    const candidates = groupStudents.map((s) => {
+      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
+      return {
+        key: s.id, kind: 'custom', student: s,
+        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+        message: '',
+        statusLabel: '', statusType: 'none', disabled: !hasPhone,
+      }
+    })
+    setPicker({
+      candidates,
+      custom: true,
+      title: isArabic ? `رسالة لمحددين — ${group}` : `Message specific people — ${group}`,
+      subtitle: isArabic ? 'اختار الطلاب المطلوبين، وبعدها اكتب الرسالة مرة واحدة وتبعت لكل واحد باسمه.' : 'Pick the students, then write the message once — each gets a personalized copy.',
+      preselect: 'manual',
+    })
+  }
+
   // ── استوديو التقارير handlers ──────────────────────────────────────────
   // Template persistence: one teacher_settings.update per save. A failure is
   // NEVER silent — friendlySaveErrorText maps missing-column (migration not
@@ -218,6 +244,18 @@ export default function ReportsArea() {
           <button className="btn-ghost action-button !min-h-[3rem]" onClick={bulkWelcome}>
             ✆ {isArabic ? 'رسالة ترحيب جماعية' : 'Bulk welcome message'}
           </button>
+          <button className="btn-gold action-button !min-h-[3rem]" onClick={openCustomMessagePicker}>
+            ✆ {isArabic ? 'رسالة لمحددين…' : 'Message specific people…'}
+          </button>
+          {lesson && (
+            <button
+              className="btn-ghost action-button !min-h-[3rem]"
+              onClick={() => ui.openSession({ groupId: group, date: lesson.session_date })}
+              title={isArabic ? 'افتح الحصة في مساحة الحصة لتعديل بياناتها' : 'Open this session in the workspace to edit it'}
+            >
+              ✎ {isArabic ? 'تعديل هذه الحصة' : 'Edit this session'}
+            </button>
+          )}
           <button className="btn-ghost action-button !min-h-[3rem]" disabled={!lesson || busy === 'csv'} onClick={exportSessionCSV}>
             ⬇ {busy === 'csv' ? '...' : isArabic ? 'تصدير CSV' : 'Export CSV'}
           </button>
@@ -309,7 +347,27 @@ export default function ReportsArea() {
           title={picker.title}
           subtitle={picker.subtitle}
           preselected={(c) => (picker.preselect === 'all' ? true : picker.preselect === 'manual' ? false : picker.preselect === 'hasphone' ? !c.disabled : c.statusType === picker.preselect)}
-          onStart={(items) => { setPicker(null); ui.startQueue(items) }}
+          onStart={(items) => {
+            setPicker(null)
+            if (picker.custom) {
+              // Custom flow: the picked students go to the COMPOSER first —
+              // nothing is queued until the text is written.
+              setComposer(items.map((it) => it.student).filter(Boolean))
+              return
+            }
+            ui.startQueue(items)
+          }}
+        />
+      )}
+
+      {/* Custom message composer — pick students → write once → queue */}
+      {composer && (
+        <CustomMessageModal
+          open
+          onClose={() => setComposer(null)}
+          students={composer}
+          settings={ws.settings}
+          onSend={(items) => { setComposer(null); ui.startQueue(items) }}
         />
       )}
     </div>

@@ -33,7 +33,7 @@ const STATUS_LABEL = { 'حاضر': 'حاضر', 'غائب': 'غائب', 'لم ي�
 // - Session-level absent answer (spec 30–32): who was absent THIS session +
 //   absence reports, shown only when absentees exist (context before capability).
 // ═══════════════════════════════════════════════════════════════════════════
-export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, absentIntent }) {
+export default function AttendanceTab({ groupId, lessonOpen, editingPast, onCompleteStage, absentIntent }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
@@ -41,6 +41,11 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  // EDIT PAST SESSION: lessonOpen (today's flow) OR the explicit edit toggle
+  // from the workspace header both unlock the same controls.
+  const editable = lessonOpen || Boolean(editingPast)
+  // Completed-lesson writes need the store's explicit bypass.
+  const editOpts = lessonOpen ? undefined : { allowCompleted: true }
 
   const students = ws.sessionStudentsFor(groupId)
   const attendanceMap = ws.lessonAttendanceByStudent
@@ -72,14 +77,14 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
 
   const savingAny = wsMeta.savingIds.size > 0
 
-  // ── Read-only view (completed session) — same compact list, no controls ──
-  if (!lessonOpen) {
+  // ── Read-only view (completed session, edit mode OFF) ──
+  if (!editable) {
     return (
       <div>
         <div className="nk-notice mb-4">
           {isArabic
-            ? 'هذه الحصة منتهية ومحفوظة — الحضور للعرض فقط. افتح حصة جديدة من التقرير أو الرئيسية للرصد.'
-            : 'This session is completed and locked — attendance is read-only. Open a new session to record.'}
+            ? 'هذه الحصة منتهية ومحفوظة — الحضور للعرض فقط. اضغط «✎ تعديل بيانات هذه الحصة» فوق عشان تصحّح الحضور أو الواجب أو الدرجات.'
+            : 'This session is completed and locked — attendance is read-only. Press “Edit this session” above to fix attendance, homework, or grades.'}
         </div>
         <input
           className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full mb-3"
@@ -90,7 +95,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
         />
         <div className="grid gap-2">
           {visible.map((s) => {
-            const status = attendanceMap[s.id]?.status || s.attendance_status
+            const status = attendanceMap[s.id]?.status || 'لم يرصد'
             return (
               <div key={s.id} className="nk-att-row">
                 <span className="nk-att-row__name">
@@ -112,15 +117,25 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
 
   return (
     <div>
-      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request */}
-      <div className="flex justify-end mb-2">
-        <button
-          className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
-          onClick={() => onCompleteStage?.()}
-        >
-          ✓ {isArabic ? 'إتمام الحضور والمتابعة ←' : 'Complete attendance →'}
-        </button>
-      </div>
+      {/* TOP ACTION — inline-END (top-left AR / top-right EN), teacher request.
+          Past-session editing shows an amber banner instead of the stage
+          completion action (that belongs to today's pipeline). */}
+      {lessonOpen ? (
+        <div className="flex justify-end mb-2">
+          <button
+            className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold !min-h-[2.75rem]"
+            onClick={() => onCompleteStage?.()}
+          >
+            ✓ {isArabic ? 'إتمام الحضور والمتابعة ←' : 'Complete attendance →'}
+          </button>
+        </div>
+      ) : (
+        <div className="nk-notice mb-3" style={{ borderColor: 'var(--warn, #f59e0b)' }}>
+          {isArabic
+            ? '✎ أنت بتعدّل حصة قديمة — كل ضغطة بتتحفظ فورًا والنقاط بتُعاد تلقائيًا، وسجل الحضور الأصلي بيتحدث في مكانه.'
+            : '✎ Editing a past session — every tap saves instantly, points are re-computed, and the original record updates in place.'}
+        </div>
+      )}
 
       {/* Sticky tools — search stays reachable while the list scrolls; with
           resizes-content the results remain visible ABOVE the keyboard. */}
@@ -172,7 +187,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
         <button
           className="nk-att-chip shrink-0"
           disabled={savingAny}
-          onClick={() => ws.markAllPresent(groupId, ws.activeLessonId)}
+          onClick={() => ws.markAllPresent(groupId, ws.activeLessonId, editOpts)}
           title={isArabic ? 'رصد كل الطلاب حاضر دفعة واحدة' : 'Mark everyone present in one tap'}
         >
           ✓ {isArabic ? 'الكل حاضر' : 'All present'}
@@ -180,7 +195,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
         <button
           className="nk-att-chip shrink-0"
           disabled={savingAny}
-          onClick={() => ws.markGroupAbsences(groupId, ws.activeLessonId)}
+          onClick={() => ws.markGroupAbsences(groupId, ws.activeLessonId, editOpts)}
           title={isArabic ? 'رصد غير المرصد غائبًا' : 'Mark unmarked students absent'}
         >
           ✗ {isArabic ? 'الباقي غائبًا' : 'Rest absent'}
@@ -211,7 +226,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
                   className={status === 'حاضر' ? 'nk-on-present' : ''}
                   aria-pressed={status === 'حاضر'}
                   disabled={savingRow}
-                  onClick={() => ws.setAttendance(s.id, 'حاضر', ws.activeLessonId)}
+                  onClick={() => ws.setAttendance(s.id, 'حاضر', ws.activeLessonId, editOpts)}
                 >
                   {isArabic ? 'حاضر' : 'Present'}
                 </button>
@@ -219,7 +234,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
                   className={status === 'غائب' ? 'nk-on-absent' : ''}
                   aria-pressed={status === 'غائب'}
                   disabled={savingRow}
-                  onClick={() => ws.setAttendance(s.id, 'غائب', ws.activeLessonId)}
+                  onClick={() => ws.setAttendance(s.id, 'غائب', ws.activeLessonId, editOpts)}
                 >
                   {isArabic ? 'غائب' : 'Absent'}
                 </button>
@@ -228,7 +243,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
                   aria-pressed={status === 'لم يرصد'}
                   title={isArabic ? 'مسح الرصد' : 'Clear mark'}
                   disabled={savingRow || status === 'لم يرصد'}
-                  onClick={() => ws.setAttendance(s.id, 'لم يرصد', ws.activeLessonId)}
+                  onClick={() => ws.setAttendance(s.id, 'لم يرصد', ws.activeLessonId, editOpts)}
                 >
                   ⟲
                 </button>
@@ -256,7 +271,7 @@ export default function AttendanceTab({ groupId, lessonOpen, onCompleteStage, ab
           activeLessonId={ws.activeLessonId}
           markPresent={async (studentId) => {
             try {
-              await ws.setAttendance(studentId, 'حاضر', ws.activeLessonId)
+              await ws.setAttendance(studentId, 'حاضر', ws.activeLessonId, editOpts)
               return true
             } catch { return false }
           }}

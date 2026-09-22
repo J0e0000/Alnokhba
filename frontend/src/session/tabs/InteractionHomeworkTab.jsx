@@ -13,12 +13,16 @@ const HW_LABEL = { 'مكتمل': 'مكتمل', 'تم': 'مكتمل', 'ناقص':
 // - Only APPLICABLE students appear: default view excludes absent students
 //   (they cannot interact and receive no homework).
 // ═══════════════════════════════════════════════════════════════════════════
-export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }) {
+export default function InteractionHomeworkTab({ groupId, lessonOpen, editingPast, onGoNext }) {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('present') // present | all | absent
+  // EDIT PAST SESSION: same controls, same write paths — unlocked by the
+  // workspace header's explicit edit toggle when the lesson is completed.
+  const editable = lessonOpen || Boolean(editingPast)
+  const editOpts = lessonOpen ? undefined : { allowCompleted: true }
 
   const attendanceMap = ws.lessonAttendanceByStudent
   const groupStudents = ws.sessionStudentsFor(groupId)
@@ -26,13 +30,16 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
   const rows = useMemo(() => {
     const q = normalizeArabicSearch(search)
     return groupStudents.filter((s) => {
-      const status = attendanceMap[s.id]?.status || (lessonOpen ? 'لم يرصد' : s.attendance_status)
+      // Lesson-authoritative: within a session workspace the lesson's own rows
+      // are the truth — a missing row is 'لم يرصد', never the student's
+      // global quick-state (that would leak today's status into past lessons).
+      const status = attendanceMap[s.id]?.status || 'لم يرصد'
       if (filter === 'present' && status !== 'حاضر') return false
       if (filter === 'absent' && status !== 'غائب') return false
       if (!q) return true
       return normalizeArabicSearch([s.name, s.code].filter(Boolean).join(' ')).includes(q)
     })
-  }, [groupStudents, search, filter, attendanceMap, lessonOpen])
+  }, [groupStudents, search, filter, attendanceMap])
 
   // SIMPLE point actions (spec 22) — existing points semantics, no badges.
   const interactionButtons = [
@@ -66,8 +73,12 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
       </div>
       <div className="nk-notice mb-4">
         {isArabic
-          ? 'التفاعل والواجب يظهران للحاضرين — الغائبون مستثنون تلقائيًا. كل ضغطة تُحفظ فورًا.'
-          : 'Interaction & homework apply to present students — absentees are excluded automatically. Every tap saves instantly.'}
+          ? (lessonOpen
+            ? 'التفاعل والواجب يظهران للحاضرين — الغائبون مستثنون تلقائيًا. كل ضغطة تُحفظ فورًا.'
+            : '✎ أنت بتعدّل حصة قديمة — التعديل بيتحفظ فورًا في سجل الحصة الأصلي.')
+          : (lessonOpen
+            ? 'Interaction & homework apply to present students — absentees are excluded automatically. Every tap saves instantly.'
+            : '✎ Editing a past session — changes save instantly into the original record.')}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -102,8 +113,8 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
       <div className="grid gap-2.5">
         {rows.map((s) => {
           const row = attendanceMap[s.id]
-          const status = row?.status || (lessonOpen ? 'لم يرصد' : s.attendance_status)
-          const hw = row?.homework_status || (lessonOpen ? 'لم يرصد' : s.hw_status)
+          const status = row?.status || 'لم يرصد'
+          const hw = row?.homework_status || 'لم يرصد'
           const isAbsent = status === 'غائب'
           const logs = ws.todayLogsByStudent[s.id] || []
           const lastLog = logs.length ? logs[logs.length - 1] : null
@@ -120,7 +131,7 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
                 {isAbsent && <span className="nk-pill nk-pill-danger">{isArabic ? 'غائب — غير applicable' : 'Absent — excluded'}</span>}
               </div>
 
-              {!isAbsent && lessonOpen && (
+              {!isAbsent && editable && (
                 <div className="flex flex-wrap items-center gap-2 w-full">
                   {/* Interaction quick actions (existing points semantics) */}
                   <span className="nk-seg flex-wrap">
@@ -143,7 +154,7 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
                         className={hw === value ? onClass : ''}
                         aria-pressed={hw === value}
                         disabled={wsMeta.savingIds.has(s.id)}
-                        onClick={() => ws.updateHW(s.id, value, ws.activeLessonId)}
+                        onClick={() => ws.updateHW(s.id, value, ws.activeLessonId, editOpts)}
                       >
                         {label}
                       </button>
@@ -151,9 +162,9 @@ export default function InteractionHomeworkTab({ groupId, lessonOpen, onGoNext }
                   </span>
                 </div>
               )}
-              {!isAbsent && !lessonOpen && (
+              {!isAbsent && !editable && (
                 <small className="text-fg-muted">
-                  {isArabic ? `الواجب: ${HW_LABEL[hw] || hw}` : `Homework: ${HW_LABEL[hw] || hw}`} — {isArabic ? 'حصة منتهية (عرض فقط)' : 'completed session (read-only)'}
+                  {isArabic ? `الواجب: ${HW_LABEL[hw] || hw}` : `Homework: ${HW_LABEL[hw] || hw}`} — {isArabic ? 'اضغط «✎ تعديل بيانات هذه الحصة» فوق للتعديل' : 'press “Edit this session” above to change'}
                 </small>
               )}
             </div>

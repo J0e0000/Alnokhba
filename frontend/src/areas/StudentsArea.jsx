@@ -3,6 +3,7 @@ import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/
 import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
+import CustomMessageModal from '../components/CustomMessageModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
@@ -34,6 +35,7 @@ export default function StudentsArea() {
   const [qrModal, setQrModal] = useState({ open: false, student: null })
   const [bulkAddOpen, setBulkAddOpen] = useState(false)
   const [assignOpen, setAssignOpen] = useState(false)
+  const [customComposer, setCustomComposer] = useState(null) // selected students → CustomMessageModal
   const [moreOpen, setMoreOpen] = useState(false)
   const [busyBulk, setBusyBulk] = useState('')
 
@@ -85,13 +87,17 @@ export default function StudentsArea() {
   // QR button → opens the link card (visible link + copy + WhatsApp + QR download).
   const openStudentQR = (student) => setQrModal({ open: true, student })
 
-  // ── Bulk actions (spec 21–24) ─────────────────────────────────────────────
+  // ── Bulk actions (spec 21–24) ─────────────────────────────────────────
+  // Bulk message (owner request: "send messages to specific people"): the
+  // selected students go to the CUSTOM COMPOSER first — write the text once,
+  // placeholders ({studentName} {group} {date}) personalize it per student,
+  // and the send queue stays the only sender. The old behavior blindly queued
+  // the welcome template with no chance to write an actual message.
   const bulkMessage = () => {
-    const items = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
-      .map((s) => ({ key: s.id, kind: 'welcome', student: s, phone: normalizeEgyptianPhone(s.phone), message: (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name) }))
-    if (!items.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
-    ui.startQueue(items)
+    const targets = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
+    if (!targets.length) { ws.showToast?.('لا يوجد طلاب محددون لديهم أرقام صحيحة', 'error'); return }
     setMoreOpen(false)
+    setCustomComposer(targets)
   }
 
   const bulkAssignGroup = async (groupName) => {
@@ -357,6 +363,17 @@ export default function StudentsArea() {
       )}
 
       {bulkAddOpen && <BulkAddModal onClose={() => setBulkAddOpen(false)} />}
+
+      {/* Custom message to the SELECTED students (owner request) */}
+      {customComposer && (
+        <CustomMessageModal
+          open
+          onClose={() => setCustomComposer(null)}
+          students={customComposer}
+          settings={ws.settings}
+          onSend={(items) => { setCustomComposer(null); ui.startQueue(items) }}
+        />
+      )}
     </div>
   )
 }

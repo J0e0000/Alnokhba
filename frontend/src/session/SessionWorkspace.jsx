@@ -37,6 +37,12 @@ export default function SessionWorkspace({ params }) {
 
   const [tab, setTab] = useState('attendance')
   const [opening, setOpening] = useState(true)
+  // EDIT PAST SESSION (owner request): a completed lesson normally stays
+  // read-only (data-integrity default). The teacher can explicitly flip THIS
+  // session into edit mode — attendance/homework/interaction/lesson details
+  // become editable again through the exact same write paths. The flag is
+  // per-lesson: opening another session resets it.
+  const [editingPast, setEditingPast] = useState(false)
 
   // TASK STATE (spec 13 + reload-resilience): which stage the teacher
   // EXPLICITLY completed and which tab they were on — persisted per lesson so
@@ -54,6 +60,7 @@ export default function SessionWorkspace({ params }) {
   const [restoredLesson, setRestoredLesson] = useState('')
   if (ws.activeLessonId !== restoredLesson) {
     setRestoredLesson(ws.activeLessonId)
+    setEditingPast(false)
     const saved = readStageState(ws.activeLessonId).tab
     setTab(saved && VALID_TABS.includes(saved) ? saved : 'attendance')
   }
@@ -250,7 +257,7 @@ export default function SessionWorkspace({ params }) {
           </span>
         </div>
         {lessonCompleted && (
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="btn-ghost rounded-xl px-4 py-2 text-[.72rem] font-extrabold"
               onClick={async () => {
@@ -263,7 +270,23 @@ export default function SessionWorkspace({ params }) {
             >
               ＋ {isArabic ? 'فتح حصة جديدة لنفس المجموعة' : 'Open a new session for this group'}
             </button>
+            <button
+              className={editingPast ? 'btn-navy rounded-xl px-4 py-2 text-[.72rem] font-extrabold' : 'btn-gold rounded-xl px-4 py-2 text-[.72rem] font-extrabold'}
+              aria-pressed={editingPast}
+              onClick={() => setEditingPast((v) => !v)}
+            >
+              {editingPast
+                ? `✓ ${isArabic ? 'إنهاء التعديل' : 'Done editing'}`
+                : `✎ ${isArabic ? 'تعديل بيانات هذه الحصة' : 'Edit this session'}`}
+            </button>
           </div>
+        )}
+        {lessonCompleted && editingPast && (
+          <p className="nk-notice mt-3 mb-0 !text-[.72rem]">
+            {isArabic
+              ? 'وضع التعديل مفعّل — عدّل الحضور والواجب والدرجات وبيانات الحصة من التبويبات فوق، وكل تغيير بيتحفظ فورًا. اضغط «إنهاء التعديل» لما تخلّص.'
+              : 'Edit mode is on — fix attendance, homework, grades, and session details from the tabs above; every change saves instantly. Press “Done editing” when finished.'}
+          </p>
         )}
 
         {/* Persistent mini-summary — never disappears when switching tabs */}
@@ -309,6 +332,7 @@ export default function SessionWorkspace({ params }) {
           <AttendanceTab
             groupId={groupId}
             lessonOpen={lessonOpen}
+            editingPast={editingPast}
             onCompleteStage={completeAttendanceStage}
             absentIntent={absentIntent}
           />
@@ -317,6 +341,7 @@ export default function SessionWorkspace({ params }) {
           <InteractionHomeworkTab
             groupId={groupId}
             lessonOpen={lessonOpen}
+            editingPast={editingPast}
             onGoNext={() => setTab(counts.present > 0 ? 'exams' : 'review')}
           />
         )}
@@ -346,6 +371,7 @@ export default function SessionWorkspace({ params }) {
             lesson={lesson}
             lessonOpen={lessonOpen}
             lessonCompleted={lessonCompleted}
+            editingPast={editingPast}
             counts={counts}
             teacherName={profile?.full_name || ''}
             onViewAbsent={viewAbsentFromReport}
