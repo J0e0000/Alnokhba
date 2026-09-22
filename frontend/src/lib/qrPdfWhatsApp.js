@@ -863,9 +863,10 @@ function interpolateAttendance(template, vars) {
  *   settings         teacher_settings row (templates + insight_config)
  *   groupName        override when the session group differs from the row
  *   today            preformatted date string
+ *   examScores       student's exam_scores rows — powers the optional {examLine}
  * @returns {string} ready-to-send message
  */
-export function buildAttendanceMessage(student, { status, lesson, settings, groupName, today } = {}) {
+export function buildAttendanceMessage(student, { status, lesson, settings, groupName, today, examScores } = {}) {
   const s = student || {}
   const isPresent = String(status || '').includes('حاضر')
   const threshold = Number(settings?.insight_config?.max_warnings ?? 3)
@@ -873,6 +874,17 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
   const remaining = Math.max(0, threshold - warnings)
   const lessonLine = lesson?.lesson_topic ? `موضوع الحصة: ${lesson.lesson_topic}\n` : ''
   const videoLine = !isPresent && lesson?.video_link ? `\nرابط شرح الحصة: ${lesson.video_link}` : ''
+  // ENRICHED BRICKS (owner spec: reports carry الحضور/الواجب/الامتحان):
+  // optional composite lines built from REAL rows — each collapses entirely
+  // when its data is missing (no exam that day → no exam line), so old saved
+  // templates that don't use them are unaffected and new ones never show
+  // dangling labels or invented numbers.
+  const examVals = getReportTemplateValues(examScores || [], s, lesson)
+  const examLine = examVals.examTitle && examVals.examScore !== '' && examVals.examMaxScore
+    ? `التقييم: اختبار «${examVals.examTitle}» — ${examVals.examScore} من ${examVals.examMaxScore}${examVals.examPercentage !== '' ? ` (${examVals.examPercentage}%)` : ''}`
+    : ''
+  const homeworkLine = lesson?.homework_text ? `الواجب: ${lesson.homework_text}` : ''
+  const pointsLine = s.points != null && s.points !== '' ? `النقاط الحالية: ${s.points}` : ''
   const dateStr = today || (lesson?.session_date
     ? new Date(lesson.session_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
     : new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }))
@@ -883,6 +895,9 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
     lessonLine,
     videoLink: lesson?.video_link || '',
     homework: lesson?.homework_text || '',
+    homeworkLine,
+    examLine,
+    pointsLine,
     warnings,
     remainingWarnings: remaining,
     warningsThreshold: threshold,

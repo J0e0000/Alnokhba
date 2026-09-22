@@ -4,6 +4,8 @@ import { useUI } from '../shell/UIContext'
 import TemplatesModal from '../components/TemplatesModal'
 import AnnouncementsModal from '../components/AnnouncementsModal'
 import RecipientPickerModal from '../components/RecipientPickerModal'
+import ReportStudioModal from '../components/ReportStudioModal'
+import { REPORT_KINDS } from '../lib/reportBuilders'
 import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone } from '../lib/helpers'
@@ -25,6 +27,7 @@ export default function ReportsArea() {
   const [lessonId, setLessonId] = useState('')
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [announcementsOpen, setAnnouncementsOpen] = useState(false)
+  const [studioKind, setStudioKind] = useState(null) // REPORT_KINDS key
   const [busy, setBusy] = useState('')
   const [picker, setPicker] = useState(null) // { candidates, title, subtitle, preselect }
 
@@ -54,7 +57,7 @@ export default function ReportsArea() {
           kind: 'session_report',
           student: reportStudent,
           phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
-          message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings }),
+          message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings, examScores: ws.examScoresByStudent?.[s.id] || [] }),
           lessonId: lesson.id,
           statusLabel: status,
           statusType: status === 'حاضر' ? 'present' : status === 'غائب' ? 'absent' : 'none',
@@ -152,6 +155,38 @@ export default function ReportsArea() {
     })
   }
 
+  // ── استوديو التقارير handlers ──────────────────────────────────────────
+  // Template persistence: one teacher_settings.update per save. A failure is
+  // NEVER silent — friendlySaveErrorText maps missing-column (migration not
+  // applied yet) / auth / network families to an exact next step.
+  const saveStudioTemplate = async (patch) => {
+    const { error } = await import('../lib/supabaseClient').then(({ supabase }) =>
+      supabase.from('teacher_settings').update(patch).eq('teacher_id', ws.effectiveTeacherId),
+    )
+    if (!error) {
+      ws.refreshSettings?.()
+      ws.showToast?.(isArabic ? 'تم حفظ القالب ✓ هيُستخدم في كل التقارير الجاية' : 'Template saved ✓', 'success')
+      track('report_templates_saved', { kinds: Object.keys(patch).join(',') })
+    } else {
+      ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
+    }
+  }
+
+  // Teacher reports → the persistent bell (Notification Center): the report
+  // stays in the account instead of disappearing after being read.
+  const saveStudioBell = async ({ title, body }) => {
+    const { error } = await import('../lib/supabaseClient').then(({ supabase }) =>
+      supabase.from('teacher_notification_events').insert({
+        teacher_id: ws.effectiveTeacherId,
+        event_type: 'other',
+        title,
+        body: body || '',
+      }),
+    )
+    if (!error) ws.showToast?.(isArabic ? 'اتحفظ في مركز التنبيهات 🔔' : 'Saved to notifications 🔔', 'success')
+    else ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
+  }
+
   return (
     <div>
       <h1 className="text-lg font-black m-0 mb-1">{isArabic ? 'التقارير' : 'Reports'}</h1>
@@ -201,6 +236,32 @@ export default function ReportsArea() {
         </button>
       </div>
 
+      {/* ── استوديو التقارير: تقارير قابلة للتخصيص بالكامل (owner spec) ── */}
+      <h2 className="text-[.95rem] font-black mt-6 mb-1">🎛 {isArabic ? 'استوديو التقارير' : 'Reports studio'}</h2>
+      <p className="text-[.72rem] text-fg-muted mb-3">
+        {isArabic
+          ? 'ستة تقارير جاهزة بمصري — كل واحد قالب بأسطر قابلة للتعديل والترتيب، ومعاينة حية بأرقام حقيقية، وإرسال أو حفظ في مركز التنبيهات.'
+          : 'Six ready reports — each a line-editable template with a live real-data preview.'}
+      </p>
+      <p className="text-[.7rem] font-extrabold text-fg-subtle mb-2">{isArabic ? 'تقارير الطلاب (واتساب)' : 'Student reports (WhatsApp)'}</p>
+      <div className="grid sm:grid-cols-3 gap-3 mb-4">
+        {Object.entries(REPORT_KINDS).filter(([, m]) => m.section === 'student').map(([key, m]) => (
+          <button key={key} className="nk-content text-right cursor-pointer" onClick={() => setStudioKind(key)}>
+            <b className="block text-[.82rem] mb-1">{m.icon} {m.title}</b>
+            <small className="text-fg-muted block">{m.desc}</small>
+          </button>
+        ))}
+      </div>
+      <p className="text-[.7rem] font-extrabold text-fg-subtle mb-2">{isArabic ? 'تقارير المدرس (داخلي)' : 'Teacher reports (internal)'}</p>
+      <div className="grid sm:grid-cols-3 gap-3">
+        {Object.entries(REPORT_KINDS).filter(([, m]) => m.section === 'teacher').map(([key, m]) => (
+          <button key={key} className="nk-content text-right cursor-pointer" onClick={() => setStudioKind(key)}>
+            <b className="block text-[.82rem] mb-1">{m.icon} {m.title}</b>
+            <small className="text-fg-muted block">{m.desc}</small>
+          </button>
+        ))}
+      </div>
+
       <TemplatesModal
         open={templatesOpen}
         onClose={() => setTemplatesOpen(false)}
@@ -221,6 +282,21 @@ export default function ReportsArea() {
             <AnnouncementsModal open onClose={() => setAnnouncementsOpen(false)} teacherId={ws.effectiveTeacherId} studentCount={ws.students.length} showToast={ws.showToast} />
           </div>
         </div>
+      )}
+
+      {/* استوديو التقارير — remounts per kind so the template seeds once
+          per open (the caret-jump fix contract). */}
+      {studioKind && (
+        <ReportStudioModal
+          key={studioKind}
+          open
+          onClose={() => setStudioKind(null)}
+          kind={studioKind}
+          ws={ws}
+          onSaveTemplate={saveStudioTemplate}
+          onQueue={(candidates, meta) => setPicker({ ...meta, candidates })}
+          onBell={saveStudioBell}
+        />
       )}
 
       {/* Shared recipient picker — every batch send from this area confirms

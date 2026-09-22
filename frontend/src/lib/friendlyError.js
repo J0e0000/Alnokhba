@@ -10,8 +10,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 const SCHEMA_HINT = {
-  ar: 'الحفظ وقف لأن قاعدة البيانات محتاجة ترقية بسيطة (مرة واحدة بس): افتح لوحة Supabase → SQL Editor → الصق محتوى ملف «supabase/migration_046_message_template_columns.sql» → اضغط Run. بعدها جرّب الحفظ تاني وهينفع.',
-  en: 'Saving stopped because the database needs a one-time upgrade: open the Supabase dashboard → SQL Editor → paste the contents of «supabase/migration_046_message_template_columns.sql» → Run. Then try saving again.',
+  ar: 'الحفظ وقف لأن قاعدة البيانات محتاجة ترقية بسيطة (مرة واحدة بس): افتح لوحة Supabase → SQL Editor → الصق محتوى ملف «supabase/migration_047_report_template_columns.sql» (وملف migration_046 لو لسه مش متطبق) → اضغط Run. بعدها جرّب الحفظ تاني وهينفع.',
+  en: 'Saving stopped because the database needs a one-time upgrade: open the Supabase dashboard → SQL Editor → paste the contents of «supabase/migration_047_report_template_columns.sql» (and migration_046 if not applied yet) → Run. Then try saving again.',
 }
 
 const AUTH_HINT = {

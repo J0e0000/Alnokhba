@@ -211,6 +211,33 @@ export default function AdminDashboard({ onBack }) {
     })
   }, [teachers, teacherSearch, teamFilter, teamsByProfile])
 
+  // ── تنبيهات تشغيلية (owner spec: admin gets operational notifications) ──
+  // Computed live from the SAME profiles rows already loaded — no invented
+  // events, no extra queries. Three families only: new accounts (7d),
+  // subscriptions expiring within 7 days, and already-expired subscriptions.
+  const opsAlerts = useMemo(() => {
+    const now = Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
+    const newAccounts = []
+    const expiring = []
+    const expired = []
+    for (const t of teachers) {
+      if (t.is_admin) continue
+      if (t.created_at && now - new Date(t.created_at).getTime() <= 7 * dayMs) {
+        newAccounts.push({ t, when: new Date(t.created_at).toLocaleDateString('ar-EG') })
+      }
+      const exp = t.subscription_expires_at ? new Date(t.subscription_expires_at).getTime() : null
+      if (!exp) continue
+      const daysLeft = Math.ceil((exp - now) / dayMs)
+      if (daysLeft < 0 && t.subscription_status !== 'cancelled') {
+        expired.push({ t, daysLeft })
+      } else if (daysLeft >= 0 && daysLeft <= 7 && ['active', 'trial'].includes(t.subscription_status)) {
+        expiring.push({ t, daysLeft })
+      }
+    }
+    return { newAccounts, expiring, expired }
+  }, [teachers])
+
   const supportStarted = async () => {
     // الجلسة اتبدأت — حدّث السياق (هيحوّلنا للوحة المستخدم مع شريط وصول الدعم)
     await refreshProfile()
@@ -255,6 +282,24 @@ export default function AdminDashboard({ onBack }) {
           <SkeletonList rows={4} />
         ) : (
           <div className="space-y-3">
+            {/* تنبيهات تشغيلية — حسابات جديدة / اشتراكات قاربت أو انتهت */}
+            {(opsAlerts.newAccounts.length > 0 || opsAlerts.expiring.length > 0 || opsAlerts.expired.length > 0) && (
+              <div className="bg-surface border border-outline rounded-xl p-3.5">
+                <p className="font-bold text-fg text-sm mb-2">🔔 تنبيهات تشغيلية</p>
+                <div className="space-y-1.5 text-xs">
+                  {opsAlerts.newAccounts.map(({ t, when }) => (
+                    <p key={`new-${t.id}`} className="m-0 text-fg-muted">👤 حساب جديد: <b className="text-fg">{t.full_name || t.email}</b> · {when}</p>
+                  ))}
+                  {opsAlerts.expiring.map(({ t, daysLeft }) => (
+                    <p key={`exp-${t.id}`} className="m-0" style={{ color: 'var(--warn-strong)' }}>⏳ اشتراك <b>{t.full_name || t.email}</b> يقرب من الانتهاء · متبقي {daysLeft} يوم</p>
+                  ))}
+                  {opsAlerts.expired.map(({ t }) => (
+                    <p key={`x-${t.id}`} className="m-0" style={{ color: 'var(--danger-strong)' }}>🔴 انتهى اشتراك <b>{t.full_name || t.email}</b></p>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* بحث + فلترة حسب الفريق */}
             <div className="bg-surface border border-outline rounded-xl p-3 flex flex-wrap gap-2 items-end">
               <label className="flex-1 min-w-[220px] text-xs font-bold text-fg-muted">

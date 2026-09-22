@@ -106,6 +106,8 @@ export function WorkspaceProvider({ children }) {
   const teacherIdRef = useRef(effectiveTeacherId); teacherIdRef.current = effectiveTeacherId
   const updateSettingsRef = useRef(updateSettings); updateSettingsRef.current = updateSettings
   const tRef = useRef(t); tRef.current = t
+  const examsListRef = useRef(examsList); examsListRef.current = examsList
+  const examScoresByStudentRef = useRef(examScoresByStudent); examScoresByStudentRef.current = examScoresByStudent
 
   const flashSaved = useCallback((id) => {
     setSavedIds((p) => new Set([...p, id]))
@@ -827,6 +829,38 @@ export function WorkspaceProvider({ children }) {
         const { error: notificationError } = await supabase.from('student_notifications').insert(notifications)
         if (notificationError) throw notificationError
       }
+      // ── TEACHER SESSION REPORT → the bell (owner spec: the session report
+      // is the teacher's most important notification after every session,
+      // sent ONCE, with the real numbers, and persistent in the Notification
+      // Center instead of vanishing). Best-effort: never blocks finishing.
+      try {
+        const present = groupStudents.filter((s) => finalMap[s.id]?.status === 'حاضر').length
+        const absent = groupStudents.filter((s) => finalMap[s.id]?.status === 'غائب').length
+        const hwDone = groupStudents.filter((s) => ['مكتمل', 'تم'].includes(finalMap[s.id]?.homework_status || '')).length
+        const hwApplicable = groupStudents.filter((s) => ['مكتمل', 'تم', 'ناقص', 'لم يتم'].includes(finalMap[s.id]?.homework_status || '')).length
+        const lessonExams = (examsListRef.current || []).filter((e) => e.lesson_session_id === lessonId)
+        let examAvg = null
+        if (lessonExams.length) {
+          let earned = 0
+          let max = 0
+          for (const s of groupStudents) {
+            const sc = (examScoresByStudentRef.current[s.id] || []).find((x) => x.exam_id === lessonExams[0].id)
+            if (!sc) continue
+            const sections = Object.keys(sc.section_scores || {}).length || 1
+            const scMax = Number(sc.max_score_per_section || 0) * sections
+            if (scMax > 0 && Number.isFinite(Number(sc.total_score))) { earned += Number(sc.total_score); max += scMax }
+          }
+          // (earned*100)/max — integer-safe rounding (0.575*100 float trap)
+          if (max) examAvg = Math.round((earned * 100) / max)
+        }
+        const reportBody = `الحضور: ${present} حاضر / ${absent} غياب · الواجب: ${hwDone}/${hwApplicable} مكتمل${examAvg != null ? ` · متوسط الامتحان: ${examAvg}%` : ''}${lesson?.lesson_topic ? ` · الدرس: ${lesson.lesson_topic}` : ''}`
+        await supabase.from('teacher_notification_events').insert({
+          teacher_id: effectiveTeacherId,
+          event_type: 'other',
+          title: `📚 تقرير جلسة ${targetGroup} — ${lesson?.session_date || ''}`.trim(),
+          body: reportBody,
+        })
+      } catch (reportError) { console.warn('teacher session report insert failed:', reportError?.message) }
       setSaveStatus('finalized')
       const summary = finalizeResult?.present_count !== undefined ? ` حاضر: ${finalizeResult.present_count} · غائب: ${finalizeResult.absent_count}` : ''
       showToast(isArabic ? `تم حفظ البيانات وإنهاء الحصة وتسجيلها في السجل.${summary}` : `Session data saved, finalized, and logged.${summary}`, 'success')

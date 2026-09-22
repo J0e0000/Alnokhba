@@ -222,9 +222,24 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     other: 'general',
   }
 
+  // Session/weekly/follow-up reports (استوديو التقارير + the auto session
+  // report written at finish) carry «تقرير» in the title — filter them even
+  // though they land with a generic event_type.
+  const categoryOfEvent = (e) => {
+    if (String(e.title || '').includes('تقرير')) return 'reports'
+    return eventTypeToCategory[e.event_type] || 'general'
+  }
+  const eventIconOf = (e) => {
+    const title = String(e.title || '')
+    if (title.includes('تقرير جلسة')) return '📚'
+    if (title.includes('ملخص الأسبوع')) return '📈'
+    if (title.includes('متابعة')) return '⚠️'
+    return eventIcons[e.event_type] || eventIcons.other
+  }
+
   const filteredEvents = categoryFilter === 'all'
     ? events
-    : events.filter((e) => eventTypeToCategory[e.event_type] === categoryFilter)
+    : events.filter((e) => categoryOfEvent(e) === categoryFilter)
 
   const eventIcons = {
     student_submission: '📤',
@@ -269,6 +284,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
             <div className="flex gap-1 px-4 pt-3 overflow-x-auto">
               {[
                 ['all', isArabic ? 'الكل' : 'All'],
+                ['reports', isArabic ? '📚 تقارير' : '📚 Reports'],
                 ['payment', isArabic ? '💰 مدفوعات' : '💰 Payment'],
                 ['attendance', isArabic ? '📋 حضور' : '📋 Attendance'],
                 ['performance', isArabic ? '📊 أداء' : '📊 Performance'],
@@ -308,7 +324,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
                     className={`w-full text-right px-4 py-3 border-b border-subtle hover:bg-white/5 transition-colors ${!event.is_read ? 'bg-brand-gold/5' : ''}`}
                   >
                     <div className="flex items-start gap-2">
-                      <span className="text-sm mt-0.5">{eventIcons[event.event_type] || eventIcons.other}</span>
+                      <span className="text-sm mt-0.5">{eventIconOf(event)}</span>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm ${!event.is_read ? 'text-fg font-bold' : 'text-fg-subtle'}`}>{event.title}</p>
                         {event.body && <p className="text-fg-subtle text-xs mt-0.5 truncate">{event.body}</p>}

@@ -108,7 +108,7 @@ export default function ReportTab({ groupId, lesson, lessonOpen, lessonCompleted
         key: s.id,
         student: reportStudent,
         phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
-        message: buildAttendanceMessage(reportStudent, { status: finalAttendance, lesson, settings: ws.settings, groupName: groupId }),
+        message: buildAttendanceMessage(reportStudent, { status: finalAttendance, lesson, settings: ws.settings, groupName: groupId, examScores: ws.examScoresByStudent?.[s.id] || [] }),
         lessonId: lesson?.id,
         statusLabel: finalAttendance,
         statusType: finalAttendance === 'حاضر' ? 'present' : finalAttendance === 'غائب' ? 'absent' : 'none',
