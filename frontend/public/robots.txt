@@ -1,16 +1,8 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
 User-agent: *
 Allow: /
+
+# App surfaces that need no indexing
+Disallow: /?auth=
+Disallow: /qr/
 
 Sitemap: https://al-nokhbba.vercel.app/sitemap.xml
