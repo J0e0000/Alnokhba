@@ -61,3 +61,12 @@ createRoot(document.getElementById('root')).render(
     </ProductionErrorBoundary>
   </StrictMode>,
 )
+
+// Analytics (PostHog) — loads AFTER first paint via idle callback so the
+// boot path is never delayed. No-op unless VITE_POSTHOG_KEY is configured.
+const kickAnalytics = () => { import('./lib/posthog.js').then((m) => m.initPostHog()).catch(() => {}) }
+if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  window.requestIdleCallback(kickAnalytics, { timeout: 3000 })
+} else {
+  setTimeout(kickAnalytics, 1500)
+}

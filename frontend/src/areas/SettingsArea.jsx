@@ -9,6 +9,8 @@ import TemplatesModal from '../components/TemplatesModal'
 import BrandingModal from '../components/BrandingModal'
 import HelpSupportModal from '../components/HelpSupportModal'
 import { IS_DEMO } from '../lib/supabaseClient'
+import { friendlySaveErrorText } from '../lib/friendlyError'
+import { track } from '../lib/posthog'
 import { GRADES_BY_STAGE } from '../lib/helpers'
 
 // PERF: the insights report stays its own lazy chunk — it loads only when
@@ -334,8 +336,8 @@ export default function SettingsArea() {
           const { error } = await import('../lib/supabaseClient').then(({ supabase }) =>
             supabase.from('teacher_settings').update(patch).eq('teacher_id', ws.effectiveTeacherId),
           )
-          if (!error) { ws.refreshSettings?.(); ws.showToast?.(isArabic ? 'تم حفظ الإعدادات' : 'Settings saved', 'success'); setSettingsOpen(false) }
-          else ws.showToast?.(error.message || 'تعذر الحفظ', 'error')
+          if (!error) { ws.refreshSettings?.(); ws.showToast?.(isArabic ? 'تم حفظ الإعدادات' : 'Settings saved', 'success'); track('settings_saved'); setSettingsOpen(false) }
+          else ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
         }}
         onResetAllData={async () => {
           const ok = await ui.askConfirm(isArabic ? 'سيتم حذف كل الطلاب والامتحانات نهائيًا! هل أنت متأكد تمامًا؟' : 'This permanently deletes ALL students and exams! Are you absolutely sure?', { danger: true, confirmLabel: isArabic ? 'نعم، احذف الكل' : 'Yes, delete all' })
@@ -359,8 +361,8 @@ export default function SettingsArea() {
           const { error } = await import('../lib/supabaseClient').then(({ supabase }) =>
             supabase.from('teacher_settings').update(patch).eq('teacher_id', ws.effectiveTeacherId),
           )
-          if (!error) { ws.refreshSettings?.(); ws.showToast?.(isArabic ? 'تم حفظ القوالب' : 'Templates saved', 'success'); setTemplatesOpen(false) }
-          else ws.showToast?.(error.message || 'تعذر الحفظ', 'error')
+          if (!error) { ws.refreshSettings?.(); ws.showToast?.(isArabic ? 'تم حفظ القوالب' : 'Templates saved', 'success'); track('templates_saved'); setTemplatesOpen(false) }
+          else ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
         }}
       />
       <BrandingModal open={brandingOpen} onClose={() => setBrandingOpen(false)} />

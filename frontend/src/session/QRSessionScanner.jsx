@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { playFailureSound, playInfoSound, playSuccessSound } from '../lib/uiSounds'
 import { handleScannedPayload } from '../lib/qrAttendance'
 import { logAttendanceOp } from '../lib/attendanceDiagnostics'
+import { track } from '../lib/posthog'
 
 const CONFIG = { fps: 15, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 }
 const FEEDBACK_MS = 2000
@@ -59,6 +60,9 @@ export default function QRSessionScanner({ open, onClose, students, activeLesson
       category: result.type === 'success' ? 'save_ok' : 'qr_unknown_format',
       context: { decodedLength: rawCode.length, lessonId: activeLessonId, error: result.text?.slice(0, 120) },
     })
+    // Product analytics: proves end-to-end that scans land in the system
+    // (owner asked to verify this) — fire-and-forget, never blocks the UI.
+    track(result.type === 'success' ? 'qr_scan_ok' : 'qr_scan_error', { lessonId: activeLessonId || null })
     showFeedback(result)
     if (result.type === 'success') setScanCount((n) => n + 1)
   }

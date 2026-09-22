@@ -9,6 +9,8 @@ import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone } from '../lib/helpers'
 import { downloadCSV } from '../lib/csv'
 import { supabase } from '../lib/supabaseClient'
+import { friendlySaveErrorText } from '../lib/friendlyError'
+import { track } from '../lib/posthog'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // REPORTS AREA (rule 14/22) — broader, batch reporting lives OUTSIDE the
@@ -204,14 +206,13 @@ export default function ReportsArea() {
         onClose={() => setTemplatesOpen(false)}
         settings={ws.settings}
         onSave={async (patch) => {
-          const result = await ws.refreshSettings && ws.settings
-          await import('../lib/supabaseClient').then(({ supabase }) =>
+          const { error } = await import('../lib/supabaseClient').then(({ supabase }) =>
             supabase.from('teacher_settings').update(patch).eq('teacher_id', ws.effectiveTeacherId),
           )
-          ws.refreshSettings?.()
-          ws.showToast?.(isArabic ? 'تم حفظ القوالب' : 'Templates saved', 'success')
-          void result
-          setTemplatesOpen(false)
+          // Honest save reporting: a failed update used to be silently
+          // swallowed here and the success toast fired regardless.
+          if (!error) { ws.refreshSettings?.(); ws.showToast?.(isArabic ? 'تم حفظ القوالب' : 'Templates saved', 'success'); track('templates_saved'); setTemplatesOpen(false) }
+          else ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
         }}
       />
       {announcementsOpen && (

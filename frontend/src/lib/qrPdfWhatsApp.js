@@ -425,7 +425,7 @@ export async function generateStudentQRImage(student, qrUrl) {
  * @returns {string}
  */
 export function buildQRMessage(studentName, studentLink, template) {
-  const raw = template || 'مرحباً {studentName}\nرابط Student Portal الخاص بالطالب: {link}'
+  const raw = template || 'أهلًا يا {studentName} 👋\nدي بوابتك الشخصية في النخبة:\n{link}\nهتتابع منها حضورك ونقاطك ورتبتك كل ما تتقدم. احفظ اللينك عندك ✅'
   const withName = raw.replaceAll('{studentName}', studentName)
   return withName.includes('{link}') ? withName.replaceAll('{link}', studentLink) : `${withName}\n${studentLink}`
 }
@@ -806,15 +806,16 @@ export function buildTextReport(student, { ranks, allStudents, session, examScor
 // students, with the warning balance computed from REAL data — never
 // hardcoded. Templates are teacher-editable (teacher_settings:
 // msg_attendance_present / msg_attendance_absent via TemplatesModal); the
-// defaults below follow the app's approved communication style. The
+// defaults below are the owner-approved colloquial EGYPTIAN Arabic versions
+// (owner request: "make a template ready for sending in egyptian arabic"). The
 // consequence named in the absent default ("منع الدخول عبر البوابة") is the
 // ONLY automated consequence that exists in the system today (QR entry block
 // at warnings ≥ threshold, lib/qrAttendance.js) — no invented rules.
 // ═════════════════════════════════════════════════════════════════════════════
 
-export const DEFAULT_PRESENT_TEMPLATE = 'مرحبًا،\nنحب نبلغ حضرتك إن {studentName} حضر حصة {group} اليوم.\n{lessonLine}شكرًا لكم.'
+export const DEFAULT_PRESENT_TEMPLATE = 'أهلًا حضرتك 🌟\n{studentName} حضر حصة {group} النهارده تمام ✅\n{lessonLine}شكرًا لمتابعتكم.'
 
-export const DEFAULT_ABSENT_TEMPLATE = 'مرحبًا،\n{studentName} لم يحضر حصة {group} اليوم.\n{lessonLine}رصيد الإنذارات الحالي: {warnings}.\nمتبقي {remainingWarnings} إنذار قبل منع الدخول مؤقتًا عبر بوابة الطالب.\nنشكر لكم المتابعة.'
+export const DEFAULT_ABSENT_TEMPLATE = 'مساء الخير حضرتك،\n{studentName} معدهش حصة {group} النهارده ❌\n{lessonLine}رصيد الإنذارات دلوقتي: {warnings}.\nلو كمل {remainingWarnings} إنذار هيتمنع مؤقتًا من بوابة الطالب.\nلو فيه عذر أو ظرف صحي، بلغنا — وشكرًا لمتابعتكم.'
 
 /**
  * Interpolate an attendance template with real per-student values.

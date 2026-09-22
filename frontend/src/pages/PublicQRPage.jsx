@@ -21,6 +21,7 @@ import { getPalette } from '../lib/palettes'
 import { generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { registerStudentPush } from '../lib/pushNotifications'
 import { subscribePortalRefresh } from '../lib/portalRealtime'
+import { track } from '../lib/posthog'
 
 const REFRESH_MS = 10000
 // PERF (performance round): the teacher's display name is quasi-static — it
@@ -363,6 +364,12 @@ export default function PublicQRPage() {
     }, 450)
   }, [load])
   useEffect(() => () => { if (instantRefreshTimerRef.current) clearTimeout(instantRefreshTimerRef.current) }, [])
+
+  // Product analytics: count real parent-portal opens (fires on the loading →
+  // ready transition only — background refreshes keep the same state value).
+  useEffect(() => {
+    if (state === 'ready') track('student_portal_opened')
+  }, [state])
 
   const portalTeacherId = portal?.teacherId || null
   useEffect(() => {
