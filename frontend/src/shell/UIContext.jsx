@@ -207,14 +207,31 @@ export function UIProvider({ teacherId, children }) {
     try { if (teacherId) localStorage.removeItem(QUEUE_KEY(teacherId)) } catch { /* ignore */ }
   }, [teacherId])
 
+  // Per-item message EDIT (owner request: "نقدر نعدل أسطر عليه" — direct line
+  // edits on each generated report before it goes out). Mutates the queue
+  // item and re-persists so an edit survives the mid-batch reload.
+  const updateQueueItemMessage = useCallback((index, text) => {
+    setQueue((prev) => {
+      if (!prev || !Array.isArray(prev.items) || !prev.items[index]) return prev
+      const items = prev.items.map((it, i) => (i === index ? { ...it, message: text } : it))
+      const next = { ...prev, items }
+      try {
+        if (teacherId && next.index < next.items.length) {
+          localStorage.setItem(QUEUE_KEY(teacherId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }))
+        }
+      } catch { /* ignore */ }
+      return next
+    })
+  }, [teacherId])
+
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
-    queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue,
+    queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
     insightsIntent, openInsights, clearInsightsIntent,
     tourActive, setTourActive,
-  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
+  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
 
   return (
     <UIContext.Provider value={value}>

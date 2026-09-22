@@ -352,6 +352,7 @@ export default function AppShell({ onOpenAdmin }) {
         index={ui.queue.index}
         status={ui.queue.status}
         onAdvance={ui.advanceQueue}
+        onEditMessage={ui.updateQueueItemMessage}
       />
       {/* Paused send batch — a small non-intrusive chip at the very top
           (never over the working area): resume exactly where it stopped, or

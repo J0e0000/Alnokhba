@@ -459,6 +459,12 @@ export default function PublicQRPage() {
       await generateStudentReportPDF(portal.student, {
         ranks: portal.ranks,
         session: portal.sessionToday,
+        // FIX (grades missing from the report): the exam scores were already
+        // loaded for the portal UI but never reached the PDF narrative — the
+        // "النتائج والدرجات" section always said "no exam results" even when
+        // the student had real exams. The narrative now averages them and
+        // names the latest exam with its grade.
+        examScores: portal.examResults,
         today: new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }),
         download: true,
       })

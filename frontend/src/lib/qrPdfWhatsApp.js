@@ -736,11 +736,22 @@ function _performanceNarrative(examScores = []) {
   let earned = 0
   let maximum = 0
   scores.forEach((exam) => {
-    const sectionCount = Object.keys(exam.section_scores || {}).length || 1
-    const maxPerSection = Number(exam.max_score_per_section)
-    if (Number.isFinite(Number(exam.total_score)) && maxPerSection > 0) {
-      earned += Number(exam.total_score)
-      maximum += maxPerSection * sectionCount
+    // Tolerate BOTH row shapes: raw exam rows (total_score +
+    // max_score_per_section + section_scores, as stored in the exams table)
+    // and the portal's simplified rows ({ total, max }) — so every caller
+    // (PDF report, future WhatsApp flows) gets real grades, never the
+    // "no exam result" placeholder when data actually exists.
+    const earnedRaw = Number(exam.total_score ?? exam.total)
+    let maxRaw = NaN
+    if (exam.max_score_per_section != null && Number.isFinite(Number(exam.max_score_per_section))) {
+      const sectionCount = Object.keys(exam.section_scores || {}).length || 1
+      maxRaw = Number(exam.max_score_per_section) * sectionCount
+    } else if (Number.isFinite(Number(exam.max))) {
+      maxRaw = Number(exam.max)
+    }
+    if (Number.isFinite(earnedRaw) && Number.isFinite(maxRaw) && maxRaw > 0) {
+      earned += earnedRaw
+      maximum += maxRaw
     }
   })
   if (!maximum) return { text: 'لا توجد نتيجة امتحان مكتملة كافية للحكم على المستوى الدراسي حتى الآن.', recommendation: 'نوصي بمتابعة أول نتيجة قادمة ومراجعة نقاط القوة والاحتياج بعدها.' }
@@ -755,13 +766,18 @@ function _performanceNarrative(examScores = []) {
 export function getReportTemplateValues(examScores = [], student = {}, session = null) {
   const latest = Array.isArray(examScores) && examScores.length > 0 ? examScores[0] : null
   const sections = latest ? Object.keys(latest.section_scores || {}).length || 1 : 0
+  // Tolerate both exam row shapes: raw exam rows (total_score /
+  // max_score_per_section / exam_title / exams relation) and the portal's
+  // simplified rows ({ total, max, title }).
   const max = latest
-    ? Number(latest.max_score ?? 0) || (Number(latest.max_score_per_section ?? latest.exams?.max_score_per_section ?? 0) * sections)
+    ? Number(latest.max_score ?? 0)
+      || Number(latest.max ?? 0)
+      || (Number(latest.max_score_per_section ?? latest.exams?.max_score_per_section ?? 0) * sections)
     : 0
-  const score = latest ? Number(latest.total_score ?? latest.score ?? 0) : 0
+  const score = latest ? Number(latest.total_score ?? latest.total ?? latest.score ?? 0) : 0
   const percentage = max > 0 ? Math.round((score / max) * 100) : ''
   return {
-    examTitle: latest?.exam_title || latest?.exams?.title || '',
+    examTitle: latest?.exam_title || latest?.exams?.title || latest?.title || '',
     examScore: latest ? score : '',
     examMaxScore: latest && max ? max : '',
     examPercentage: percentage,
@@ -778,6 +794,12 @@ export function buildTextReport(student, { ranks, allStudents, session, examScor
   const todayStr = today || new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
   const attendance = _attendanceNarrative(s.attendance_status, session)
   const performance = _performanceNarrative(examScores)
+  // Concrete latest-exam line (owner: "اتأكد إن الامتحانات والدرجات موجودة
+  // فالتقرير") — falls back to '' when no exam data exists.
+  const latestExam = getReportTemplateValues(examScores, s, session)
+  const examLine = latestExam.examTitle && latestExam.examScore !== '' && latestExam.examMaxScore
+    ? `آخر امتحان: «${latestExam.examTitle}» — درجة ${latestExam.examScore} من ${latestExam.examMaxScore}${latestExam.examPercentage !== '' ? ` (${latestExam.examPercentage}%)` : ''}.`
+    : ''
   const lines = [
     `تقرير متابعة الطالب`,
     `التاريخ: ${todayStr}`,
@@ -791,6 +813,7 @@ export function buildTextReport(student, { ranks, allStudents, session, examScor
   if (session?.lesson_topic) lines.push(`درس اليوم: تم تناول موضوع «${session.lesson_topic}».`)
   if (session?.homework_text) lines.push(`الواجب: ${s.hw_status && !String(s.hw_status).includes('لم') ? `حالة الواجب الحالية هي «${s.hw_status}».` : `الواجب المطلوب هو «${session.homework_text}».`}`)
   lines.push('', `النتائج والدرجات: ${performance.text}`)
+  if (examLine) lines.push(examLine)
   lines.push(`الرتبة الحالية: ${rank}، والمركز بين الطلاب: ${position === '—' ? 'غير محدد بعد' : `رقم ${position}`}.`)
   lines.push(`إجمالي النقاط: ${s.points || 0}. وعدد الإنذارات المسجلة: ${s.warnings || 0}.`)
   lines.push('', `التوصية: ${performance.recommendation}`)
@@ -900,12 +923,14 @@ export function sendReportWhatsApp(phone, textReport) {
  * @param {object} opts
  * @param {boolean} opts.isDark      - Controls theme colors (dark navy vs light)
  * @param {Array}   opts.ranks       - Rank definitions [{ min, title }]
+ * @param {Array}   opts.examScores  - Exam rows (any supported shape) — powers the
+ *                                     grades narrative + latest-exam line
  * @param {Array}   opts.allStudents  - All students (to compute position)
  * @param {object}  opts.session      - Session info { group_name, lesson_topic, homework_text }
  * @param {string}  opts.today        - Today's date string
  * @returns {Promise<{ success: boolean, pdfUrl?: string }>}
  */
-export async function generateStudentReportPDF(student, { isDark = false, ranks, allStudents, session, today, download = false } = {}) {
+export async function generateStudentReportPDF(student, { isDark = false, ranks, allStudents, session, examScores, today, download = false } = {}) {
   try {
     const html2canvas = (await import('html2canvas-pro')).default
 
@@ -1050,7 +1075,7 @@ export async function generateStudentReportPDF(student, { isDark = false, ranks,
       font-size: 14px;
       color: ${textColor};
     `
-    const narrative = buildTextReport(s, { ranks, allStudents, session, today })
+    const narrative = buildTextReport(s, { ranks, allStudents, session, examScores, today })
     narrativeCard.innerHTML = `<div style="font-size: 18px; font-weight: 700; color: ${accentNavy}; margin-bottom: 12px;">ملخص المتابعة والتوصيات</div><div>${escapeReportHtml(narrative).replace(/\n/g, '<br/>')}</div>`
     container.appendChild(narrativeCard)
 

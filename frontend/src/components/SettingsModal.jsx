@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Modal from './Modal'
 import ConfirmDialog from './ConfirmDialog'
 import { supabase } from '../lib/supabaseClient'
@@ -49,18 +49,24 @@ export default function SettingsModal({ open, onClose, settings, onSave, onReset
   const removeAssistant = async (id) => { await supabase.from('workspace_members').delete().eq('id', id); loadTeam() }
 
 
+  // SEED ONCE PER OPEN (typing bug fix — same family as TemplatesModal):
+  // `settings` gets a NEW object identity on every background refresh, and
+  // the old effect keyed on [settings, open] re-seeded every field mid-typing
+  // (text reverted + caret thrown to the end). Seed exactly once per open.
+  const seededRef = useRef(false)
   useEffect(() => {
-    if (settings) {
-      setGroupList((settings.groups || []).filter(Boolean))
-      setPoints({ interact: settings.points_interact, interrupt: settings.points_interrupt, present: settings.points_present, absent: settings.points_absent })
-      setRanks(settings.ranks || [])
-      setReportFields(settings.report_fields || ['rank', 'position', 'points', 'warnings', 'attendance', 'homework', 'session', 'logs'])
-      setAbsenceWarningThreshold(Number(settings.insight_config?.absence_warning_threshold || settings.absence_warning_threshold || 2))
-      setAbsenceAttentionThreshold(Number(settings.insight_config?.absence_attention_threshold || settings.absence_attention_threshold || 3))
-      setMaxWarnings(Number(settings.insight_config?.max_warnings ?? 3))
-      setNotificationPreferences({ attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true, ...(settings.notification_preferences || {}) })
-      setQrMessageTemplate(settings.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب: {link}')
-    }
+    if (!open) { seededRef.current = false; return }
+    if (seededRef.current || !settings) return
+    seededRef.current = true
+    setGroupList((settings.groups || []).filter(Boolean))
+    setPoints({ interact: settings.points_interact, interrupt: settings.points_interrupt, present: settings.points_present, absent: settings.points_absent })
+    setRanks(settings.ranks || [])
+    setReportFields(settings.report_fields || ['rank', 'position', 'points', 'warnings', 'attendance', 'homework', 'session', 'logs'])
+    setAbsenceWarningThreshold(Number(settings.insight_config?.absence_warning_threshold || settings.absence_warning_threshold || 2))
+    setAbsenceAttentionThreshold(Number(settings.insight_config?.absence_attention_threshold || settings.absence_attention_threshold || 3))
+    setMaxWarnings(Number(settings.insight_config?.max_warnings ?? 3))
+    setNotificationPreferences({ attendance: true, homework: true, exams: true, lessons: true, payments: true, announcements: true, ...(settings.notification_preferences || {}) })
+    setQrMessageTemplate(settings.qr_message_template || 'مرحباً {studentName}\nرابط متابعة الطالب: {link}')
   }, [settings, open])
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -38,17 +38,25 @@ export default function TemplatesModal({ open, onClose, settings, onSave }) {
   const [presentTemplate, setPresentTemplate] = useState('')
   const [absentTemplate, setAbsentTemplate] = useState('')
 
+  // SEED ONCE PER OPEN (typing bug fix): `ws.settings` gets a NEW object
+  // identity on every background refresh — the old effect keyed on
+  // [settings, open] re-seeded all fields mid-typing, reverting the text and
+  // throwing the caret to the end (owner: "بكتب في حتة يرجعني تاني لآخره").
+  // Now the fields seed exactly once per open (or when settings first arrive
+  // while open) and NEVER again until the modal is reopened.
+  const seededRef = useRef(false)
   useEffect(() => {
-    if (settings) {
-      setWelcome(settings.msg_welcome || '')
-      setWarning(settings.msg_warning || '')
-      setPromotion(settings.msg_promotion || '')
-      setQrMessage(settings.qr_message_template || '')
-      setReportTemplate(settings.msg_report_template || '')
-      setPresentTemplate(settings.msg_attendance_present || '')
-      setAbsentTemplate(settings.msg_attendance_absent || '')
-    }
-  }, [settings, open])
+    if (!open) { seededRef.current = false; return }
+    if (seededRef.current || !settings) return
+    seededRef.current = true
+    setWelcome(settings.msg_welcome || '')
+    setWarning(settings.msg_warning || '')
+    setPromotion(settings.msg_promotion || '')
+    setQrMessage(settings.qr_message_template || '')
+    setReportTemplate(settings.msg_report_template || '')
+    setPresentTemplate(settings.msg_attendance_present || '')
+    setAbsentTemplate(settings.msg_attendance_absent || '')
+  }, [open, settings])
 
   const submit = (e) => {
     e.preventDefault()
@@ -100,7 +108,26 @@ export default function TemplatesModal({ open, onClose, settings, onSave }) {
         <TemplateField label="رسالة الإنذار" value={warning} onChange={setWarning} readyTemplate={READY_EGYPTIAN.warning} />
         <TemplateField label="رسالة الترقية" value={promotion} onChange={setPromotion} readyTemplate={READY_EGYPTIAN.promotion} />
         <TemplateField label="رسالة QR للطالب" value={qrMessage} onChange={setQrMessage} readyTemplate={READY_EGYPTIAN.qrMessage} bricks={[['اسم الطالب', '{studentName}'], ['رابط البوابة', '{link}']]} hint="لو {link} مش موجودة في القالب هتُضاف تلقائيًا في آخر الرسالة." />
-        <TemplateField label="قالب تقرير الطابور" value={reportTemplate} onChange={setReportTemplate} readyTemplate={READY_EGYPTIAN.reportTemplate} />
+        <TemplateField
+          label="قالب التقرير المفصّل"
+          value={reportTemplate}
+          onChange={setReportTemplate}
+          readyTemplate={READY_EGYPTIAN.reportTemplate}
+          bricks={[
+            ['اسم الطالب', '{studentName}'],
+            ['المرحلة', '{stage}'],
+            ['المجموعة', '{group}'],
+            ['الحضور', '{attendance}'],
+            ['موضوع الحصة', '{lessonLine}'],
+            ['الواجب', '{homeworkLine}'],
+            ['نتيجة آخر امتحان', '{examLine}'],
+            ['الرتبة', '{rank}'],
+            ['المركز', '{position}'],
+            ['النقاط', '{points}'],
+            ['الإنذارات', '{warnings}'],
+          ]}
+          hint="سرد التقرير المفصّل لولي الأمر — اللبنات بتتحط عند مؤشر الكتابة، والقيم الفاضية بتتشال تلقائيًا عند الاستخدام."
+        />
         <button className="w-full btn-glow font-bold py-3 rounded-xl text-sm">
           حفظ القوالب
         </button>
@@ -113,7 +140,28 @@ function TemplateField({ label, value, onChange, bricks = [], hint, placeholder,
   // Two-tap replace: an empty field fills immediately; a written field asks
   // for a second confirming tap so nobody loses typed work by accident.
   const [armed, setArmed] = useState(false)
-  const addBrick = (brick) => onChange(`${value || ''}${value && !value.endsWith(' ') ? ' ' : ''}${brick}`)
+  const taRef = useRef(null)
+  // Bricks insert AT THE CURSOR (caret fix): they used to append at the end
+  // of the text, yanking the teacher from mid-sentence to the tail.
+  const addBrick = (brick) => {
+    const el = taRef.current
+    const cur = value || ''
+    let start = cur.length
+    let end = cur.length
+    if (el && typeof el.selectionStart === 'number') {
+      start = el.selectionStart
+      end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start
+    }
+    const next = `${cur.slice(0, start)}${brick}${cur.slice(end)}`
+    onChange(next)
+    // Restore caret right after the inserted brick on the next frame.
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      const pos = start + brick.length
+      try { el.setSelectionRange(pos, pos) } catch { /* detached */ }
+    })
+  }
   const applyReady = () => {
     if (!value || armed) {
       onChange(readyTemplate)
@@ -151,6 +199,7 @@ function TemplateField({ label, value, onChange, bricks = [], hint, placeholder,
         </div>
       )}
       <textarea
+        ref={taRef}
         rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || ''}
         className="w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-gold"
       />
