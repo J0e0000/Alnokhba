@@ -9,7 +9,7 @@ import {
 } from '../lib/insights/dbStore'
 import { runWeeklyPipeline, openShape, buildInsightInputs } from '../lib/insights/runWeekly'
 import { computeDomainMetrics, buildCurrentState } from '../lib/insights/pipeline'
-import { downloadCSV, localDateStr } from '../lib/csv'
+import { localDateStr } from '../lib/csv'
 
 // PERF: chart.js stays a lazy chunk (only when the exam trend opens).
 const Charts = lazy(() => import('./Charts'))
@@ -376,18 +376,8 @@ export default function InsightsReport() {
     return { student: s, attPct, examPct, examCount: exams.length, points: s.points || 0 }
   }), [ws.students, ws.allAttendance, ws.examScoresByStudent, sinceDate, sinceStr])
 
-  const exportCSV = () => {
-    const headers = ['الاسم', 'الكود', 'المجموعة', 'الحضور %', 'متوسط الامتحانات %', 'عدد الامتحانات', 'النقاط']
-    const rows = periodRows.map((r) => [
-      r.student.name, r.student.code || '', r.student.group_name || '',
-      r.attPct === null ? '—' : `${r.attPct}%`,
-      r.examPct === null ? '—' : `${r.examPct}%`,
-      r.examCount, r.points,
-    ])
-    const label = periodDays === 'week' ? 'this_week_fri_thu' : periodDays ? `last_${periodDays}_days` : 'all_time'
-    downloadCSV(`analytics_${label}_${localDateStr()}.csv`, headers, rows)
-    ws.showToast?.('تم تحميل ملف CSV ✓', 'success')
-  }
+  // CSV export removed (owner request): data export is an ADMIN-ONLY action
+  // — it lives in لوحة الأدمن only.
 
   const engagementD = domains?.engagement
   const reportView = viewSnap || weekly
@@ -594,7 +584,7 @@ export default function InsightsReport() {
             </div>
           </section>
 
-          {/* أدوات متقدمة (CSV) */}
+          {/* أدوات متقدمة */}
           <section>
             <h3 className="text-[.8rem] font-extrabold m-0 mb-2">أدوات متقدمة</h3>
             <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -612,9 +602,6 @@ export default function InsightsReport() {
                   {d === 'week' ? 'هذا الأسبوع' : d === 30 ? 'آخر ٣٠ يوم' : d === 90 ? 'آخر ٩٠ يوم' : 'الكل'}
                 </button>
               ))}
-              <button type="button" className="btn-ghost rounded-lg px-3 py-2 text-[.68rem] font-extrabold ms-auto" onClick={exportCSV}>
-                ⬇ تصدير CSV
-              </button>
             </div>
             <div className="grid gap-1.5 max-h-72 overflow-y-auto">
               {periodRows.map((r) => (

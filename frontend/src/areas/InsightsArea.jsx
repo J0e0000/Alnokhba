@@ -9,7 +9,7 @@ import {
   saveWeeklyAnalysis, saveOnDemandAnalysis, fetchReportSnapshot, dismissInsight,
   analysisDue, ANALYSIS_WEEK_MS,
 } from '../lib/insights/dbStore'
-import { downloadCSV, localDateStr } from '../lib/csv'
+import { localDateStr } from '../lib/csv'
 
 // PERF: chart.js stays a lazy chunk (only when the academic domain expands).
 const Charts = lazy(() => import('../components/Charts'))
@@ -431,19 +431,6 @@ export default function InsightsArea() {
     return ordered
   }, [ws.students, ws.examScoresByStudent])
 
-  const exportCSV = () => {
-    const headers = ['الاسم', 'الكود', 'المجموعة', 'الحضور %', 'متوسط الامتحانات %', 'عدد الامتحانات', 'النقاط']
-    const rows = periodRows.map((r) => [
-      r.student.name, r.student.code || '', r.student.group_name || '',
-      r.attPct === null ? '—' : `${r.attPct}%`,
-      r.examPct === null ? '—' : `${r.examPct}%`,
-      r.examCount, r.points,
-    ])
-    const label = periodDays === 'week' ? 'this_week_fri_thu' : periodDays ? `last_${periodDays}_days` : 'all_time'
-    downloadCSV(`analytics_${label}_${localDateStr()}.csv`, headers, rows)
-    ws.showToast?.('تم تحميل ملف CSV ✓', 'success')
-  }
-
   const periodLabel = periodDays === 'week' ? 'هذا الأسبوع (الجمعة ← الخميس)' : periodDays === 30 ? 'آخر ٣٠ يوم' : periodDays === 90 ? 'آخر ٩٠ يوم' : 'كل الفترات'
   const academicD = domains?.academic
   const attendanceD = domains?.attendance
@@ -676,9 +663,6 @@ export default function InsightsArea() {
                 {d === 'week' ? 'هذا الأسبوع' : d === 30 ? 'آخر ٣٠ يوم' : d === 90 ? 'آخر ٩٠ يوم' : 'الكل'}
               </button>
             ))}
-            <button type="button" className="btn-ghost rounded-lg px-3 py-2 text-[.7rem] font-extrabold ms-auto" onClick={exportCSV}>
-              ⬇ تصدير CSV
-            </button>
           </div>
           <p className="text-[.68rem] text-fg-muted mt-0 mb-2">
             ملخص لكل طالب في الفترة المختارة ({periodLabel}) — نفس تعريفات الحضور والدرجات المستخدمة في باقي التطبيق.

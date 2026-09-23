@@ -8,6 +8,7 @@ import AdminTeamsPanel from '../components/AdminTeamsPanel'
 import AdminBackupsPanel from '../components/AdminBackupsPanel'
 import AdminAuditLogsPanel from '../components/AdminAuditLogsPanel'
 import AdminSupportAccessModal from '../components/AdminSupportAccessModal'
+import { downloadCSV, localDateStr } from '../lib/csv'
 
 const STATUS_LABEL = { trial: 'تجربة مجانية', active: 'مشترك فعّال', expired: 'منتهي', cancelled: 'ملغي' }
 const ACTION_LABEL = { extend: 'تفعيل/تمديد', cancel: 'إلغاء اشتراك', verify: 'تأكيد حساب', password_change: 'تغيير كلمة مرور', backup_failed: '⚠️ فشل نسخة احتياطية' }
@@ -238,6 +239,39 @@ export default function AdminDashboard({ onBack }) {
     return { newAccounts, expiring, expired }
   }, [teachers])
 
+  // ── تصدير البيانات (إجراء الأدمن فقط — owner request): البيانات المُصدّرة
+  // هي نفس نظرة الأدمن المحمّلة بالفعل (profiles + admin_teacher_stats + الفرق)
+  // مع احترام البحث/الفلتر الحالي — بدون استعلامات إضافية أو صلاحيات جديدة.
+  const exportUsersCSV = () => {
+    const headers = ['الاسم', 'الإيميل', 'الهاتف', 'نوع الحساب', 'أدمن', 'مفعّل', 'حالة الاشتراك', 'ينتهي في', 'عدد الطلاب', 'الفرق', 'تاريخ التسجيل', 'آخر نشاط']
+    const rows = filteredTeachers.map((t) => {
+      const stats = statsByTeacher[t.id]
+      const exp = t.subscription_expires_at ? new Date(t.subscription_expires_at).getTime() : null
+      const isExpired = exp !== null && exp < Date.now()
+      const effectiveStatus = isExpired && t.subscription_status !== 'cancelled' ? 'expired' : t.subscription_status
+      const teams = (teamsByProfile[t.id] || [])
+        .map((id) => teamOverview.teams.find((x) => x.id === id)?.name)
+        .filter(Boolean)
+        .join('؛ ')
+      return [
+        t.full_name || '',
+        t.email || '',
+        t.phone || '',
+        ACCOUNT_TYPE_LABEL[t.account_type] || 'مدرّس',
+        t.is_admin ? 'نعم' : 'لا',
+        t.is_verified ? 'نعم' : 'لا',
+        STATUS_LABEL[effectiveStatus] || effectiveStatus || '',
+        t.subscription_expires_at ? new Date(t.subscription_expires_at).toLocaleDateString('ar-EG') : '',
+        stats?.student_count ?? 0,
+        teams,
+        t.created_at ? new Date(t.created_at).toLocaleDateString('ar-EG') : '',
+        stats?.last_activity ? new Date(stats.last_activity).toLocaleDateString('ar-EG') : '',
+      ]
+    })
+    downloadCSV(`nokhba_users_${localDateStr()}.csv`, headers, rows)
+    showToast(`تم تصدير بيانات ${filteredTeachers.length} مستخدم ✓`, 'success')
+  }
+
   const supportStarted = async () => {
     // الجلسة اتبدأت — حدّث السياق (هيحوّلنا للوحة المستخدم مع شريط وصول الدعم)
     await refreshProfile()
@@ -317,7 +351,16 @@ export default function AdminDashboard({ onBack }) {
               {teamOverviewError && <span className="text-[11px] text-[var(--warn-strong)]">(شغّل migration_036 لتفعيل فلترة الفرق)</span>}
             </div>
 
-            <p className="text-xs text-fg-muted">{filteredTeachers.length} من {teachers.length} مستخدم</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-fg-muted">{filteredTeachers.length} من {teachers.length} مستخدم</p>
+              <button
+                onClick={exportUsersCSV}
+                className="bg-brand-gold/15 text-brand-gold-hover border border-brand-gold/40 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-brand-gold/25 transition"
+                title="تصدير بيانات المستخدمين الظاهرين (مع البحث والفلتر) كملف CSV — إجراء الأدمن فقط"
+              >
+                ⬇ تصدير البيانات (CSV)
+              </button>
+            </div>
 
             {filteredTeachers.map((t) => {
               const expired = t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()

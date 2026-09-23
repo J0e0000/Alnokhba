@@ -9,6 +9,7 @@ import TeacherNotificationCenter from '../components/TeacherNotificationCenter'
 import InsightsNotifier from '../components/InsightsNotifier'
 import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
+import SubscriptionExpiryBanner from '../components/SubscriptionExpiryBanner'
 import HistoryModal from '../components/HistoryModal'
 import MessageQueueModal from '../components/MessageQueueModal'
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
@@ -250,6 +251,11 @@ export default function AppShell({ onOpenAdmin }) {
         </div>
       </header>
       )}
+
+      {/* ── Subscription ending awareness (≤3 days left): persistent warning
+          under the header so renewal happens BEFORE the SubscriptionGate
+          pauses the account. Hidden in Focus Mode (session owns the screen). ── */}
+      {!focusActive && <SubscriptionExpiryBanner />}
 
       {/* ── Body ────────────────────────────────────────────────── */}
       <div

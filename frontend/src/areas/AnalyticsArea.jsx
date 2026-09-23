@@ -1,7 +1,7 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { getStudentRank } from '../lib/helpers'
-import { downloadCSV, localDateStr } from '../lib/csv'
+import { localDateStr } from '../lib/csv'
 import { weekStart } from '../lib/week'
 
 // PERF (performance round): chart.js/auto (~200 KB minified, zero
@@ -16,7 +16,7 @@ const ChartsFallback = () => <div className="rounded-2xl border border-subtle p-
 // Deterministic rules (no fake AI): attendance rate, exam averages,
 // absence streaks, homework gaps, leaderboard. Derived from existing data.
 // NEW: period filter (30/90/all) on the exam trend + per-student period
-// summary with CSV export (UTF-8 BOM so Excel renders Arabic correctly).
+// summary. (CSV export moved to the Admin panel only — owner request.)
 // ═══════════════════════════════════════════════════════════════════════════
 export default function AnalyticsArea() {
   const ws = useWorkspace()
@@ -105,20 +105,6 @@ export default function AnalyticsArea() {
     })
   }, [ws.students, ws.allAttendance, ws.examScoresByStudent, sinceDate, sinceStr])
 
-  const exportCSV = () => {
-    const headers = ['الاسم', 'الكود', 'المجموعة', 'الحضور %', 'حصص مرصودة', 'حاضر', 'متوسط الامتحانات %', 'عدد الامتحانات', 'النقاط']
-    const rows = periodRows.map((r) => [
-      r.student.name, r.student.code || '', r.student.group_name || '',
-      r.attPct === null ? '—' : `${r.attPct}%`,
-      r.recordedCount, r.presentCount,
-      r.examPct === null ? '—' : `${r.examPct}%`,
-      r.examCount, r.points,
-    ])
-    const label = periodDays === 'week' ? 'this_week_fri_thu' : periodDays ? `last_${periodDays}_days` : 'all_time'
-    downloadCSV(`analytics_${label}_${localDateStr()}.csv`, headers, rows)
-    ws.showToast?.(isArabic ? 'تم تحميل ملف CSV ✓' : 'CSV downloaded ✓', 'success')
-  }
-
   const leaderboard = useMemo(
     () => [...ws.students].sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 10),
     [ws.students],
@@ -186,13 +172,10 @@ export default function AnalyticsArea() {
         </Suspense>
       </div>
 
-      {/* Per-student period summary + CSV export */}
+      {/* Per-student period summary */}
       <section className="glass-card p-4 mb-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h3 className="text-[.85rem] font-extrabold m-0">{isArabic ? 'ملخص الطلاب' : 'Student summary'} <span className="text-fg-muted text-[.68rem] font-bold">({isArabic ? periodLabel : periodLabel})</span></h3>
-          <button className="btn-ghost rounded-lg px-3 py-2 text-[.72rem] font-extrabold" onClick={exportCSV}>
-            ⬇ {isArabic ? 'تصدير CSV' : 'Export CSV'}
-          </button>
         </div>
         <div className="grid gap-1.5 max-h-96 overflow-y-auto">
           {periodRows.map((r) => (

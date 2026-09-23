@@ -72,7 +72,7 @@ const dictionary = {
 
     // ── Students Section ──
     leaderboard: '🏆 المتصدرين',
-    export_excel: '⬇️ تصدير Excel',
+    // export_excel removed (owner request): export is an ADMIN-ONLY action now.
     import_excel: '⬆️ استيراد Excel',
     search_placeholder: 'بحث بالاسم / الهاتف / الكود',
     all_stages: 'الكل',
@@ -544,7 +544,7 @@ const dictionary = {
 
     // ── Students Section ──
     leaderboard: '🏆 Leaderboard',
-    export_excel: '⬇️ Export Excel',
+    // export_excel removed (owner request): export is an ADMIN-ONLY action now.
     import_excel: '⬆️ Import Excel',
     search_placeholder: 'Search by name / phone / code',
     all_stages: 'All',

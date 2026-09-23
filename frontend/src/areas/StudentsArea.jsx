@@ -7,7 +7,6 @@ import CustomMessageModal from '../components/CustomMessageModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
-import { downloadCSV } from '../lib/csv'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — student-management round (spec 3–8, 21–26):
@@ -140,12 +139,8 @@ export default function StudentsArea() {
     ui.startQueue(items)
   }
 
-  const bulkExportCSV = () => {
-    setMoreOpen(false)
-    const rows = selectedStudents.map((s) => [s.name, s.code || '', s.phone || '', s.stage || '', s.group_name || '', s.points || 0, s.warnings || 0])
-    downloadCSV('students_selected.csv', ['الاسم', 'الكود', 'الهاتف', 'المرحلة', 'المجموعة', 'النقاط', 'الإنذارات'], rows)
-    ws.showToast?.('تم تحميل ملف CSV ✓', 'success')
-  }
+  // EXPORT moved to the Admin panel only (owner request): data export is an
+  // admin-level action — no CSV button in teacher-facing panes anymore.
 
   const bulkDelete = async () => {
     setMoreOpen(false)
@@ -318,7 +313,6 @@ export default function StudentsArea() {
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
                 <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
                   <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
-                  <button role="menuitem" onClick={bulkExportCSV}>⬇ {isArabic ? 'تصدير المحددين CSV' : 'Export selected (CSV)'}</button>
                   <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
                   <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}>✕ {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
                 </div>
