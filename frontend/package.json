@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "start": "vite --host 0.0.0.0 --port 3000",
-    "build": "vite build && node scripts/css-compat.mjs",
+    "build": "vite build && node scripts/css-compat.mjs && node scripts/prerender.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "db:push": "echo \"[nokhba] Supabase backend — no local db push needed\""

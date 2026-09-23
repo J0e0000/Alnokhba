@@ -1,10 +1,23 @@
+import { useEffect } from 'react'
+import { setSeo } from '../marketing/seo.js'
+
 const WHATSAPP_SUPPORT = 'https://wa.me/201014996636'
+
+// Exported for the build-time prerender (scripts/prerender.mjs). Until now
+// this page never set its own head — it inherited the homepage title and a
+// canonical pointing at "/" (wrong). Fixed here + in the static HTML.
+export const SEO = {
+  title: 'سياسة الخصوصية | النخبة',
+  description: 'خصوصية بياناتك وبيانات طلابك في منصة النخبة: إيه اللي بنخزنه، إزاي بنحميه، ومين يشوفه — بوضوح وببساطة.',
+  path: '/privacy',
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PRIVACY PAGE — real destination for the footer link (was a dead <span>).
 // Plain, honest Arabic. No auth required; rendered straight from App.jsx.
 // ═══════════════════════════════════════════════════════════════════════════
 export default function PrivacyPage() {
+  useEffect(() => setSeo(SEO), [])
   return (
     <div dir="rtl" className="min-h-screen" style={{ background: 'var(--brand-bg, #F6F7FB)', color: 'var(--fg, #0F172A)' }}>
       <header className="px-5 py-5 sm:px-8">

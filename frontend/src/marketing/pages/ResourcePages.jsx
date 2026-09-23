@@ -14,14 +14,17 @@ const ARTICLE_IMAGES = {
   'choose-center-management-egypt': SCREENS.insights,
 }
 
+// Exported for the build-time prerender (scripts/prerender.mjs).
+export const SEO = {
+  title: 'المصادر — أدلة إدارة مراكز التعليم | النخبة',
+  description: 'أدلة عملية لإدارة مراكز ودروس التعليم: ما هو نظام إدارة المركز، إدارة الحضور والغياب، Excel مقابل النظام المتخصص، وكيف تختار نظامك في مصر.',
+  path: '/resources',
+  image: SCREENS.insights,
+  jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }]),
+}
+
 export function ResourcesPage() {
-  useSeo({
-    title: 'المصادر — أدلة إدارة مراكز التعليم | النخبة',
-    description: 'أدلة عملية لإدارة مراكز ودروس التعليم: ما هو نظام إدارة المركز، إدارة الحضور والغياب، Excel مقابل النظام المتخصص، وكيف تختار نظامك في مصر.',
-    path: '/resources',
-    image: SCREENS.insights,
-    jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }]),
-  })
+  useSeo(SEO)
   return (
     <MarketingLayout active="/resources">
       <section className="mx-auto max-w-7xl px-5 pb-10 pt-14 sm:px-8">
@@ -95,17 +98,20 @@ function ArticleBlock({ b }) {
   return null
 }
 
+// Per-article head config — exported for the build-time prerender.
+export const articleSeo = (article) => ({
+  title: `${article.title} | مصادر النخبة`,
+  description: article.description,
+  path: article.path,
+  image: ARTICLE_IMAGES[article.slug],
+  jsonLd: [
+    articleSchema(article),
+    breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }, { name: article.title, path: article.path }]),
+  ],
+})
+
 export function ArticlePage({ article }) {
-  useSeo({
-    title: `${article.title} | مصادر النخبة`,
-    description: article.description,
-    path: article.path,
-    image: ARTICLE_IMAGES[article.slug],
-    jsonLd: [
-      articleSchema(article),
-      breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }, { name: article.title, path: article.path }]),
-    ],
-  })
+  useSeo(articleSeo(article))
   return (
     <MarketingLayout active="/resources">
       <article className="mx-auto max-w-3xl px-5 pb-16 pt-14 sm:px-8">

@@ -93,14 +93,17 @@ function Recommender() {
   )
 }
 
+// Exported for the build-time prerender (scripts/prerender.mjs).
+export const SEO = {
+  title: 'الأسعار — باقات نظام إدارة المركز التعليمي | النخبة',
+  description: 'باقات واضحة بالجنيه المصري: Starter ٣٩٩ وGrowth ٧٩٩ وPro ١٬٤٩٩ جنيه شهريًا حسب عدد الطلاب، وتجربة مجانية ١٤ يوم بدون بطاقة — تفعيل وإلغاء بدون التزام وعلى واتساب.',
+  path: '/pricing',
+  image: SCREENS.reports,
+  jsonLd: [faqSchema(PRICE_FAQS), breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'الأسعار', path: '/pricing' }])],
+}
+
 export default function PricingPage() {
-  useSeo({
-    title: 'الأسعار — باقات نظام إدارة المركز التعليمي | النخبة',
-    description: 'باقات واضحة بالجنيه المصري: Starter ٣٩٩ وGrowth ٧٩٩ وPro ١٬٤٩٩ جنيه شهريًا حسب عدد الطلاب، وتجربة مجانية ١٤ يوم بدون بطاقة — تفعيل وإلغاء بدون التزام وعلى واتساب.',
-    path: '/pricing',
-    image: SCREENS.reports,
-    jsonLd: [faqSchema(PRICE_FAQS), breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'الأسعار', path: '/pricing' }])],
-  })
+  useSeo(SEO)
   return (
     <MarketingLayout active="/pricing">
       <section className="mx-auto max-w-7xl px-5 pb-10 pt-14 sm:px-8">

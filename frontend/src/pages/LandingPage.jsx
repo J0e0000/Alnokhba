@@ -149,16 +149,20 @@ function Shot({ s, alt, className = '', priority = false }) {
 
 const signup = () => '/?auth=signup'
 
+// Homepage SEO — exported so the build-time prerender (scripts/prerender.mjs)
+// injects the exact same head tags + JSON-LD into the static HTML.
+export const SEO = {
+  title: 'النخبة — شغّل مركزك التعليمي كله من مكان واحد | برنامج إدارة السنتر',
+  description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ١٤ يوم بدون بطاقة.',
+  path: '/',
+  image: SCREENS.dashboard,
+  jsonLd: [orgSchema, websiteSchema, softwareAppSchema, faqSchema(FAQS)],
+}
+
 export default function LandingPage({ onLogin, onSignup }) {
   const root = useRef(null)
   useEffect(() => {
-    const cleanup = setSeo({
-      title: 'النخبة — شغّل مركزك التعليمي كله من مكان واحد | برنامج إدارة السنتر',
-      description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ١٤ يوم بدون بطاقة.',
-      path: '/',
-      image: SCREENS.dashboard,
-      jsonLd: [orgSchema, websiteSchema, softwareAppSchema, faqSchema(FAQS)],
-    })
+    const cleanup = setSeo(SEO)
     return cleanup
   }, [])
   useAnimeScope(root, () => {

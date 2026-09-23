@@ -67,14 +67,17 @@ const CATEGORIES = [
   },
 ]
 
+// Exported for the build-time prerender (scripts/prerender.mjs).
+export const SEO = {
+  title: 'المميزات — نظام إدارة مركز تعليمي متكامل | النخبة',
+  description: 'إدارة الطلاب والمجموعات، مسار الحصة، الحضور والغياب، الواجبات، الامتحانات، تقارير واتساب لأولياء الأمور، فريق التحليل، وبوابة طالب QR — كلها في منصة عربية واحدة.',
+  path: '/features',
+  image: SCREENS.dashboard,
+  jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المميزات', path: '/features' }]),
+}
+
 export default function FeaturesPage() {
-  useSeo({
-    title: 'المميزات — نظام إدارة مركز تعليمي متكامل | النخبة',
-    description: 'إدارة الطلاب والمجموعات، مسار الحصة، الحضور والغياب، الواجبات، الامتحانات، تقارير واتساب لأولياء الأمور، فريق التحليل، وبوابة طالب QR — كلها في منصة عربية واحدة.',
-    path: '/features',
-    image: SCREENS.dashboard,
-    jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المميزات', path: '/features' }]),
-  })
+  useSeo(SEO)
   return (
     <MarketingLayout active="/features">
       <section className="mx-auto max-w-7xl px-5 pb-8 pt-14 sm:px-8">
