@@ -6,7 +6,6 @@ import AnnouncementsModal from '../components/AnnouncementsModal'
 import RecipientPickerModal from '../components/RecipientPickerModal'
 import ReportStudioModal from '../components/ReportStudioModal'
 import CustomMessageModal from '../components/CustomMessageModal'
-import { REPORT_KINDS } from '../lib/reportBuilders'
 import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone } from '../lib/helpers'
@@ -217,7 +216,7 @@ export default function ReportsArea() {
     <div>
       <h1 className="text-lg font-black m-0 mb-1">{isArabic ? 'التقارير' : 'Reports'}</h1>
       <p className="text-[.74rem] text-fg-muted mb-4">
-        {isArabic ? 'تقارير جماعية وقوالب ورسائل — تقرير الحصة الحالية من داخل مساحة الحصة نفسها.' : 'Batch reports, templates, and messages — the current-session report lives inside the Session Workspace.'}
+        {isArabic ? 'ابعت تقارير الحصة والأسبوع، روابط البوابة، ورسائل لأي حد — كله من هنا.' : 'Session and weekly reports, portal links, and messages — all from here.'}
       </p>
 
       <div className="glass-card p-4 mb-4">
@@ -274,31 +273,11 @@ export default function ReportsArea() {
         </button>
       </div>
 
-      {/* ── استوديو التقارير: تقارير قابلة للتخصيص بالكامل (owner spec) ── */}
-      <h2 className="text-[.95rem] font-black mt-6 mb-1">🎛 {isArabic ? 'استوديو التقارير' : 'Reports studio'}</h2>
-      <p className="text-[.72rem] text-fg-muted mb-3">
-        {isArabic
-          ? 'ستة تقارير جاهزة بمصري — كل واحد قالب بأسطر قابلة للتعديل والترتيب، ومعاينة حية بأرقام حقيقية، وإرسال أو حفظ في مركز التنبيهات.'
-          : 'Six ready reports — each a line-editable template with a live real-data preview.'}
-      </p>
-      <p className="text-[.7rem] font-extrabold text-fg-subtle mb-2">{isArabic ? 'تقارير الطلاب (واتساب)' : 'Student reports (WhatsApp)'}</p>
-      <div className="grid sm:grid-cols-3 gap-3 mb-4">
-        {Object.entries(REPORT_KINDS).filter(([, m]) => m.section === 'student').map(([key, m]) => (
-          <button key={key} className="nk-content text-right cursor-pointer" onClick={() => setStudioKind(key)}>
-            <b className="block text-[.82rem] mb-1">{m.icon} {m.title}</b>
-            <small className="text-fg-muted block">{m.desc}</small>
-          </button>
-        ))}
-      </div>
-      <p className="text-[.7rem] font-extrabold text-fg-subtle mb-2">{isArabic ? 'تقارير المدرس (داخلي)' : 'Teacher reports (internal)'}</p>
-      <div className="grid sm:grid-cols-3 gap-3">
-        {Object.entries(REPORT_KINDS).filter(([, m]) => m.section === 'teacher').map(([key, m]) => (
-          <button key={key} className="nk-content text-right cursor-pointer" onClick={() => setStudioKind(key)}>
-            <b className="block text-[.82rem] mb-1">{m.icon} {m.title}</b>
-            <small className="text-fg-muted block">{m.desc}</small>
-          </button>
-        ))}
-      </div>
+      {/* ── باب واحد لكل تخصيص التقارير (كان استوديو بـ 6 كروت — اتبسّط) ── */}
+      <button className="nk-content text-right cursor-pointer w-full mt-4" onClick={() => setStudioKind('session')}>
+        <b className="block text-[.85rem] mb-1">🎛 {isArabic ? 'قوالب التقارير' : 'Report templates'}</b>
+        <small className="text-fg-muted block">{isArabic ? 'ستة تقارير جاهزة (الحصة، الأسبوعي، الاختبار، وملخصات المدرس) — عدّل أسطر أي واحد أو ابعتوه زي ما هو.' : 'Six ready reports — edit any of them line by line, or send as-is.'}</small>
+      </button>
 
       <TemplatesModal
         open={templatesOpen}
@@ -322,8 +301,8 @@ export default function ReportsArea() {
         </div>
       )}
 
-      {/* استوديو التقارير — remounts per kind so the template seeds once
-          per open (the caret-jump fix contract). */}
+      {/* باب التقارير القابلة للتخصيص — remounts per kind so the template
+          seeds once per open (the caret-jump fix contract). */}
       {studioKind && (
         <ReportStudioModal
           key={studioKind}
@@ -331,6 +310,7 @@ export default function ReportsArea() {
           onClose={() => setStudioKind(null)}
           kind={studioKind}
           ws={ws}
+          onSwitchKind={setStudioKind}
           onSaveTemplate={saveStudioTemplate}
           onQueue={(candidates, meta) => setPicker({ ...meta, candidates })}
           onBell={saveStudioBell}

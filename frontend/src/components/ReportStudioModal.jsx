@@ -26,7 +26,7 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function ReportStudioModal({
-  open, onClose, kind, ws,
+  open, onClose, kind, ws, onSwitchKind,
   onSaveTemplate, onQueue, onBell,
 }) {
   const { isArabic } = ws
@@ -112,7 +112,7 @@ export default function ReportStudioModal({
         },
       )
       : ''
-    return { stats, pick, message, wanted }
+    return { stats, pick, message, wanted, byStudent }
   }, [kind, lesson, ws.allAttendance, ws.examScoresByStudent, ws.examsList, groupStudents, subType, previewStudentId, settings, templates, group])
 
   const weeklyData = useMemo(() => {
@@ -247,6 +247,32 @@ export default function ReportStudioModal({
     onBell({ title, body })
   }
 
+  // Session reports: send straight from here (was: “go press the other
+  // button above” — that indirection was the #1 confusion). Same builder as
+  // the quick queue, using the template currently in the editor.
+  const buildSessionCandidates = () => {
+    if (!lesson || !sessionData?.byStudent) return []
+    return groupStudents.map((s) => {
+      const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
+      const row = sessionData.byStudent.get(s.id)
+      const status = row?.status || 'لم يرصد'
+      const reportStudent = { ...s, attendance_status: row?.status || s.attendance_status, hw_status: row?.homework_status || s.hw_status }
+      return {
+        key: s.id, kind: 'session_report', student: reportStudent,
+        phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
+        message: buildAttendanceMessage(reportStudent, {
+          status, lesson,
+          settings: { ...settings, msg_attendance_present: templates.present, msg_attendance_absent: templates.absent },
+          groupName: group,
+          examScores: (ws.examScoresByStudent || {})[s.id] || [],
+        }),
+        lessonId: lesson.id, statusLabel: status,
+        statusType: status === 'حاضر' ? 'present' : status === 'غائب' ? 'absent' : 'none',
+        disabled: !hasPhone,
+      }
+    })
+  }
+
   // ── Render helpers ───────────────────────────────────────────────────────
   const sel = 'glass-input rounded-xl px-3 py-2.5 text-[.78rem] min-w-[150px] flex-1'
   const label = (t) => <span className="block text-[.7rem] font-extrabold text-fg-subtle mb-1">{t}</span>
@@ -265,8 +291,18 @@ export default function ReportStudioModal({
     : 'No completed sessions for this group in the selected week.'
 
   return (
-    <Modal open={open} onClose={onClose} title={`${meta.icon} ${meta.title} — استوديو التقرير`} wide>
-      <p className="text-fg-subtle text-xs mb-3">{meta.desc} كل الأرقام في المعاينة حقيقية من بياناتك، والقالب بيتحفظ عندك ويُستخدم في كل مرات الجاية.</p>
+    <Modal open={open} onClose={onClose} title={`${meta.icon} ${meta.title}`} wide>
+      <p className="text-fg-subtle text-xs mb-3">{isArabic ? 'عدّل الأسطر أو سيبه زي ما هو — المعاينة بأرقام حقيقية من بياناتك.' : 'Edit the lines or send as-is — the preview uses your real data.'}</p>
+
+      {/* تبديل نوع التقرير من جوه — بدون الرجوع للشاشة */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {Object.entries(REPORT_KINDS).map(([k, m]) => (
+          <button key={k} type="button" onClick={() => k !== kind && onSwitchKind?.(k)}
+            className={`rounded-full px-3 py-1.5 text-[11px] font-extrabold border transition-colors ${k === kind ? 'bg-brand-gold/15 text-brand-gold-hover border-brand-gold/40' : 'border-subtle text-fg-subtle hover:text-fg'}`}>
+            {m.icon} {SHORT_KIND_LABELS[k] || m.title}
+          </button>
+        ))}
+      </div>
       <div className="grid lg:grid-cols-2 gap-5">
 
         {/* ── القالب ── */}
@@ -376,9 +412,20 @@ export default function ReportStudioModal({
                 ↗ {isArabic ? 'اختيار المستلمين والإرسال' : 'Pick recipients & send'}
               </button>
             )}
-            {kind === 'session' && (
-              <p className="text-[.7rem] text-fg-muted m-0">{isArabic ? 'الإرسال الفعلي من زر «قائمة تقارير الحصة» فوق — نفس القالب المحفوظ هنا هو اللي هيتبعت.' : 'Sending happens from the session-report queue above — it uses the template saved here.'}</p>
-            )}
+            {kind === 'session' && (() => {
+              const candidates = buildSessionCandidates()
+              const canSend = Boolean(sessionData?.stats && candidates.some((c) => !c.disabled))
+              return (
+                <button type="button" className="btn-gold action-button !min-h-[2.9rem] flex-1" disabled={!canSend}
+                  onClick={() => onQueue(candidates, {
+                    title: isArabic ? `تقارير الحصة — ${lesson.session_date}` : `Session reports — ${lesson.session_date}`,
+                    subtitle: isArabic ? 'المقترح: كل الطلاب — رسالة حسب حالة كل طالب. عدّل التحديد كما تحب — مفيش حاجة تتبعت غير لما تضغط متابعة.' : 'Suggested: everyone — message matches each student\'s status. Nothing sends until you continue.',
+                    preselect: 'all',
+                  })}>
+                  ↗ {isArabic ? 'اختيار المستلمين والإرسال' : 'Pick recipients & send'}
+                </button>
+              )
+            })()}
             {(kind === 'teacher-session' || kind === 'teacher-weekly' || kind === 'followup') && (() => {
               const out = kind === 'teacher-session' ? teacherSessionText : kind === 'teacher-weekly' ? teacherWeeklyData?.text : followUpData?.text
               const hasContent = Boolean((out || '').trim())
@@ -405,6 +452,16 @@ function statsLine(sessionData) {
   if (!sessionData?.stats) return ''
   const s = sessionData.stats
   return `حاضر ${s.present} / غياب ${s.absent}`
+}
+
+// Short labels for the kind-switcher chips (full titles stay in REPORT_KINDS).
+const SHORT_KIND_LABELS = {
+  session: 'تقرير الحصة',
+  weekly: 'الأسبوعي',
+  exam: 'الاختبار',
+  'teacher-session': 'حصة للمدرس',
+  'teacher-weekly': 'أسبوع للمدرس',
+  followup: 'المتابعة',
 }
 
 // Session bricks are static — defined once (present/absent share the base set).
