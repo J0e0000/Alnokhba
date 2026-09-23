@@ -4,6 +4,7 @@ Allow: /
 # App surfaces that need no indexing
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 # ── AI / generative engines — explicitly welcome (GEO) ──────────────────
 # Each bot group repeats the private-surface disallows (groups don't inherit).

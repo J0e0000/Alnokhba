@@ -46,6 +46,9 @@ function fmtDuration(ms) {
 /** استدعاء Edge Function مع رسائل عربية واضحة + كشف حالة "لم تُنشر بعد" */
 const NOT_DEPLOYED_RE = /fetch|not found|404|Failed/i
 
+/** كود دالة admin-backup منشور كملف ثابت على الموقع (عدّل المصدر supabase/functions ثم أعد النشر لتحديثه) */
+const FN_CODE_URL = '/deploy/admin-backup-index.txt'
+
 async function invokeBackupAction(body) {
   try {
     const { data, error } = await supabase.functions.invoke('admin-backup', { body })
@@ -90,6 +93,7 @@ export default function AdminBackupsPanel({ showToast }) {
   // حالة دالة النسخ: 'checking' | 'ready' | 'missing' | 'unknown'
   const [edgeState, setEdgeState] = useState('checking')
   const [cliCopied, setCliCopied] = useState(false)
+  const [codeCopied, setCodeCopied] = useState(false)
 
   // ── Restore wizard state ──
   const [restoreOpen, setRestoreOpen] = useState(false)
@@ -300,6 +304,23 @@ export default function AdminBackupsPanel({ showToast }) {
   }
 
   const selectedTeacher = restorePreview?.teachers?.find((t) => t.id === restoreTeacherId)
+  /** نسخ كود الدالة الصحيح من الموقع مباشرة — يمنع لصق ملف الواجهة أو أوامر CLI بالغلط */
+  const copyFnCode = async () => {
+    try {
+      const res = await fetch(FN_CODE_URL)
+      if (!res.ok) throw new Error('fetch failed')
+      const code = await res.text()
+      // فحص سلامة: أول سطر تعليق // ==== وفيه Deno.serve — ومفيهوش className (ده ملف الواجهة)
+      if (!code.startsWith('// =') || !code.includes('Deno.serve') || code.includes('className')) throw new Error('bad content')
+      await navigator.clipboard.writeText(code)
+      setCodeCopied(true)
+      setTimeout(() => setCodeCopied(false), 2500)
+    } catch {
+      window.open(FN_CODE_URL, '_blank', 'noopener')
+      showToast?.('اتفتح الملف في تبويب جديد — حدده كله (Ctrl+A) وانسخه (Ctrl+C) والصقه في المحرر', 'info')
+    }
+  }
+
   const copyCli = async () => {
     const cmd = 'supabase functions deploy admin-backup --no-verify-jwt'
     try {
@@ -322,10 +343,13 @@ export default function AdminBackupsPanel({ showToast }) {
           </p>
           <ol className="text-xs text-[var(--warn-strong)] space-y-1.5 list-decimal list-inside mb-3">
             <li>افتح مشروعك في supabase.com ← <span className="font-bold">Edge Functions ← Create a new function</span></li>
-            <li>الاسم: <span className="font-mono font-bold" dir="ltr">admin-backup</span> ← والصق محتوى ملف <span className="font-mono" dir="ltr">functions/admin-backup/index.ts</span> كاملًا</li>
+            <li>الاسم: <span className="font-mono font-bold" dir="ltr">admin-backup</span> ← اضغط الزر الأخضر تحت <span className="font-bold">«انسخ كود الدالة»</span> ← ارجع لمحرر الدالة واعمل لصق (Ctrl+A يحدد أي كود قديم ← Ctrl+V يستبدله كله)</li>
             <li>تأكد أن <span className="font-bold">Verify JWT = OFF</span> (الدالة تتحقق من صلاحيات الأدمن بنفسها) ← ثم <span className="font-bold">Deploy</span></li>
+            <li>ملف الدالة الصح: أول سطر تعليق <span className="font-mono" dir="ltr">// ====</span> وفيه <span className="font-mono" dir="ltr">import * as XLSX</span> و<span className="font-mono" dir="ltr">Deno.serve</span> — لو الملف فيه <span className="font-mono" dir="ltr">className</span> يبقى فتحت <span className="font-mono" dir="ltr">AdminBackupsPanel.jsx</span> بالغلط (ده ملف واجهة الأدمن، مش الدالة)</li>
           </ol>
           <div className="flex flex-wrap items-center gap-2">
+            <button onClick={copyFnCode} className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold px-3 py-2 rounded-lg text-xs">{codeCopied ? '✓ اتنسخ كود الدالة كامل — الصقه في المحرر' : '⧉ انسخ كود الدالة (اضغط هنا)'}</button>
+            <a href={FN_CODE_URL} target="_blank" rel="noopener noreferrer" className="bg-surface border border-[var(--warn-border)] text-[var(--warn-strong)] hover:bg-[var(--warn-bg)] font-bold px-3 py-2 rounded-lg text-xs">↗ افتح الملف وانسخه يدويًا</a>
             <button onClick={copyCli} className="bg-amber-700 hover:bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs" dir="ltr">{cliCopied ? '✓ Copied' : '⧉ نسخ أمر CLI البديل'}</button>
             <button onClick={recheckEdge} className="bg-surface border border-[var(--warn-border)] text-[var(--warn-strong)] hover:bg-[var(--warn-bg)] font-bold px-3 py-1.5 rounded-lg text-xs">↻ إعادة الفحص بعد النشر</button>
             <span className="text-[11px] text-[var(--warn-strong)]">لن تظهر هذه الرسالة بعد نشر الدالة (انظر DEPLOY-STEPS.md)</span>
