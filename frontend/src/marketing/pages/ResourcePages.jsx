@@ -4,12 +4,22 @@
 import MarketingLayout, { CtaBand, TrialCta } from '../MarketingLayout.jsx'
 import { useSeo, articleSchema, breadcrumbSchema } from '../seo.js'
 import { ARTICLES } from '../articles.js'
+import { SCREENS } from '../config.js'
+
+// Real product screenshot per article (og:image) — keyed by slug.
+const ARTICLE_IMAGES = {
+  'what-is-center-management-system': SCREENS.dashboard,
+  'attendance-management': SCREENS.mobile,
+  'excel-vs-center-management': SCREENS.reports,
+  'choose-center-management-egypt': SCREENS.insights,
+}
 
 export function ResourcesPage() {
   useSeo({
     title: 'المصادر — أدلة إدارة مراكز التعليم | النخبة',
     description: 'أدلة عملية لإدارة مراكز ودروس التعليم: ما هو نظام إدارة المركز، إدارة الحضور والغياب، Excel مقابل النظام المتخصص، وكيف تختار نظامك في مصر.',
     path: '/resources',
+    image: SCREENS.insights,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }]),
   })
   return (
@@ -90,6 +100,7 @@ export function ArticlePage({ article }) {
     title: `${article.title} | مصادر النخبة`,
     description: article.description,
     path: article.path,
+    image: ARTICLE_IMAGES[article.slug],
     jsonLd: [
       articleSchema(article),
       breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المصادر', path: '/resources' }, { name: article.title, path: article.path }]),

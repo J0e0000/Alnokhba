@@ -1,0 +1,46 @@
+# النخبة | Alnokhba Edu
+
+> Arabic-first (Egyptian) education-center management SaaS for tutoring centers, academies, and private teachers in Egypt and MENA. One platform for students, groups, sessions, attendance, homework, exams and grades, WhatsApp parent reports, a QR student/parent portal, and weekly performance insights. Web app + mobile PWA, RTL, Egyptian Arabic UI. Operated from Egypt; served in Arabic and English.
+
+## What the product does
+
+- Manages the full daily workflow of an education center: students and groups, session pipeline (attendance → interaction → homework → exams → report), and parent communication.
+- Attendance is recorded per student per session (tap-based and QR-based); homework and exam grades are tracked per session.
+- WhatsApp reports for parents are generated automatically from real session data and sent through an organized send queue (no auto-billing, no spam).
+- Students and parents get a private portal via a personal QR link showing their attendance, grades, and reports.
+- A weekly analytics review surfaces patterns that need action (accumulated absence, declining group performance).
+
+## Pricing (monthly, EGP — verified 2026-09)
+
+- Starter: 399 EGP/month — up to 300 active students, 1 branch.
+- Growth: 799 EGP/month — up to 1,000 active students, 3 branches (most popular).
+- Pro: 1,499 EGP/month — up to 3,000 active students, unlimited (5+) branches.
+- Enterprise: custom quote — 3,000+ students, multi-branch chains.
+- Activation and renewal happen over WhatsApp after personal confirmation; there is no online payment and no automatic billing.
+
+## Free trial
+
+- 14 days with the full core product. No credit card required.
+- After the trial the account is paused (not deleted); data is retained for 30 days and restored on renewal.
+
+## Pages
+
+- [Home](https://al-nokhbba.vercel.app/): product overview and pricing summary.
+- [Features](https://al-nokhbba.vercel.app/features): full feature list.
+- [Solutions](https://al-nokhbba.vercel.app/solutions): by role — center owner, academic manager, teacher, assistants.
+- [Pricing](https://al-nokhbba.vercel.app/pricing): plans and pricing FAQ.
+- [Free trial](https://al-nokhbba.vercel.app/trial): trial terms and signup.
+- [Resources](https://al-nokhbba.vercel.app/resources): practical Arabic guides:
+  - [What is a center management system](https://al-nokhbba.vercel.app/resources/what-is-center-management-system)
+  - [Attendance management](https://al-nokhbba.vercel.app/resources/attendance-management)
+  - [Excel vs. a center management system](https://al-nokhbba.vercel.app/resources/excel-vs-center-management)
+  - [How to choose a system in Egypt](https://al-nokhbba.vercel.app/resources/choose-center-management-egypt)
+- [About](https://al-nokhbba.vercel.app/about): company story and principles.
+- [Contact](https://al-nokhbba.vercel.app/contact): support and sales via WhatsApp.
+- [Privacy](https://al-nokhbba.vercel.app/privacy): privacy policy (Arabic).
+
+## Contact
+
+- WhatsApp (support and sales): +20 101 499 6636
+- Language: Arabic (Egyptian), English support.
+- Area served: Egypt, Saudi Arabia, MENA.

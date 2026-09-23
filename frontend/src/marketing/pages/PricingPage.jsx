@@ -7,7 +7,7 @@ import { useState } from 'react'
 import MarketingLayout, { SectionHead, TrialCta, WaCta, FaqList } from '../MarketingLayout.jsx'
 import { useSeo, faqSchema, breadcrumbSchema } from '../seo.js'
 import { PLANS, TRIAL, PRICING_NOTE, recommendPlan, formatPrice, fmtAr } from '../pricing.js'
-import { track, WHATSAPP_URL } from '../config.js'
+import { track, WHATSAPP_URL, SCREENS } from '../config.js'
 
 const PRICE_FAQS = [
   ['إزاي بتحسبوا السعر؟', 'السعر باين جوّه كل باقة فوق: اشتراك شهري بالجنيه المصري بيتبع حجم مركزك — عدد الطلاب النشطين وعدد الفروع. السعر بيتأكد معك شخصيًا على واتساب قبل أي دفع، ومفيش تجديد تلقائي.'],
@@ -98,6 +98,7 @@ export default function PricingPage() {
     title: 'الأسعار — باقات نظام إدارة المركز التعليمي | النخبة',
     description: 'باقات واضحة بالجنيه المصري: Starter ٣٩٩ وGrowth ٧٩٩ وPro ١٬٤٩٩ جنيه شهريًا حسب عدد الطلاب، وتجربة مجانية ١٤ يوم بدون بطاقة — تفعيل وإلغاء بدون التزام وعلى واتساب.',
     path: '/pricing',
+    image: SCREENS.reports,
     jsonLd: [faqSchema(PRICE_FAQS), breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'الأسعار', path: '/pricing' }])],
   })
   return (

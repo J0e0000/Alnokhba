@@ -72,6 +72,7 @@ export default function FeaturesPage() {
     title: 'المميزات — نظام إدارة مركز تعليمي متكامل | النخبة',
     description: 'إدارة الطلاب والمجموعات، مسار الحصة، الحضور والغياب، الواجبات، الامتحانات، تقارير واتساب لأولياء الأمور، فريق التحليل، وبوابة طالب QR — كلها في منصة عربية واحدة.',
     path: '/features',
+    image: SCREENS.dashboard,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'المميزات', path: '/features' }]),
   })
   return (

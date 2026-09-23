@@ -21,15 +21,28 @@ function setMeta(attr, key, content) {
 }
 
 /**
- * @param {{ title: string, description: string, path: string, jsonLd?: object|object[] }} cfg
+ * @param {{ title: string, description: string, path: string, image?: {src: string, w: number, h: number}, jsonLd?: object|object[] }} cfg
+ *
+ * `image` = real product screenshot (see config.js SCREENS). When provided we
+ * set page-specific og:image + twitter card so WhatsApp/Facebook shares show
+ * the actual product instead of the generic logo. Omitted → template statics
+ * (logo / summary card) stay untouched.
  */
-export function setSeo({ title, description, path, jsonLd }) {
+export function setSeo({ title, description, path, image, jsonLd }) {
   const url = SITE_URL + path
   document.title = title
   setMeta('name', 'description', description)
   setMeta('property', 'og:title', title)
   setMeta('property', 'og:description', description)
   setMeta('property', 'og:url', url)
+  if (image) {
+    setMeta('property', 'og:image', SITE_URL + image.src)
+    setMeta('property', 'og:image:width', String(image.w))
+    setMeta('property', 'og:image:height', String(image.h))
+    setMeta('property', 'og:image:alt', title)
+    setMeta('name', 'twitter:card', 'summary_large_image')
+    setMeta('name', 'twitter:image', SITE_URL + image.src)
+  }
   let link = document.head.querySelector('link[rel="canonical"]')
   if (!link) {
     link = document.createElement('link')

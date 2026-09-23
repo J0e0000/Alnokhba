@@ -5,4 +5,38 @@ Allow: /
 Disallow: /?auth=
 Disallow: /qr/
 
+# ── AI / generative engines — explicitly welcome (GEO) ──────────────────
+# Each bot group repeats the private-surface disallows (groups don't inherit).
+User-agent: GPTBot
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: OAI-SearchBot
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: ChatGPT-User
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: ClaudeBot
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: PerplexityBot
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: Google-Extended
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: Applebot-Extended
+Disallow: /?auth=
+Disallow: /qr/
+
+User-agent: CCBot
+Disallow: /?auth=
+Disallow: /qr/
+
 Sitemap: https://al-nokhbba.vercel.app/sitemap.xml

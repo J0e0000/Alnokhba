@@ -156,6 +156,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       title: 'النخبة — شغّل مركزك التعليمي كله من مكان واحد | برنامج إدارة السنتر',
       description: 'نظام إدارة مراكز تعليمية عربي: الطلاب والحصص والحضور والواجبات والامتحانات وتقارير واتساب لأولياء الأمور وتحليل أسبوعي — من الموبايل. تجربة مجانية ١٤ يوم بدون بطاقة.',
       path: '/',
+      image: SCREENS.dashboard,
       jsonLd: [orgSchema, websiteSchema, softwareAppSchema, faqSchema(FAQS)],
     })
     return cleanup

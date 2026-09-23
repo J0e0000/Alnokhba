@@ -22,6 +22,7 @@ export function SolutionsPage() {
     title: 'الحلول — لإدارة مراكز ودروس وأكاديميات | النخبة',
     description: 'حلول النخبة حسب دورك: صاحب مركز، مدير أكاديمي، مدرّس، أو فريق عمل — نظام واحد لإدارة الطلاب والحصص والحضور والتقارير.',
     path: '/solutions',
+    image: SCREENS.session,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'الحلول', path: '/solutions' }]),
   })
   return (
@@ -67,6 +68,7 @@ export function AboutPage() {
     title: 'من نحن — قصة النخبة ومبادئ البناء | النخبة',
     description: 'النخبة منصة عربية لإدارة مراكز التعليم اتبنت من داخل الشغل اليومي للمدرسين: البساطة، السرعة، حماية البيانات، والصدق في كل رقم.',
     path: '/about',
+    image: SCREENS.students,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'من نحن', path: '/about' }]),
   })
   return (
@@ -116,6 +118,7 @@ export function ContactPage() {
     title: 'تواصل معنا — دعم ومبيعات على واتساب | النخبة',
     description: 'تواصل مع فريق النخبة عبر واتساب: أسئلة عن المنصة، طلب تفعيل أو تجديد، مساعدة في الإعداد، أو اقتراحات — برد سريع في نفس اليوم.',
     path: '/contact',
+    image: SCREENS.dashboard,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'تواصل', path: '/contact' }]),
   })
   const demoLink = () => track('demo_click', { source: 'contact' })
@@ -160,6 +163,7 @@ export function TrialPage() {
     title: `تجربة مجانية ${fmtAr(TRIAL.days)} يوم — بدون بطاقة دفع | النخبة`,
     description: `افتح حسابك وجرّب كل مميزات النخبة ${fmtAr(TRIAL.days)} يوم مجانًا: من غير بطاقة، من غير تجديد تلقائي، والحساب بعد التجربة بيتوقف مش بيتشال — وبيانات مركزك تفضل محفوظة.`,
     path: '/trial',
+    image: SCREENS.mobile,
     jsonLd: breadcrumbSchema([{ name: 'الرئيسية', path: '/' }, { name: 'التجربة المجانية', path: '/trial' }]),
   })
   return (
