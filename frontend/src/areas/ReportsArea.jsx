@@ -6,7 +6,7 @@ import AnnouncementsModal from '../components/AnnouncementsModal'
 import RecipientPickerModal from '../components/RecipientPickerModal'
 import ReportStudioModal from '../components/ReportStudioModal'
 import CustomMessageModal from '../components/CustomMessageModal'
-import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateLessonSummaryPDF } from '../lib/qrPdfWhatsApp'
 import { isValidPhone } from '../lib/helpers'
 import { normalizeEgyptianPhone } from '../lib/helpers'
 import { friendlySaveErrorText } from '../lib/friendlyError'
@@ -110,6 +110,19 @@ export default function ReportsArea() {
 
   // CSV export removed from teacher panes (owner request): data export is an
   // ADMIN-ONLY action now — it lives in لوحة الأدمن only.
+
+  // 📄 ملخص الحصة PDF: سجل مطبوع للحصة المختارة (الدرس/الواجب/الحضور/الغائب
+  // وحالة كل طالب) بهوية النخبة الرسمية — نفس أسلوب تقرير الطالب.
+  const downloadLessonPdf = async () => {
+    if (!lesson || busy === 'pdf') return
+    setBusy('pdf')
+    try {
+      const { data: rows } = await supabaseLessonAttendance(lesson.id)
+      const res = await generateLessonSummaryPDF(lesson, rows || [], ws.students, { download: true })
+      if (res?.success) ws.showToast?.(isArabic ? 'تم تحميل ملخص الحصة PDF ✓' : 'Lesson summary PDF downloaded ✓', 'success')
+      else ws.showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
+    } finally { setBusy('') }
+  }
 
   const bulkWelcome = () => {
     const groupStudents = ws.students.filter((s) => s.group_name === group)
@@ -221,6 +234,16 @@ export default function ReportsArea() {
           <button className="btn-gold action-button !min-h-[3rem]" onClick={openCustomMessagePicker}>
             ✆ {isArabic ? 'رسالة لمحددين…' : 'Message specific people…'}
           </button>
+          {lesson && (
+            <button
+              className="btn-gold action-button !min-h-[3rem]"
+              disabled={busy === 'pdf'}
+              onClick={downloadLessonPdf}
+              title={isArabic ? 'ملخص الحصة — PDF بالهوية الرسمية (الحضور والغائب وحالة كل طالب)' : 'Lesson summary — branded PDF (attendance, absentees, per-student status)'}
+            >
+              {busy === 'pdf' ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `📄 ${isArabic ? 'ملخص الحصة (PDF)' : 'Lesson summary (PDF)'}`}
+            </button>
+          )}
           {lesson && (
             <button
               className="btn-ghost action-button !min-h-[3rem]"

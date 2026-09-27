@@ -13,9 +13,11 @@ import { downloadCSV, localDateStr } from '../lib/csv'
 const STATUS_LABEL = { trial: 'تجربة مجانية', active: 'مشترك فعّال', expired: 'منتهي', cancelled: 'ملغي' }
 const ACTION_LABEL = { extend: 'تفعيل/تمديد', cancel: 'إلغاء اشتراك', verify: 'تأكيد حساب', password_change: 'تغيير كلمة مرور', backup_failed: '⚠️ فشل نسخة احتياطية' }
 const ACCOUNT_TYPE_LABEL = { assistant: 'مساعد', teacher: 'مدرّس' }
+const EMAIL_STATUS_LABEL = { sent: '✅ الإيميل اتبعت', failed: '⚠️ فشل إرسال الإيميل', not_sent: '— الإيميل لم يُحاول إرساله' }
 
 const TABS = [
   ['teachers', 'المدرّسون'],
+  ['renewals', '🔄 سجل التجديدات'],
   ['teams', '👥 الفرق'],
   ['backups', '💾 النسخ الاحتياطي'],
   ['audit', '🛡️ سجل التدقيق'],
@@ -38,6 +40,11 @@ export default function AdminDashboard({ onBack }) {
   const [activityLog, setActivityLog] = useState([])
   const [broadcasts, setBroadcasts] = useState([])
   const [broadcastText, setBroadcastText] = useState('')
+  // سجل التجديدات (migration_048) + حالة الحفظ لمنع الطلبات المكرّرة
+  const [renewals, setRenewals] = useState([])
+  const [renewalsLoaded, setRenewalsLoaded] = useState(false)
+  const [savingExpiryId, setSavingExpiryId] = useState(null)
+  const [retryingEmailId, setRetryingEmailId] = useState(null)
 
   // ── جديد: بحث وفلترة الفرق وعرض التفاصيل ووصول الدعم ──
   const [teacherSearch, setTeacherSearch] = useState('')
@@ -81,9 +88,23 @@ export default function AdminDashboard({ onBack }) {
     setBroadcasts(data ?? [])
   }
 
+  // سجل التجديدات — سجل دائم تراكمي (migration_048): التاريخ السابق/الجديد،
+  // من قام بالتجديد، الباقة، وحالة إيميل التجديد. لو الجدول مش منشّر بعد
+  // (migration مش متشغلة) البروفايل يفضل شغال والتبويب يعرض رسالة واضحة.
+  const loadRenewals = async () => {
+    const { data, error } = await supabase
+      .from('subscription_renewals')
+      .select('*, teacher:profiles!subscription_renewals_teacher_id_fkey(full_name, email), admin:profiles!subscription_renewals_admin_id_fkey(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error) { setRenewals([]); setRenewalsLoaded(false); return }
+    setRenewals(data ?? [])
+    setRenewalsLoaded(true)
+  }
+
   useEffect(() => { load() }, [])
   useEffect(() => { loadTeamOverview() }, [])
-  useEffect(() => { if (tab === 'log') loadLog(); if (tab === 'broadcast') loadBroadcasts() }, [tab])
+  useEffect(() => { if (tab === 'log') loadLog(); if (tab === 'broadcast') loadBroadcasts(); if (tab === 'renewals') loadRenewals() }, [tab])
 
   const logActivity = async (targetId, action, details) => {
     await supabase.from('admin_activity_log').insert({ admin_id: user.id, target_teacher_id: targetId, action, details })
@@ -153,31 +174,89 @@ export default function AdminDashboard({ onBack }) {
   }
 
   const applyExpiry = async (t) => {
-    let base, details, toastMsg
+    // حماية من الطلبات المكرّرة: زر واحد قيد الحفظ في كل مرة
+    if (savingExpiryId) return
+    let base, details
     if (extendMode === 'days') {
       const days = Number(extendDays)
       if (!days || days <= 0) { showToast('اكتب عدد أيام صحيح', 'error'); return }
       base = t.subscription_expires_at && new Date(t.subscription_expires_at) > new Date() ? new Date(t.subscription_expires_at) : new Date()
       base.setDate(base.getDate() + days)
       details = `تمديد ${days} يوم`
-      toastMsg = `تم تمديد الاشتراك ${days} يوم`
     } else {
       if (!deadlineDate) { showToast('اختار تاريخ الانتهاء الأول', 'error'); return }
       const [y, m, d] = deadlineDate.split('-').map(Number)
       base = new Date(y, m - 1, d, 23, 59, 59)
       details = `تحديد تاريخ الانتهاء: ${deadlineDate}`
-      toastMsg = `موعد الانتهاء الجديد: ${base.toLocaleDateString('ar-EG')}`
     }
-    const future = base.getTime() > Date.now()
-    const { error } = await supabase.from('profiles').update({
-      subscription_status: future ? 'active' : 'expired',
-      subscription_expires_at: base.toISOString(),
-    }).eq('id', t.id)
-    if (error) { showToast(error.message || 'تعذر تحديث موعد الانتهاء', 'error'); return }
-    await logActivity(t.id, 'extend', details)
-    setEditingId(null)
-    showToast(`${toastMsg} لـ ${t.full_name || t.email}`, 'success')
-    load()
+    const isRenewal = base.getTime() > Date.now()
+    setSavingExpiryId(t.id)
+    try {
+      // مسار التجديد الجديد (edge function): حفظ الاشتراك أولًا → سجل دائم
+      // في subscription_renewals → سجل النشاط → إيميل التجديد (فشل الإيميل
+      // لا يُرجع التجديد أبدًا — بيتسجل وبيظهر زر إعادة الإرسال).
+      let data = null
+      try {
+        data = await invokeAdminAction({
+          action: 'renew_subscription',
+          targetUserId: t.id,
+          newExpiresAt: base.toISOString(),
+        })
+      } catch (fnError) {
+        const msg = String(fnError?.message || fnError)
+        // Fallback: نسخة الدالة المنشّرة لسه مش محدّثة (Unsupported action) —
+        // نفس الحفظ القديم مباشرة عشان الأدمن ميتقفلش، مع إشارة بتحديث الدالة.
+        if (msg.includes('Unsupported action')) {
+          const { error } = await supabase.from('profiles').update({
+            subscription_status: isRenewal ? 'active' : 'expired',
+            subscription_expires_at: base.toISOString(),
+          }).eq('id', t.id)
+          if (error) throw error
+          await logActivity(t.id, 'extend', details)
+          showToast(`تم الحفظ — تاريخ الانتهاء الجديد: ${base.toLocaleDateString('ar-EG')}`, 'success')
+          showToast('ملاحظة: حدّث Edge Function ‏admin-account-actions (RENEWAL-DEPLOYMENT.md) لتسجيل سجل التجديدات وإرسال الإيميل تلقائيًا', 'info', 7000)
+          setEditingId(null)
+          load()
+          return
+        }
+        throw fnError
+      }
+
+      const newDateStr = new Date(data?.renewal?.new_expires_at || base.toISOString()).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      if (data?.partial) {
+        showToast(data.warning || 'تم تحديث الاشتراك مع ملاحظة', 'error', 7000)
+      } else if (isRenewal) {
+        showToast(`تم تجديد الاشتراك بنجاح — تاريخ الانتهاء الجديد: ${newDateStr}`, 'success', 6000)
+        if (data?.email?.attempted && !data?.email?.sent) {
+          showToast(`تنبيه: التجديد اتسجّل لكن فشل إرسال الإيميل (${data.email.error || 'سبب غير معروف'}) — اعتمد «إعادة إرسال الإيميل» من سجل التجديدات`, 'error', 8000)
+        }
+      } else {
+        showToast(`تم تحديد موعد الانتهاء: ${newDateStr}`, 'success')
+      }
+      setEditingId(null)
+      load()
+      if (renewalsLoaded) loadRenewals()
+    } catch (error) {
+      showToast(error?.message || 'تعذر تحديث موعد الانتهاء', 'error')
+    } finally {
+      setSavingExpiryId(null)
+    }
+  }
+
+  // إعادة إرسال إيميل تجديد فاشل — لا تغيّر أي بيانات اشتراك، إيميل فقط
+  const retryRenewalEmail = async (renewalId) => {
+    if (retryingEmailId) return
+    setRetryingEmailId(renewalId)
+    try {
+      const data = await invokeAdminAction({ action: 'retry_renewal_email', renewalId })
+      if (data?.email?.sent) showToast('تم إرسال الإيميل بنجاح ✓', 'success')
+      else showToast(`ما زال الإرسال فاشلًا: ${data?.email?.error || 'سبب غير معروف'}`, 'error', 7000)
+      await loadRenewals()
+    } catch (error) {
+      showToast(error?.message || 'تعذر إعادة إرسال الإيميل', 'error')
+    } finally {
+      setRetryingEmailId(null)
+    }
   }
 
   const sendBroadcast = async (e) => {
@@ -288,15 +367,15 @@ export default function AdminDashboard({ onBack }) {
   return (
     <div className="min-h-screen bg-brand-bg text-fg" dir="rtl">
       <header className="border-b border-outline bg-surface backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <img src="/nokhba-mark.svg" alt="النخبة" className="w-9 h-9" />
-            <div>
+        <div className="max-w-5xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/nokhba-mark.svg" alt="النخبة" className="w-9 h-9 shrink-0" />
+            <div className="min-w-0">
               <h1 className="font-black text-lg text-fg">لوحة الأدمن</h1>
-              <p className="text-fg-muted text-xs">إدارة الحسابات والاشتراكات والفرق والنسخ الاحتياطي والأمان</p>
+              <p className="text-fg-muted text-xs hidden sm:block">إدارة الحسابات والاشتراكات والفرق والنسخ الاحتياطي والأمان</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <button onClick={onBack} className="text-brand-gold-hover hover:text-brand-gold-hover text-sm font-bold">لوحتي كمعلم</button>
             <button onClick={signOut} className="text-fg-muted hover:text-[var(--danger-strong)] text-sm">تسجيل الخروج</button>
           </div>
@@ -430,8 +509,14 @@ export default function AdminDashboard({ onBack }) {
                         )}
 
                         <div className="flex items-center gap-2">
-                          <button onClick={() => applyExpiry(t)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">حفظ موعد الانتهاء</button>
-                          <button onClick={() => setEditingId(null)} className="text-fg-muted text-xs hover:text-fg">إلغاء</button>
+                          <button
+                            onClick={() => applyExpiry(t)}
+                            disabled={savingExpiryId === t.id}
+                            className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-3 py-2 rounded-lg min-h-[2.4rem]"
+                          >
+                            {savingExpiryId === t.id ? '… جاري الحفظ' : 'حفظ موعد الانتهاء'}
+                          </button>
+                          <button onClick={() => setEditingId(null)} disabled={savingExpiryId === t.id} className="text-fg-muted text-xs hover:text-fg min-h-[2.4rem]">إلغاء</button>
                         </div>
                       </div>
                     ) : (
@@ -477,6 +562,72 @@ export default function AdminDashboard({ onBack }) {
         ))}
 
         {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} />}
+
+        {/* ── سجل التجديدات — سجل دائم تراكمي (migration_048): لا يُستبدل ولا يُحذف ── */}
+        {tab === 'renewals' && (
+          !renewalsLoaded ? (
+            <div className="space-y-3">
+              <SkeletonList rows={3} />
+              <p className="text-[.68rem] text-fg-muted text-center">
+                السجل فاضي أو تعذر قراءته؟ شغّل <b>migration_048</b> من SQL Editor أولًا — الخطوات في supabase/RENEWAL-DEPLOYMENT.md.
+              </p>
+            </div>
+          ) : renewals.length === 0 ? (
+            <p className="text-fg-muted text-sm text-center py-8">
+              لا يوجد تجديدات مسجّلة بعد — أول تجديد هيظهر هنا بالتاريخ السابق والجديد ومن قام به وحالة إيميل التجديد.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              <p className="text-xs text-fg-muted">آخر {renewals.length} تجديد (الأحدث أولًا) — السجل تراكمي دائم.</p>
+              {renewals.map((r) => (
+                <div key={r.id} className="bg-surface border border-outline rounded-xl p-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold text-fg text-sm">
+                        {r.teacher?.full_name || '—'}
+                        <span className="text-fg-muted text-xs font-normal mr-1" dir="ltr">{r.teacher?.email ? `· ${r.teacher.email}` : ''}</span>
+                      </p>
+                      <p className="text-fg-muted text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span>📅 تجديد في {new Date(r.created_at).toLocaleDateString('ar-EG')}</span>
+                        <span>·</span>
+                        <span>من {r.previous_expires_at ? new Date(r.previous_expires_at).toLocaleDateString('ar-EG') : '—'}</span>
+                        <span>←</span>
+                        <b className="text-fg">ينتهي {new Date(r.new_expires_at).toLocaleDateString('ar-EG')}</b>
+                        <span>·</span>
+                        <span>{r.new_status === 'active' ? 'الحالة: مشترك فعّال' : `الحالة: ${STATUS_LABEL[r.new_status] || r.new_status}`}</span>
+                        {r.plan_name && <><span>·</span><span>الباقة: {r.plan_name}</span></>}
+                        {r.days_added != null && Number.isFinite(r.days_added) && <><span>·</span><span>{r.days_added > 0 ? `+${r.days_added} يوم` : `${r.days_added} يوم`}</span></>}
+                      </p>
+                      <p className="text-fg-muted text-xs mt-0.5">
+                        بواسطة: <b className="text-fg">{r.admin?.full_name || 'النظام'}</b>
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
+                      <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${r.email_status === 'sent' ? 'text-[var(--ok-strong)] bg-[var(--ok-bg)]' : r.email_status === 'failed' ? 'text-[var(--warn-strong)] bg-[var(--warn-bg)]' : 'text-fg-muted bg-surface-container'}`}>
+                        {EMAIL_STATUS_LABEL[r.email_status] || r.email_status}
+                      </span>
+                      {(r.email_status === 'failed') && (
+                        <button
+                          onClick={() => retryRenewalEmail(r.id)}
+                          disabled={retryingEmailId === r.id}
+                          className="bg-[var(--info-bg)] text-[var(--info-strong)] border border-[var(--info-border)] text-[11px] font-bold px-2.5 py-1.5 rounded-lg disabled:opacity-60 min-h-[2.2rem]"
+                          title={r.email_error || 'إعادة محاولة إرسال إيميل التجديد'}
+                        >
+                          {retryingEmailId === r.id ? '… جاري الإرسال' : '↻ إعادة إرسال الإيميل'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {r.email_status === 'failed' && r.email_error && (
+                    <p className="text-[11px] mt-2 text-[var(--warn-strong)] bg-[var(--warn-bg)] border border-[var(--warn-border)] rounded-lg px-2.5 py-1.5 break-words">
+                      سبب فشل الإيميل: {r.email_error}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        )}
 
         {tab === 'backups' && <AdminBackupsPanel showToast={showToast} />}
 

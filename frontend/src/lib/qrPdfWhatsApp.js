@@ -1183,3 +1183,220 @@ export async function generateStudentReportPDF(student, { isDark = false, ranks,
     return { success: false }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared branded PDF renderer — same A4 multipage slicing as the student
+// report PDF above, extracted so every new PDF action gets the identical
+// branding pipeline (navy/gold/Cairo/RTL). html2canvas-pro renders the hidden
+// container at 2x, jsPDF slices it into A4 pages (long reports paginate).
+// ═══════════════════════════════════════════════════════════════════════════
+async function _renderContainerToPdf(container, { bg = '#F8FAFC', fileName = 'report.pdf', download = true } = {}) {
+  const html2canvas = (await import('html2canvas-pro')).default
+  document.body.appendChild(container)
+  try {
+    const canvas = await html2canvas(container, { scale: 2, useCORS: true, logging: false, backgroundColor: bg })
+    const jsPDF = await loadJsPDF()
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    const pagePixelHeight = Math.max(1, Math.floor(canvas.width * (pdfHeight / pdfWidth)))
+    let offsetY = 0
+    let pageIndex = 0
+    while (offsetY < canvas.height) {
+      const sliceHeight = Math.min(pagePixelHeight, canvas.height - offsetY)
+      const pageCanvas = document.createElement('canvas')
+      pageCanvas.width = canvas.width
+      pageCanvas.height = sliceHeight
+      const pageContext = pageCanvas.getContext('2d')
+      pageContext.fillStyle = bg
+      pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
+      pageContext.drawImage(canvas, 0, offsetY, canvas.width, sliceHeight, 0, 0, pageCanvas.width, pageCanvas.height)
+      if (pageIndex > 0) pdf.addPage()
+      const pageImageHeight = (sliceHeight * pdfWidth) / canvas.width
+      pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, pageImageHeight)
+      offsetY += sliceHeight
+      pageIndex += 1
+    }
+    const pdfBlob = pdf.output('blob')
+    const pdfUrl = URL.createObjectURL(pdfBlob)
+    if (download) {
+      const link = document.createElement('a')
+      link.href = pdfUrl
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+    return { success: true, pdfUrl, pdfBlob }
+  } finally {
+    if (container.parentNode) container.parentNode.removeChild(container)
+  }
+}
+
+function _pdfShellStyles({ isDark = false } = {}) {
+  return {
+    bg: isDark ? '#0B1120' : '#F8FAFC',
+    cardBg: isDark ? 'rgba(14, 41, 84, 0.65)' : 'rgba(255, 255, 255, 0.85)',
+    border: isDark ? 'rgba(245, 197, 66, 0.35)' : 'rgba(14, 41, 84, 0.2)',
+    headingColor: '#F5C542',
+    textColor: isDark ? '#E2E8F0' : '#1E293B',
+    subtleColor: isDark ? '#94A3B8' : '#64748B',
+    accentNavy: '#142D62',
+    accentGold: '#F5C542',
+  }
+}
+
+function _pdfHeader(container, { subtitle = 'إدارة الحصص الذكية', docTitle = '' }) {
+  const t = _pdfShellStyles({})
+  const header = document.createElement('div')
+  header.style.cssText = `text-align:center;margin-bottom:32px;padding-bottom:20px;border-bottom:2px solid ${t.accentGold};`
+  header.innerHTML = `
+    <div style="font-size:32px;font-weight:800;color:${t.accentGold};margin-bottom:4px;">النخبة</div>
+    <div style="font-size:14px;color:${t.subtleColor};">${subtitle}</div>
+    ${docTitle ? `<div style="font-size:13px;color:${t.subtleColor};margin-top:8px;">${escapeReportHtml(docTitle)}</div>` : ''}
+  `
+  container.appendChild(header)
+}
+
+function _pdfFooter(container, todayStr) {
+  const t = _pdfShellStyles({})
+  const footer = document.createElement('div')
+  footer.style.cssText = `text-align:center;margin-top:32px;padding-top:16px;border-top:1px solid ${t.border};font-size:12px;color:${t.subtleColor};`
+  footer.innerHTML = `<div>تم الإنشاء من نظام النخبة — ${todayStr}</div>`
+  container.appendChild(footer)
+}
+
+function _pdfCard(container, { title, bodyHtml, isDark = false, titleColor, fontSize = '14px' }) {
+  const t = _pdfShellStyles({ isDark })
+  const card = document.createElement('div')
+  card.style.cssText = `
+    background:${t.cardBg};border:1px solid ${t.border};border-radius:16px;
+    padding:24px 28px;margin-bottom:20px;white-space:pre-line;
+    line-height:1.9;font-size:${fontSize};color:${t.textColor};
+  `
+  card.innerHTML = `${title ? `<div style="font-size:18px;font-weight:700;color:${titleColor || t.accentNavy};margin-bottom:12px;">${escapeReportHtml(title)}</div>` : ''}${bodyHtml}`
+  container.appendChild(card)
+}
+
+/**
+ * Generate a branded PDF for any ready-made report text (Reports studio,
+ * session reports, weekly summaries...). Same visual identity as the student
+ * report PDF: navy + gold, Cairo, RTL, "النخبة" header, A4 multipage.
+ *
+ * @param {object} opts
+ * @param {string} opts.title      - Report title (e.g. «تقرير الحصة»)
+ * @param {string} opts.bodyText   - The report text (plain text, \n preserved)
+ * @param {string} [opts.metaLine] - One line of context under the title
+ * @param {string} [opts.fileName] - Download file name
+ * @param {boolean} [opts.download]
+ * @returns {Promise<{ success: boolean, pdfUrl?: string }>}
+ */
+export async function generateTextReportPDF({ title, bodyText, metaLine, fileName, download = true } = {}) {
+  try {
+    if (!bodyText || !String(bodyText).trim()) return { success: false }
+    const t = _pdfShellStyles({})
+    const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
+    const container = document.createElement('div')
+    container.setAttribute('dir', 'rtl')
+    container.style.cssText = `
+      position:fixed;top:-9999px;left:-9999px;width:794px;
+      font-family:'Cairo','Segoe UI',Tahoma,Arial,sans-serif;
+      background:${t.bg};padding:48px 40px;color:${t.textColor};direction:rtl;
+    `
+    _pdfHeader(container, { docTitle: 'تقرير جاهز للمراجعة والإرسال' })
+    _pdfCard(container, {
+      title,
+      bodyHtml: `${metaLine ? `<div style="font-size:13px;color:${t.subtleColor};margin-bottom:10px;">${escapeReportHtml(metaLine)}</div>` : ''}${escapeReportHtml(String(bodyText)).replace(/\n/g, '<br/>')}`,
+    })
+    _pdfFooter(container, todayStr)
+    const safeName = (fileName || `تقرير_${String(title || 'النخبة').slice(0, 40)}.pdf`).replace(/[\\/:*?"<>|]/g, '_')
+    return await _renderContainerToPdf(container, { bg: t.bg, fileName: safeName, download })
+  } catch (err) {
+    console.error('Failed to generate text report PDF:', err)
+    return { success: false }
+  }
+}
+
+/**
+ * Generate a branded session summary PDF for a completed lesson: attendance
+ * counts, homework, and a per-student status list — printable record of the
+ * session for the center owner.
+ *
+ * @param {object}  lesson       - lesson_sessions row (session_date, lesson_topic, homework_text, group_name)
+ * @param {Array}   rows         - attendance_records for this lesson [{ student_id, status, homework_status }]
+ * @param {Array}   students     - all students (matched by id for names)
+ * @param {object}  [opts]
+ * @returns {Promise<{ success: boolean, pdfUrl?: string }>}
+ */
+export async function generateLessonSummaryPDF(lesson, rows = [], students = [], { download = true } = {}) {
+  try {
+    if (!lesson) return { success: false }
+    const t = _pdfShellStyles({})
+    const todayStr = new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
+    const nameOf = (id) => students.find((s) => s.id === id)?.name || 'طالب'
+    const present = rows.filter((r) => r.status === 'حاضر')
+    const absent = rows.filter((r) => r.status === 'غائب')
+    const unmarked = rows.filter((r) => r.status !== 'حاضر' && r.status !== 'غائب')
+    const hwDone = rows.filter((r) => r.homework_status === 'تم' || r.homework_status === 'اكتمل').length
+
+    const container = document.createElement('div')
+    container.setAttribute('dir', 'rtl')
+    container.style.cssText = `
+      position:fixed;top:-9999px;left:-9999px;width:794px;
+      font-family:'Cairo','Segoe UI',Tahoma,Arial,sans-serif;
+      background:${t.bg};padding:48px 40px;color:${t.textColor};direction:rtl;
+    `
+    _pdfHeader(container, { docTitle: 'ملخص الحصة' })
+
+    _pdfCard(container, {
+      title: `حصة ${lesson.group_name || ''} — ${lesson.session_date || ''}`,
+      bodyHtml: `
+        ${lesson.lesson_topic ? `<div style="font-size:14px;color:${t.subtleColor};margin-bottom:6px;">الدرس: <span style="color:${t.textColor};font-weight:600;">${escapeReportHtml(lesson.lesson_topic)}</span></div>` : ''}
+        ${lesson.homework_text ? `<div style="font-size:14px;color:${t.subtleColor};">الواجب: <span style="color:${t.textColor};font-weight:600;">${escapeReportHtml(lesson.homework_text)}</span></div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px;">
+          <div style="background:${t.bg};border:1px solid ${t.border};border-radius:12px;padding:12px;text-align:center;"><div style="font-size:12px;color:${t.subtleColor};">الطلاب المرصودون</div><div style="font-size:20px;font-weight:700;color:${t.headingColor};">${rows.length}</div></div>
+          <div style="background:${t.bg};border:1px solid ${t.border};border-radius:12px;padding:12px;text-align:center;"><div style="font-size:12px;color:${t.subtleColor};">حاضر</div><div style="font-size:20px;font-weight:700;color:${t.headingColor};">${present.length}</div></div>
+          <div style="background:${t.bg};border:1px solid ${t.border};border-radius:12px;padding:12px;text-align:center;"><div style="font-size:12px;color:${t.subtleColor};">غائب</div><div style="font-size:20px;font-weight:700;color:${t.headingColor};">${absent.length}</div></div>
+        </div>
+        <div style="font-size:13px;color:${t.subtleColor};margin-top:12px;">الواجب المكتمل: ${hwDone} من ${rows.length}</div>
+      `,
+    })
+
+    if (absent.length > 0) {
+      _pdfCard(container, {
+        title: `الغائبون (${absent.length})`,
+        bodyHtml: escapeReportHtml(absent.map((r) => nameOf(r.student_id)).join(' · ')),
+        titleColor: '#B45309',
+        fontSize: '14px',
+      })
+    }
+
+    if (rows.length > 0) {
+      const listHtml = rows.map((r) => {
+        const status = r.status === 'حاضر' ? '✓ حاضر' : r.status === 'غائب' ? '✗ غائب' : `○ ${r.status || 'لم يرصد'}`
+        const color = r.status === 'حاضر' ? '#0c6b50' : r.status === 'غائب' ? '#b91c1c' : t.subtleColor
+        return `<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid ${t.border};padding:7px 2px;font-size:14px;">
+          <span style="font-weight:600;">${escapeReportHtml(nameOf(r.student_id))}</span>
+          <span style="color:${color};font-weight:700;">${status}${r.homework_status ? ` · الواجب: ${escapeReportHtml(r.homework_status)}` : ''}</span>
+        </div>`
+      }).join('')
+      _pdfCard(container, { title: 'حالة الطلاب', bodyHtml: listHtml, fontSize: '14px' })
+    } else {
+      _pdfCard(container, { title: 'حالة الطلاب', bodyHtml: 'لا توجد سجلات حضور مرصودة لهذه الحصة بعد.', fontSize: '14px' })
+    }
+    if (unmarked.length > 0) {
+      _pdfCard(container, {
+        title: `غير مرصود (${unmarked.length})`,
+        bodyHtml: escapeReportHtml(unmarked.map((r) => nameOf(r.student_id)).join(' · ')),
+        fontSize: '13px',
+      })
+    }
+
+    _pdfFooter(container, todayStr)
+    const safeName = `ملخص_الحصة_${lesson.group_name || ''}_${lesson.session_date || ''}.pdf`.replace(/[\\/:*?"<>|\s]+/g, '_')
+    return await _renderContainerToPdf(container, { bg: t.bg, fileName: safeName, download })
+  } catch (err) {
+    console.error('Failed to generate lesson summary PDF:', err)
+    return { success: false }
+  }
+}

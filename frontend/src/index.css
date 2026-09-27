@@ -436,6 +436,13 @@ html.dark .btn-glow { background: #223055; }
 }
 .nk-stat small { color: var(--fg-muted); font-size: .72rem; font-weight: 700; }
 .nk-stat strong { display: block; font-size: 1.7rem; margin-top: 6px; color: var(--fg); }
+/* Small phones: the home stat trio (grid-cols-3) gets ~110px per tile —
+   tighten padding/type so Arabic labels never feel squeezed. */
+@media (max-width: 420px) {
+  .nk-stat { padding: 11px 10px; border-radius: 15px; }
+  .nk-stat strong { font-size: 1.35rem; }
+  .nk-stat small { font-size: .64rem; }
+}
 .nk-stat--gold { background: var(--brand-gold-surface); border-color: color-mix(in srgb, var(--brand-gold) 30%, transparent); }
 .nk-stat--gold strong { color: var(--brand-gold); }
 

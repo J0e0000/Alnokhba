@@ -1,10 +1,10 @@
 import { useAuth } from '../context/AuthContext'
 import { WHATSAPP_URL, track } from '../marketing/config.js'
-import { TRIAL, fmtAr } from '../marketing/pricing.js'
 
 // Expired-trial/subscription screen. Honest model: the account is PAUSED,
-// not deleted — data stays for TRIAL.retentionDays, renewal restores
-// everything as it was. Renewal happens over WhatsApp (no payment gateway).
+// not deleted — ALL data is preserved (no auto-deletion, ever; data safety
+// is guaranteed separately from subscription status). Renewal happens over
+// WhatsApp (no payment gateway).
 export default function SubscriptionGate() {
   const { profile, signOut } = useAuth()
 
@@ -20,7 +20,7 @@ export default function SubscriptionGate() {
         <h2 className="text-xl font-black text-brand-gold-hover mb-2">الحساب متوقف مؤقتًا</h2>
         <p className="text-fg-subtle text-sm leading-relaxed mb-6">
           فترة اشتراكك انتهت بتاريخ {expired}. الحساب متوقف مؤقتًا — <b className="font-bold text-fg">مش حذف</b>:
-          بيانات مركزك كلها محفوظة {fmtAr(TRIAL.retentionDays)} يوم زي ما هي، وأول ما تفعّل تاني بترجع تشتغل من نفس المكان بالظبط.
+          بيانات مركزك كلها محفوظة ومش بتتحذف، وأول ما تفعّل تاني بترجع تشتغل من نفس المكان بالظبط.
         </p>
 
         <a

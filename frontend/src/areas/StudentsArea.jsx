@@ -697,7 +697,9 @@ function BulkAddModal({ onClose }) {
           const rest = (ws.groups || []).filter((g) => !compatible.includes(g))
           return (
             <div key={i} className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr_auto] gap-2 mb-2 items-center">
-              <input disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? `اسم الطالب ${i + 1}` : `Name ${i + 1}`} value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} />
+              {/* Mobile: name takes the full row, then phone+stage / group+✕ pair up —
+                  no orphaned half-width remove button (390px-safe). */}
+              <input disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm col-span-2 sm:col-span-1" placeholder={isArabic ? `اسم الطالب ${i + 1}` : `Name ${i + 1}`} value={row.name} onChange={(e) => setRow(i, { name: e.target.value })} />
               <input dir="ltr" disabled={step === 'review'} className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'الهاتف' : 'Phone'} value={row.phone} onChange={(e) => setRow(i, { phone: e.target.value })} />
               {/* Full-grade stage select (spec 1) — same canonical values as
                   single-add, not the bare category words. */}

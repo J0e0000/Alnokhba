@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 import { useWorkspace } from '../store/WorkspaceStore'
-import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -11,7 +11,8 @@ import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsApp
 //  • the QR uses a 4-module quiet zone so screenshots/photos scan reliably
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentQRModal({ open, student, template, onClose, showToast }) {
-  const { isArabic } = useWorkspace()
+  const ws = useWorkspace()
+  const { isArabic } = ws
   // PERF: qrcode loads on demand (dynamic import) — it used to ship in the
   // first bundle for every teacher even though QR modals are button-driven.
   const makeQR = (url, opts) => import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(url, opts))
@@ -20,6 +21,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
   const linkRef = useRef(null)
 
   useEffect(() => {
@@ -82,6 +84,23 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
   }
 
+  // 📄 تقرير PDF للطالب (نفس تقرير متابعة الطالب المُوثّق في بوابة أولياء الأمور):
+  // هوية الطالب واضحة (الاسم/الكود/المرحلة/المجموعة) + هوية النخبة في الترويسة.
+  const downloadStudentPdf = async () => {
+    if (pdfBusy || !student?.id) return
+    setPdfBusy(true)
+    try {
+      const res = await generateStudentReportPDF(student, {
+        ranks: ws.ranks,
+        allStudents: ws.students,
+        examScores: ws.examScoresByStudent?.[student.id] || [],
+        download: true,
+      })
+      if (res?.success) showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF ✓' : 'Student report PDF downloaded ✓', 'success')
+      else showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
+    } finally { setPdfBusy(false) }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={isArabic ? `رابط بوابة الطالب — ${student?.name || ''}` : `Student portal link — ${student?.name || ''}`}>
       {status === 'loading' && (
@@ -121,6 +140,9 @@ export default function StudentQRModal({ open, student, template, onClose, showT
             </button>
             <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadQR} disabled={!qrDataUrl}>
               ⬇ {isArabic ? 'تحميل QR' : 'Download QR'}
+            </button>
+            <button className="btn-gold rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadStudentPdf} disabled={pdfBusy} title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}>
+              {pdfBusy ? '… جاري التجهيز' : '📄 تقرير PDF'}
             </button>
           </div>
           <p className="text-[.68rem] text-fg-muted text-center m-0">

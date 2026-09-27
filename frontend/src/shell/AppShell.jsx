@@ -228,7 +228,7 @@ export default function AppShell({ onOpenAdmin }) {
             </button>
             {profile?.is_admin && !isAssistant && (
               <button
-                className="hidden sm:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+                className="grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
                 onClick={onOpenAdmin}
                 title="لوحة الأدمن"
               >

@@ -209,7 +209,7 @@ export default function HomePage() {
       </div>
 
       {/* Selected day's sessions */}
-      <div className="flex items-center justify-between mb-3" data-tour="today-sessions">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-3" data-tour="today-sessions">
         <h2 className="text-[.98rem] font-extrabold m-0">{heading}</h2>
         <span className="text-[.68rem] text-fg-muted">{ar ? 'اضغط على الحصة لفتح مساحة العمل' : 'Tap a session to open its workspace'}</span>
       </div>

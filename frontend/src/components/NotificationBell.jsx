@@ -29,7 +29,10 @@ export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDi
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-2 w-72 glass-card rounded-xl shadow-lg z-30 max-h-80 overflow-y-auto">
+        <div
+          className="absolute mt-2 glass-card rounded-xl shadow-lg z-30 max-h-80 overflow-y-auto"
+          style={{ insetInlineEnd: 0, width: 'min(18rem, calc(100vw - 1.5rem))' }}
+        >
           <div className="px-3 py-2 border-b border-subtle text-xs font-bold text-fg">الإشعارات</div>
           {broadcasts.length === 0 ? (
             <p className="text-fg-subtle text-xs text-center py-6">مفيش إشعارات لسه</p>

@@ -14,7 +14,10 @@
 //    WhatsApp after confirmation (SubscriptionGate). No auto-billing.
 //  - Trial = time-limited 14 days, full core product, no card. After the
 //    trial the account is PAUSED (not deleted) and data is retained for
-//    30 days, then archived/deleted per policy. Trial ≠ free account forever.
+//    DATA PRESERVATION GUARANTEE (owner, 2026-09): expiry PAUSES access only.
+//    Nothing is ever auto-deleted — students, attendance, grades, exams,
+//    notes, reports, settings and account info are all preserved until the
+//    admin intentionally deletes via the admin panel. Trial ≠ free account forever.
 //  - Backend note: profiles.subscription_expires_at defaults to now()+14d
 //    only after migration_045 is applied; until then the admin grants the
 //    14-day window manually at activation (تفعيل/تمديد في لوحة الأدمن).
@@ -28,9 +31,10 @@ export const TRIAL = {
   autoBilling: false, // verified: no payment gateway connected
   assistance: true, // verified: WhatsApp support from the real number
   pausedNotDeleted: true, // product decision: expired account is paused, data kept
-  retentionDays: 30, // owner decision: data retained 30 days after trial, then archived/deleted per policy
-  afterTrial: 'الحساب بيتوقف مؤقتًا (مش حذف) — وبياناتك بتفضل محفوظة ٣٠ يوم، والتجديد بيرجّع كل حاجة زي ما هي',
-  dataRetention: 'بياناتك بتفضل محفوظة ٣٠ يوم بعد انتهاء التجربة — التجديد بيعيد كل حاجة زي ما هي',
+  // DATA PRESERVATION GUARANTEE: no retention window, no auto-deletion, ever.
+  // Expiry pauses access only; renewal restores everything exactly as it was.
+  afterTrial: 'الحساب بيتوقف مؤقتًا (مش حذف) — وبياناتك تفضل محفوظة ومش بتتحذف، والتجديد بيرجّع كل حاجة زي ما هي',
+  dataRetention: 'بياناتك محفوظة ومش بتتحذف تلقائيًا أبدًا — انتهاء الاشتراك بيوقف الوصول مؤقتًا بس، والتجديد بيعيد كل حاجة زي ما هي',
 }
 
 export const PLANS = [

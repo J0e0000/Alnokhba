@@ -18,7 +18,6 @@ const TRIAL_FEATURES = [
 export default function Signup({ onSwitchToLogin }) {
   const { signUp } = useAuth()
   const DAYS_AR = fmtAr(TRIAL.days) // ١٤ — Arabic-Indic, consistent with site copy
-  const RETENTION_AR = fmtAr(TRIAL.retentionDays)
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -214,7 +213,7 @@ export default function Signup({ onSwitchToLogin }) {
               <div className="mt-8 rounded-2xl border border-white/12 bg-white/[0.06] p-5">
                 <p className="text-sm font-black text-[#FBBF6D]">بعد الـ{DAYS_AR} يوم؟</p>
                 <p className="mt-1.5 text-xs leading-6 text-slate-300">
-                  الحساب بيتوقف مؤقتًا — مش حذف. بياناتك تفضل محفوظة {RETENTION_AR} يوم،
+                  الحساب بيتوقف مؤقتًا — مش حذف. بياناتك تفضل محفوظة ومش بتتحذف،
                   ولو كملت باقة تبدأ من ٣٩٩ جنيه/شهر وبتتفعل على واتساب. مفيش تجديد تلقائي.
                 </p>
               </div>

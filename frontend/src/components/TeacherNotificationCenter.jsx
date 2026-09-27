@@ -273,11 +273,14 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
       {expanded && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setExpanded(false)} />
-          <div className="absolute top-full mt-2 left-0 w-80 glass-card rounded-xl shadow-2xl border border-subtle z-50 max-h-[60vh] flex flex-col" dir={isArabic ? 'rtl' : 'ltr'}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-subtle">
+          {/* Mobile: fixed bottom action-sheet (نفس نمط nk-menu-sheet) — full
+              width inside the viewport, escapes any parent overflow clip.
+              ≥640px: original anchored popover, unchanged. */}
+          <div className="nk-notif-panel fixed inset-x-2 bottom-2 z-50 sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:left-0 sm:w-80 glass-card rounded-xl shadow-2xl border border-subtle max-h-[70vh] sm:max-h-[60vh] flex flex-col" dir={isArabic ? 'rtl' : 'ltr'}>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-subtle">
               <h3 className="text-sm font-bold text-fg">{isArabic ? '🔔 التنبيهات' : '🔔 Notifications'}</h3>
-              <div className="flex items-center gap-2">
-                {pushPermission !== 'unsupported' && !pushReady && <button onClick={enableBrowserNotifications} className="action-button min-h-12 min-w-0 rounded-xl border border-brand-gold/30 px-3 py-2 text-xs font-bold text-brand-gold-hover">🔔 {isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button>}
+              <div className="flex flex-wrap items-center gap-2">
+                {pushPermission !== 'unsupported' && !pushReady && <button onClick={enableBrowserNotifications} className="action-button !min-h-10 min-w-0 rounded-xl border border-brand-gold/30 px-3 py-1.5 text-xs font-bold text-brand-gold-hover">🔔 {isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button>}
                 {unreadCount > 0 && <button onClick={markAllRead} className="text-brand-gold-hover text-xs font-bold">{isArabic ? 'قراءة الكل' : 'Read all'}</button>}
               </div>
             </div>

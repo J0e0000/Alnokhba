@@ -338,16 +338,16 @@ function QuickAddStudentsModal({ groupId, onClose }) {
       </p>
       <div className="grid gap-2">
         {rows.map((r, i) => (
-          <div key={i} className="flex gap-1.5 items-center">
+          <div key={i} className="flex flex-wrap gap-1.5 items-center">
             <input
-              className="glass-input rounded-xl px-3 py-2 text-sm flex-1 min-w-0"
+              className="glass-input rounded-xl px-3 py-2 text-sm flex-1 min-w-[9rem] sm:flex-[2]"
               placeholder={isArabic ? 'اسم الطالب' : 'Student name'}
               value={r.name}
               onChange={(e) => setRow(i, { name: e.target.value })}
               autoComplete="off"
             />
             <input
-              className="glass-input rounded-xl px-3 py-2 text-[.8rem] w-[9.5rem] shrink-0"
+              className="glass-input rounded-xl px-3 py-2 text-[.8rem] flex-1 min-w-[9.5rem] sm:flex-none sm:w-[9.5rem]"
               placeholder={isArabic ? 'الهاتف (اختياري)' : 'Phone (optional)'}
               value={r.phone}
               inputMode="tel"

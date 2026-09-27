@@ -5,6 +5,7 @@ import { useUI } from '../shell/UIContext'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, getStudentRankPosition, normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, checkAcademicWarning } from '../lib/helpers'
 import { weeklyAttendanceForStudent, WEEKLY_STATUS_LABEL } from '../lib/week'
+import { generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
 
@@ -23,6 +24,7 @@ export default function HistoryArea() {
   const [loadingLogs, setLoadingLogs] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   // Deep-open support: clicking a student's NAME anywhere (e.g. Students tab)
   // jumps here and opens that student's profile directly (read-only surface).
@@ -97,6 +99,23 @@ export default function HistoryArea() {
   const attendancePct = presentCount + absentCount > 0 ? Math.round((presentCount / (presentCount + absentCount)) * 100) : null
   const academicWarning = checkAcademicWarning(examHistory)
 
+  // 📄 تقرير PDF من ملف الطالب: نفس تقرير المتابعة المُوثّق (هوية الطالب +
+  // هوية النخبة) — الدرجات والحضور والسرد التحليلي كلها داخل الـ PDF.
+  const downloadStudentPdf = async () => {
+    if (pdfBusy || !student?.id) return
+    setPdfBusy(true)
+    try {
+      const res = await generateStudentReportPDF(student, {
+        ranks: ws.ranks,
+        allStudents: ws.students,
+        examScores: ws.examScoresByStudent[student.id] || [],
+        download: true,
+      })
+      if (res?.success) ws.showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF ✓' : 'Student report PDF downloaded ✓', 'success')
+      else ws.showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
+    } finally { setPdfBusy(false) }
+  }
+
   return (
     <div>
       <button className="btn-ghost rounded-xl px-4 py-2 text-[.75rem] font-extrabold mb-4" onClick={() => { setSelectedId(null); setSearch('') }}>
@@ -111,7 +130,7 @@ export default function HistoryArea() {
               {student.code || ''}{student.group_name ? ` · ${student.group_name}` : ''}{student.stage ? ` · ${student.stage}` : ''}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {waUrl && (
               <a className="action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" style={{ background: '#0c6b50', borderColor: '#0c6b50', color: '#fff' }} href={waUrl} target="_blank" rel="noreferrer">
                 ✆ WhatsApp
@@ -128,6 +147,14 @@ export default function HistoryArea() {
               onClick={() => setQrOpen(true)}
               title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
             >QR</button>
+            <button
+              className="btn-gold action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]"
+              onClick={downloadStudentPdf}
+              disabled={pdfBusy}
+              title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}
+            >
+              {pdfBusy ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `📄 ${isArabic ? 'تقرير PDF' : 'PDF report'}`}
+            </button>
             <button className="btn-ghost action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" onClick={() => setEditOpen(true)}>
               ✎ {isArabic ? 'تعديل البيانات' : 'Edit details'}
             </button>

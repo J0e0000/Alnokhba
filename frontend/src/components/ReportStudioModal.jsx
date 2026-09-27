@@ -3,6 +3,7 @@ import Modal from './Modal'
 import LineTemplateEditor from './LineTemplateEditor'
 import {
   buildAttendanceMessage, DEFAULT_PRESENT_TEMPLATE, DEFAULT_ABSENT_TEMPLATE,
+  generateTextReportPDF,
 } from '../lib/qrPdfWhatsApp'
 import { isValidPhone, normalizeEgyptianPhone } from '../lib/helpers'
 import {
@@ -247,6 +248,23 @@ export default function ReportStudioModal({
     onBell({ title, body })
   }
 
+  // 📄 تحميل التقرير PDF: نفس النص المعروض — ملف A4 بهوية النخبة الرسمية
+  // (كحلي + ذهبي + Cairo + ترويسة «النخبة») جاهز للطباعة أو الأرشفة.
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const downloadTextPdf = async (text) => {
+    if (pdfBusy || !String(text || '').trim()) return
+    setPdfBusy(true)
+    try {
+      const res = await generateTextReportPDF({
+        title: meta.title,
+        bodyText: String(text),
+        metaLine: isArabic ? 'تم إنشاؤه من استوديو التقارير في نظام النخبة' : 'Generated from the Alnokhba report studio',
+      })
+      if (res?.success) ws.showToast?.(isArabic ? 'تم تحميل التقرير PDF ✓' : 'Report PDF downloaded ✓', 'success')
+      else ws.showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
+    } finally { setPdfBusy(false) }
+  }
+
   // Session reports: send straight from here (was: “go press the other
   // button above” — that indirection was the #1 confusion). Same builder as
   // the quick queue, using the template currently in the editor.
@@ -436,6 +454,9 @@ export default function ReportStudioModal({
                   </button>
                   <button type="button" className="btn-ghost action-button !min-h-[2.9rem] flex-1" disabled={!hasContent} onClick={() => saveToBell(out)}>
                     🔔 {isArabic ? 'حفظ في التنبيهات' : 'Save to notifications'}
+                  </button>
+                  <button type="button" className="btn-gold action-button !min-h-[2.9rem] flex-1" disabled={!hasContent || pdfBusy} onClick={() => downloadTextPdf(out)} title={isArabic ? 'تحميل التقرير PDF بالهوية الرسمية' : 'Download the report as a branded PDF'}>
+                    {pdfBusy ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `📄 ${isArabic ? 'تحميل PDF' : 'Download PDF'}`}
                   </button>
                 </>
               )
