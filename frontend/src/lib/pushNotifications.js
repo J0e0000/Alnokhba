@@ -81,9 +81,13 @@ export async function registerStudentPush(token) {
   return { ok: data === true, reason: data === true ? 'enabled' : 'invalid_token', subscription }
 }
 
+// No auto-registered SW anymore (boot registration removed): getRegistration
+// early-outs instead of serviceWorker.ready, which would pend forever when no
+// SW was ever registered.
 export async function hasTeacherPushSubscription(teacherId) {
   if (!teacherId || !('serviceWorker' in navigator) || !('PushManager' in window)) return false
-  const registration = await navigator.serviceWorker.ready
+  const registration = await navigator.serviceWorker.getRegistration('/')
+  if (!registration) return false
   const browserSubscription = await registration.pushManager.getSubscription()
   if (!browserSubscription) return false
   const { data, error } = await supabase
@@ -98,7 +102,8 @@ export async function hasTeacherPushSubscription(teacherId) {
 
 export async function unregisterTeacherPush(teacherId) {
   if (!('serviceWorker' in navigator)) return
-  const registration = await navigator.serviceWorker.ready
+  const registration = await navigator.serviceWorker.getRegistration('/')
+  if (!registration) return
   const subscription = await registration.pushManager.getSubscription()
   if (!subscription) return
   await supabase.from('push_subscriptions').delete().eq('teacher_id', teacherId).eq('endpoint', subscription.endpoint)

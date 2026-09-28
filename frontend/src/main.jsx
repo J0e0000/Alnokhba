@@ -7,6 +7,15 @@ import './index.css'
 import App from './App.jsx'
 import ProductionErrorBoundary from './components/ProductionErrorBoundary'
 
+// Service-worker HYGIENE ONLY — the push SW is NOT registered here anymore.
+// Browsers that parents open the student portal with (WhatsApp/in-app viewer,
+// some Android OEM browsers) pop a "notifications" permission ask as soon as a
+// SW registers, so an at-boot registration = a popup on every portal visit.
+// The SW is registered ON DEMAND inside pushNotifications.js when the user
+// actually opts in (teacher center / parent portal button) — permission always
+// follows a real tap. An already-installed push SW (push-only, no fetch
+// handler) keeps working on opted-in devices; we only clean foreign SWs and
+// legacy caches here.
 if ('serviceWorker' in navigator) window.addEventListener('load', async () => {
   try {
     const registrations = await navigator.serviceWorker.getRegistrations()
@@ -15,8 +24,7 @@ if ('serviceWorker' in navigator) window.addEventListener('load', async () => {
       const cacheNames = await caches.keys()
       await Promise.all(cacheNames.filter((name) => /workbox|vite|pwa|precache/i.test(name)).map((name) => caches.delete(name)))
     }
-    await navigator.serviceWorker.register('/sw.js?v=6', { updateViaCache: 'none' })
-  } catch (err) { console.warn('Push service worker registration failed:', err) }
+  } catch (err) { console.warn('Service worker cleanup failed:', err) }
 })
 
 /**

@@ -38,8 +38,12 @@ export default function PublicQRPage() {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [downloading, setDownloading] = useState(false)
   const [markingTaskId, setMarkingTaskId] = useState(null)
-  const [notifExpanded, setNotifExpanded] = useState(true)
-  const [parentPushEnabled, setParentPushEnabled] = useState(false)
+  // Collapsed by default (owner request): entering the portal must NOT greet
+  // parents with a notifications ask. The unread count stays visible in the
+  // card title so new items are still discoverable.
+  const [notifExpanded, setNotifExpanded] = useState(false)
+  // Parents who already granted browser permission never see the enable ask again.
+  const [parentPushEnabled, setParentPushEnabled] = useState(() => typeof Notification !== 'undefined' && Notification.permission === 'granted')
   const [parentPushBusy, setParentPushBusy] = useState(false)
   const [parentPushMessage, setParentPushMessage] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
@@ -797,22 +801,6 @@ export default function PublicQRPage() {
       >
             {notifExpanded && (
           <>
-            {!parentPushEnabled && (
-              <>
-                <button type="button" onClick={handleEnableParentPush} disabled={parentPushBusy} style={{ ...goldBtn, fontSize: 12, padding: '7px 12px', marginBottom: 6 }}>
-                  {parentPushBusy ? 'جاري التفعيل...' : '🔔 تفعيل إشعارات ولي الأمر على هذا الجهاز'}
-                </button>
-                {typeof Notification === 'undefined' && (
-                  <p style={{ ...feedMsg, color: '#FCA5A5' }}>
-                    {isIOSBrowser()
-                      ? 'على الآيفون: اضغط زر المشاركة (Share) فوق ↑ ثم «إضافة إلى الشاشة الرئيسية»، افتح الموقع من الأيقونة الجديدة ثم فعّل الإشعارات من الزر.'
-                      : 'هذا المتصفح لا يوفر إشعارات Push. جرّب Chrome أو Edge على HTTPS.'}
-                  </p>
-                )}
-                {parentPushMessage && <p style={{ ...feedMsg, color: parentPushMessage.startsWith('تم تفعيل') ? '#86EFAC' : GOLD }}>{parentPushMessage}</p>}
-              </>
-            )}
-            {parentPushEnabled && <p style={{ ...feedMsg, color: '#86EFAC', marginBottom: 8 }}>✅ إشعارات المتصفح مفعّلة لهذا الطالب على هذا الجهاز.</p>}
             {unreadNotificationCount > 0 && (
               <button onClick={handleMarkAllRead} style={{ ...goldBtn, fontSize: 12, padding: '6px 12px', marginBottom: 8 }}>
                 قراءة الكل
@@ -836,6 +824,25 @@ export default function PublicQRPage() {
                 {n.deep_link && n.deep_link.startsWith('http') && <a href={n.deep_link} target="_blank" rel="noreferrer" style={{ ...goldBtn, display: 'inline-block', textDecoration: 'none', marginTop: 6 }}>فتح الرابط</a>}
               </div>
             ))}
+            {/* Push-enable option lives at the BOTTOM of the expanded card
+                (owner request: entering the portal must not push an
+                enable-notifications ask in the parent's face). */}
+            {!parentPushEnabled && (
+              <>
+                <button type="button" onClick={handleEnableParentPush} disabled={parentPushBusy} style={{ ...goldBtn, fontSize: 12, padding: '7px 12px', marginTop: 8, marginBottom: 6 }}>
+                  {parentPushBusy ? 'جاري التفعيل...' : '🔔 تفعيل إشعارات ولي الأمر على هذا الجهاز'}
+                </button>
+                {typeof Notification === 'undefined' && (
+                  <p style={{ ...feedMsg, color: '#FCA5A5' }}>
+                    {isIOSBrowser()
+                      ? 'على الآيفون: اضغط زر المشاركة (Share) فوق ↑ ثم «إضافة إلى الشاشة الرئيسية»، افتح الموقع من الأيقونة الجديدة ثم فعّل الإشعارات من الزر.'
+                      : 'هذا المتصفح لا يوفر إشعارات Push. جرّب Chrome أو Edge على HTTPS.'}
+                  </p>
+                )}
+                {parentPushMessage && <p style={{ ...feedMsg, color: parentPushMessage.startsWith('تم تفعيل') ? '#86EFAC' : GOLD }}>{parentPushMessage}</p>}
+              </>
+            )}
+            {parentPushEnabled && <p style={{ ...feedMsg, color: '#86EFAC', marginTop: 8 }}>✅ إشعارات المتصفح مفعّلة لهذا الطالب على هذا الجهاز.</p>}
           </>
         )}
       </SectionCard>
