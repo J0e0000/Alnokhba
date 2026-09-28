@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../../store/WorkspaceStore'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -93,7 +93,7 @@ export default function ExamsTab({ groupId, lessonId, lessonOpen, onGoNext }) {
       </div>
       <button
         className="btn-gold action-button !min-h-[3rem] mb-4"
-        onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول', 'السؤال الثاني'], max: 20 }); setView('setup') }}
+        onClick={() => { setSetup({ title: `امتحان ${new Date().toLocaleDateString('ar-EG')}`, sections: ['السؤال الأول'], max: 20 }); setView('setup') }}
       >
         ＋ {isArabic ? 'امتحان جديد' : 'New exam'}
       </button>
@@ -198,6 +198,33 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // ENTER-TO-NEXT (owner request, works on mobile keyboards that send
+  // Enter/Next and on PC): grade inputs live in a fixed column-major
+  // sequence — down the SAME section across visible (non-absent) students,
+  // wrapping to the first student of the NEXT section at the bottom. With
+  // the new one-section default this is literally "Enter = next student".
+  const inputRefs = useRef({})
+  const focusNextScore = (e, studentId, sectionIdx) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const seq = []
+    setup.sections.forEach((_, i) => {
+      visible.forEach((st) => {
+        if (statusOf(st) === 'غائب') return
+        seq.push([st.id, i])
+      })
+    })
+    const cur = seq.findIndex(([sid, i]) => sid === studentId && i === sectionIdx)
+    for (let n = cur + 1; n < seq.length; n++) {
+      const el = inputRefs.current[`${seq[n][0]}::${seq[n][1]}`]
+      if (el && !el.disabled) {
+        el.focus()
+        try { el.select() } catch { /* non-selectable */ }
+        el.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+        break
+      }
+    }
+  }
 
   // Mirror every draft mutation (setup is stable here; rows change per tap).
   useEffect(() => {
@@ -291,14 +318,17 @@ function GradeGrid({ setup, groupId, lessonId, onDone, onCancel }) {
                 <span className="nk-pill nk-pill-gold">{row?.total || 0} / {Number(setup.max) * setup.sections.length}</span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {setup.sections.map((section) => (
+                {setup.sections.map((section, i) => (
                   <label key={section} className="min-w-[110px] flex-1">
                     <small className="block text-[.64rem] text-fg-muted mb-1 truncate">{section}</small>
                     <input
+                      ref={(el) => { inputRefs.current[`${s.id}::${i}`] = el }}
                       type="number" min="0" max={setup.max} inputMode="decimal"
+                      enterKeyHint="next"
                       className="glass-input rounded-xl px-3 py-2 text-sm w-full"
                       value={row?.sectionScores?.[section] ?? ''}
                       onChange={(e) => setScore(s.id, section, e.target.value)}
+                      onKeyDown={(e) => focusNextScore(e, s.id, i)}
                       disabled={statusOf(s) === 'غائب'}
                       aria-label={`${s.name} — ${section}`}
                     />

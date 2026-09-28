@@ -890,7 +890,18 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
   const examLine = examVals.examTitle && examVals.examScore !== '' && examVals.examMaxScore
     ? `درجة الامتحان: اختبار «${examVals.examTitle}» — ${examVals.examScore} من ${examVals.examMaxScore}${examVals.examPercentage !== '' ? ` (${examVals.examPercentage}%)` : ''}`
     : ''
-  const homeworkLine = lesson?.homework_text ? `الواجب: ${lesson.homework_text}` : ''
+  // STUDENT HW STATUS (owner request: the present message shows whether the
+  // student DID the homework): the per-session recorded status wins —
+  // 'تم'/'مكتمل' → done ✅, 'ناقص' → partial ⚠️, 'لم يتم' → not done ❌.
+  // Unrecorded ('لم يرصد'/empty) falls back to the assigned-homework text,
+  // then collapses entirely — never a dangling label or invented claim.
+  const HW_DONE = ['تم', 'مكتمل']
+  const hwRaw = s.hw_status != null ? String(s.hw_status).trim() : ''
+  const hwStatusLine = HW_DONE.includes(hwRaw) ? 'الواجب: تم الحل ✅'
+    : hwRaw === 'ناقص' ? 'الواجب: ناقص ⚠️'
+      : hwRaw === 'لم يتم' ? 'الواجب: لم يتم الحل ❌'
+        : ''
+  const homeworkLine = hwStatusLine || (lesson?.homework_text ? `الواجب: ${lesson.homework_text}` : '')
   const pointsLine = s.points != null && s.points !== '' ? `النقاط الحالية: ${s.points}` : ''
   // COMBINED DETAILS LINE: the present-default uses one gap-free block that
   // joins only the lines that actually have data (exam → homework → topic),
