@@ -764,7 +764,14 @@ function _performanceNarrative(examScores = []) {
 
 /** Build an explanatory, attendance-aware report for WhatsApp and previews. */
 export function getReportTemplateValues(examScores = [], student = {}, session = null) {
-  const latest = Array.isArray(examScores) && examScores.length > 0 ? examScores[0] : null
+  // LATEST-exam pick (bug fix): exam_scores rows arrive sorted created_at
+  // ASCENDING (WorkspaceStore load) and realtime inserts append at the END,
+  // so [0] was the OLDEST exam — the "آخر امتحان"/{examLine} bricks showed
+  // the student's first-ever exam. Sort by created_at descending (stable
+  // fallback to array order when created_at is missing, e.g. portal rows).
+  const latest = Array.isArray(examScores) && examScores.length > 0
+    ? [...examScores].sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0))[0]
+    : null
   const sections = latest ? Object.keys(latest.section_scores || {}).length || 1 : 0
   // Tolerate both exam row shapes: raw exam rows (total_score /
   // max_score_per_section / exam_title / exams relation) and the portal's
@@ -825,20 +832,20 @@ export function buildTextReport(student, { ranks, allStudents, session, examScor
 // ═════════════════════════════════════════════════════════════════════════════
 // PRESENT / ABSENT attendance messages (recipient-targeting round)
 //
-// The teacher-facing spec requires DIFFERENT messages for present vs absent
-// students, with the warning balance computed from REAL data — never
-// hardcoded. Templates are teacher-editable (teacher_settings:
-// msg_attendance_present / msg_attendance_absent via TemplatesModal); the
-// defaults below are the owner-approved colloquial EGYPTIAN Arabic versions
-// (owner request: "make a template ready for sending in egyptian arabic"). The
-// consequence named in the absent default ("منع الدخول عبر البوابة") is the
-// ONLY automated consequence that exists in the system today (QR entry block
-// at warnings ≥ threshold, lib/qrAttendance.js) — no invented rules.
+// Templates are teacher-editable (teacher_settings: msg_attendance_present /
+// msg_attendance_absent via TemplatesModal); the defaults below are the
+// OWNER-APPROVED texts (owner request: attendance message covers حضور +
+// امتحان + واجب concisely; absence message is the El-Bendary team parent
+// notice with the makeup-contact line). Optional composite lines
+// ({examLine} / {homeworkLine} / {lessonLine}) collapse entirely when their
+// real data is missing — no dangling labels, no invented numbers. Warning
+// bricks {warnings} / {remainingWarnings} stay available and are still
+// computed from REAL counters + the configured threshold at send time.
 // ═════════════════════════════════════════════════════════════════════════════
 
-export const DEFAULT_PRESENT_TEMPLATE = 'أهلًا حضرتك 🌟\n{studentName} حضر حصة {group} النهارده تمام ✅\n{lessonLine}شكرًا لمتابعتكم.'
+export const DEFAULT_PRESENT_TEMPLATE = 'أهلًا حضرتك 🌟\n{studentName} حضر حصة {group} النهارده ✅\n{sessionDetails}شكرًا لمتابعتكم.'
 
-export const DEFAULT_ABSENT_TEMPLATE = 'مساء الخير حضرتك،\n{studentName} معدهش حصة {group} النهارده ❌\n{lessonLine}رصيد الإنذارات دلوقتي: {warnings}.\nلو كمل {remainingWarnings} إنذار هيتمنع مؤقتًا من بوابة الطالب.\nلو فيه عذر أو ظرف صحي، بلغنا — وشكرًا لمتابعتكم.'
+export const DEFAULT_ABSENT_TEMPLATE = 'تيم مستر محمد البنداري يرحب بكم،\nولي أمر الطالب {studentName}،\nتم تسجيله غياب في الحصة بتاريخ {date}.\nللاستفسار عن مواعيد وأماكن التعويض برجاء التواصل على نفس الرقم.'
 
 /**
  * Interpolate an attendance template with real per-student values.
@@ -881,10 +888,16 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
   // dangling labels or invented numbers.
   const examVals = getReportTemplateValues(examScores || [], s, lesson)
   const examLine = examVals.examTitle && examVals.examScore !== '' && examVals.examMaxScore
-    ? `التقييم: اختبار «${examVals.examTitle}» — ${examVals.examScore} من ${examVals.examMaxScore}${examVals.examPercentage !== '' ? ` (${examVals.examPercentage}%)` : ''}`
+    ? `درجة الامتحان: اختبار «${examVals.examTitle}» — ${examVals.examScore} من ${examVals.examMaxScore}${examVals.examPercentage !== '' ? ` (${examVals.examPercentage}%)` : ''}`
     : ''
   const homeworkLine = lesson?.homework_text ? `الواجب: ${lesson.homework_text}` : ''
   const pointsLine = s.points != null && s.points !== '' ? `النقاط الحالية: ${s.points}` : ''
+  // COMBINED DETAILS LINE: the present-default uses one gap-free block that
+  // joins only the lines that actually have data (exam → homework → topic),
+  // so a day without an exam never leaves an empty gap where {examLine}
+  // would have been. Individual bricks stay available for custom templates.
+  const lessonLineRaw = lesson?.lesson_topic ? `موضوع الحصة: ${lesson.lesson_topic}` : ''
+  const sessionDetails = [examLine, homeworkLine, lessonLineRaw].filter(Boolean).join('\n')
   const dateStr = today || (lesson?.session_date
     ? new Date(lesson.session_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
     : new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' }))
@@ -897,6 +910,7 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
     homework: lesson?.homework_text || '',
     homeworkLine,
     examLine,
+    sessionDetails: sessionDetails ? `${sessionDetails}\n` : '',
     pointsLine,
     warnings,
     remainingWarnings: remaining,

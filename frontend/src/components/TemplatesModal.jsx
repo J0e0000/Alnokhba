@@ -1,27 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
+import { DEFAULT_PRESENT_TEMPLATE, DEFAULT_ABSENT_TEMPLATE } from '../lib/qrPdfWhatsApp'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEMPLATES (spec 12/16) — including the SEPARATE present vs absent
-// attendance messages. Warning numbers are NEVER written by the teacher
-// here: {warnings} / {remainingWarnings} are computed at send time from the
-// student's real counters and the configured threshold (insight_config.
-// max_warnings, default 3 — the QR entry-block rule).
+// attendance messages. DEFAULTS ARE IMPORTED from lib/qrPdfWhatsApp.js
+// (single source of truth shared with buildAttendanceMessage and
+// ReportStudioModal — no drift between editors and sender).
+// Warning numbers are NEVER written by the teacher here: {warnings} /
+// {remainingWarnings} are computed at send time from the student's real
+// counters and the configured threshold (insight_config.max_warnings,
+// default 3 — the QR entry-block rule).
 //
 // READY EGYPTIAN TEMPLATES (owner request): every field carries a one-tap
-// "قالب مصري جاهز" chip that fills the box with a colloquial Egyptian Arabic
+// "قالب مصري جاهز" chip that fills the box with the current owner-approved
 // version. Placeholder policy per field follows the REAL send paths:
 //   • present / absent → interpolated by buildAttendanceMessage (all bricks OK)
 //   • welcome / QR     → {studentName} (+{link}) replaced by the send flows
 //   • warning / promotion / queue-report → NO automated sender exists today,
 //     so their ready texts are placeholder-free (safe to copy manually).
 // ═══════════════════════════════════════════════════════════════════════════
-const DEFAULT_PRESENT = 'أهلًا حضرتك 🌟\n{studentName} حضر حصة {group} النهارده تمام ✅\n{lessonLine}شكرًا لمتابعتكم.'
-const DEFAULT_ABSENT = 'مساء الخير حضرتك،\n{studentName} معدهش حصة {group} النهارده ❌\n{lessonLine}رصيد الإنذارات دلوقتي: {warnings}.\nلو كمل {remainingWarnings} إنذار هيتمنع مؤقتًا من بوابة الطالب.\nلو فيه عذر أو ظرف صحي، بلغنا — وشكرًا لمتابعتكم.'
 
 const READY_EGYPTIAN = {
-  present: DEFAULT_PRESENT,
-  absent: DEFAULT_ABSENT,
+  present: DEFAULT_PRESENT_TEMPLATE,
+  absent: DEFAULT_ABSENT_TEMPLATE,
   welcome: 'أهلًا بيك يا {studentName} في عيلة النخبة 🌟\nسعداء جدًا بإنضمامك، وإن شاء الله تكون سنة مليانة نجاح وتفوق.\nأي حاجة محتاجها إحنا معاك في أي وقت 💪',
   warning: 'تنبيه مهم حضرتك ⚠️\nالطالب وصل لعدد إنذارات كبير في المركز، ولو الاستمرار هيتم منعه مؤقتًا من بوابة الطالب.\nمحتاجين متابعة من حضرتك في البيت، وشكرًا لتعاونكم.',
   promotion: 'مبروووك! 🎉\nاستحقت الترقية للرتبة الجديدة بمجهودك والتزامك 🔥\nكمّل على البركة — إحنا فخورين بيك.',
@@ -77,21 +79,25 @@ export default function TemplatesModal({ open, onClose, settings, onSave }) {
           label="رسالة الحاضر (تقرير الحصة)"
           value={presentTemplate}
           onChange={setPresentTemplate}
-          placeholder={DEFAULT_PRESENT}
+          placeholder={DEFAULT_PRESENT_TEMPLATE}
           readyTemplate={READY_EGYPTIAN.present}
           bricks={[
             ['اسم الطالب', '{studentName}'],
             ['المجموعة', '{group}'],
             ['التاريخ', '{date}'],
+            ['تفاصيل الحصة (امتحان + واجب + الموضوع)', '{sessionDetails}'],
+            ['درجة الامتحان', '{examLine}'],
+            ['الواجب', '{homeworkLine}'],
+            ['النقاط', '{pointsLine}'],
             ['موضوع الحصة', '{lessonLine}'],
           ]}
-          hint="تُرسل للطلاب الحاضرين فقط — قصيرة ومباشرة."
+          hint="تُرسل للطلاب الحاضرين فقط — درجة الامتحان والواجب يظهرون تلقائيًا لو متسجلين، وبيختفوا لو مفيش بيانات (من غير سطر فاضي)."
         />
         <TemplateField
           label="رسالة الغائب (تقرير الغياب)"
           value={absentTemplate}
           onChange={setAbsentTemplate}
-          placeholder={DEFAULT_ABSENT}
+          placeholder={DEFAULT_ABSENT_TEMPLATE}
           readyTemplate={READY_EGYPTIAN.absent}
           bricks={[
             ['اسم الطالب', '{studentName}'],
@@ -102,7 +108,7 @@ export default function TemplatesModal({ open, onClose, settings, onSave }) {
             ['الإنذارات الحالية', '{warnings}'],
             ['الإنذارات المتبقية', '{remainingWarnings}'],
           ]}
-          hint="تُرسل للغائبين فقط. {warnings} و{remainingWarnings} يُحسبان من بيانات الطالب الحقيقية وعتبة الإنذارات في الإعدادات — لا تكتب رقمًا يدويًا."
+          hint="تُرسل للغائبين فقط — رابط فيديو الحصة لو موجود بيُضاف تلقائيًا في الآخر (التعويض). ولبنات الإنذارات متاحة دايمًا لو حبيت تضيفها."
         />
         <TemplateField label="رسالة الترحيب" value={welcome} onChange={setWelcome} readyTemplate={READY_EGYPTIAN.welcome} bricks={[['اسم الطالب', '{studentName}']]} />
         <TemplateField label="رسالة الإنذار" value={warning} onChange={setWarning} readyTemplate={READY_EGYPTIAN.warning} />
