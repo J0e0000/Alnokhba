@@ -87,6 +87,49 @@ async function sendRenewalEmail(
   }
 }
 
+// ── Audit + rate-limit helpers (migration_049) ──────────────────────────────
+// admin_log_audit: writes into the append-only admin_audit_logs table. The
+// caller is always a verified admin (checked above) — service-role context
+// passes the actor id explicitly. NEVER include passwords/tokens in metadata.
+async function audit(
+  admin: ReturnType<typeof createClient>,
+  opts: { action: string; actorId: string; targetUserId?: string | null; reason?: string | null; details?: string | null; metadata?: Record<string, unknown>; success?: boolean },
+) {
+  try {
+    await admin.rpc("admin_log_audit", {
+      p_action: opts.action,
+      p_target_user_id: opts.targetUserId ?? null,
+      p_reason: opts.reason ?? null,
+      p_details: opts.details ?? null,
+      p_metadata: opts.metadata ?? {},
+      p_actor_id: opts.actorId,
+      p_success: opts.success ?? true,
+    });
+  } catch (err) {
+    // Auditing must never break the main flow — but failures are surfaced in logs.
+    console.error("[admin-account-actions] audit write failed:", String(err));
+  }
+}
+
+// consume_rate_limit (migration_049): atomic sliding-window counter per
+// admin+action. Admin actions are rare by nature — a burst means either a
+// stuck client or a hijacked session; both must be throttled.
+async function rateLimited(
+  admin: ReturnType<typeof createClient>,
+  opts: { key: string; max: number; windowSeconds: number },
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("consume_rate_limit", {
+    p_key: opts.key,
+    p_max: opts.max,
+    p_window_seconds: opts.windowSeconds,
+  });
+  if (error) {
+    console.error("[admin-account-actions] rate-limit rpc failed:", error.message);
+    return true; // fail-open: availability over strictness when the limiter itself errors
+  }
+  return data === true;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -112,17 +155,24 @@ Deno.serve(async (req: Request) => {
     .maybeSingle();
   if (profileError || !profile?.is_admin) return json({ error: "Admin access required" }, 403);
 
-  let body: { action?: string; targetUserId?: string; password?: string; newExpiresAt?: string; planName?: string; renewalId?: string };
+  // Per-admin burst guard: 40 admin operations / 5 minutes (all actions).
+  if (!(await rateLimited(admin, { key: `aaa:${user.id}`, max: 40, windowSeconds: 300 }))) {
+    await audit(admin, { action: "rate_limit_block", actorId: user.id, success: false, details: "تجاوز حد عمليات لوحة الأدمن مؤقتًا" });
+    return json({ error: "Too many admin operations — try again in a few minutes" }, 429);
+  }
+
+  let body: { action?: string; targetUserId?: string; password?: string; newExpiresAt?: string; planName?: string; renewalId?: string; reason?: string };
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
 
   if (body.action === "confirm_account") {
     const targetUserId = String(body.targetUserId || "").trim();
     if (!targetUserId) return json({ error: "targetUserId is required" }, 400);
     const { error } = await admin.auth.admin.updateUserById(targetUserId, { email_confirm: true });
-    if (error) return json({ error: error.message }, 400);
+    if (error) { await audit(admin, { action: "confirm_account", actorId: user.id, targetUserId, success: false, details: error.message }); return json({ error: error.message }, 400); }
     const { error: profileUpdateError } = await admin.from("profiles").update({ is_verified: true }).eq("id", targetUserId);
-    if (profileUpdateError) return json({ error: profileUpdateError.message }, 400);
+    if (profileUpdateError) { await audit(admin, { action: "confirm_account", actorId: user.id, targetUserId, success: false, details: profileUpdateError.message }); return json({ error: profileUpdateError.message }, 400); }
     await admin.from("admin_activity_log").insert({ admin_id: user.id, target_teacher_id: targetUserId, action: "verify", details: "تأكيد الحساب من لوحة الأدمن" });
+    await audit(admin, { action: "confirm_account", actorId: user.id, targetUserId, details: "تأكيد الحساب" });
     return json({ ok: true, action: "confirm_account" });
   }
 
@@ -131,10 +181,38 @@ Deno.serve(async (req: Request) => {
     if (!targetUserId) return json({ error: "targetUserId is required" }, 400);
     const password = String(body.password || "");
     if (password.length < 8) return json({ error: "Password must be at least 8 characters" }, 400);
+    // Tighter burst guard for password resets: 10 / 5 minutes per admin.
+    if (!(await rateLimited(admin, { key: `aaa-pw:${user.id}`, max: 10, windowSeconds: 300 }))) {
+      await audit(admin, { action: "set_password", actorId: user.id, targetUserId, success: false, details: "تجاوز حد تغيير كلمات المرور مؤقتًا" });
+      return json({ error: "Too many password resets — try again in a few minutes" }, 429);
+    }
     const { error } = await admin.auth.admin.updateUserById(targetUserId, { password });
-    if (error) return json({ error: error.message }, 400);
+    if (error) { await audit(admin, { action: "set_password", actorId: user.id, targetUserId, success: false, details: error.message }); return json({ error: error.message }, 400); }
     await admin.from("admin_activity_log").insert({ admin_id: user.id, target_teacher_id: targetUserId, action: "password_change", details: "تغيير كلمة المرور من لوحة الأدمن" });
+    // NEVER log the password value itself — only that a reset happened.
+    await audit(admin, { action: "set_password", actorId: user.id, targetUserId, details: "تغيير كلمة المرور" });
     return json({ ok: true, action: "set_password" });
+  }
+
+  // ── تعطيل / تفعيل حساب (auth ban) — بيانات صاحبه لا تُمس نهائيًا ──
+  if (body.action === "disable_user" || body.action === "enable_user") {
+    const targetUserId = String(body.targetUserId || "").trim();
+    if (!targetUserId) return json({ error: "targetUserId is required" }, 400);
+    if (targetUserId === user.id) return json({ error: "لا يمكنك تعطيل حسابك أنت" }, 400);
+    const reason = body.reason ? String(body.reason).slice(0, 300) : null;
+    // GoTrue ban: long-duration ban disables; empty ban_duration unbans.
+    const { error } = await admin.auth.admin.updateUserById(targetUserId,
+      body.action === "disable_user" ? { ban_duration: "876000h" } : { ban_duration: "none" });
+    if (error) { await audit(admin, { action: body.action, actorId: user.id, targetUserId, success: false, details: error.message }); return json({ error: error.message }, 400); }
+    await audit(admin, {
+      action: body.action,
+      actorId: user.id,
+      targetUserId,
+      reason,
+      details: body.action === "disable_user" ? "تعطيل الحساب (حظر دخول مؤقت بلا حذف بيانات)" : "إعادة تفعيل الحساب",
+      metadata: { reason },
+    });
+    return json({ ok: true, action: body.action });
   }
 
   // ── تجديد الاشتراك: حفظ أولًا → سجل دائم → إيميل (فشل الإيميل لا يُرجع الحفظ) ──
@@ -198,6 +276,14 @@ Deno.serve(async (req: Request) => {
       details: isRenewal
         ? `تجديد الاشتراك حتى ${parsed.toLocaleDateString("ar-EG")}${planName ? ` — ${planName}` : ""}`
         : `تحديد تاريخ انتهاء سابق: ${parsed.toLocaleDateString("ar-EG")}`,
+    });
+    // Audit mirror (append-only admin_audit_logs) with the real outcome metadata.
+    await audit(admin, {
+      action: "renew_subscription",
+      actorId: user.id,
+      targetUserId,
+      details: isRenewal ? `تجديد الاشتراك حتى ${parsed.toISOString().slice(0, 10)}` : "تحديد تاريخ انتهاء سابق",
+      metadata: { previous_expires_at: previousExpiresAt, new_expires_at: parsed.toISOString(), plan_name: planName, days_added: daysAdded },
     });
 
     // 4) Email AFTER the DB save succeeded. Never rolls back; failure is recorded + returned.

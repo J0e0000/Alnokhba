@@ -445,6 +445,29 @@ function findTeacherSheet(wb: XLSX.WorkBook, teacherId: string): { name: string;
 
 // ============================================================================
 
+// ---- Audit + rate-limit helpers (migration_049) ----
+// Admin actions here are verified server-side before these run. Audit writes
+// must never break the main flow; rate-limit failures fail-open for
+// availability (the limiter erroring is rarer than legitimate use).
+async function auditExport(adminId: string, backupId: string) {
+  try {
+    await service.rpc("admin_log_audit", {
+      p_action: "backup_download",
+      p_details: "تنزيل نسخة احتياطية (رابط موقّع 60 دقيقة)",
+      p_metadata: { backup_id: backupId },
+      p_actor_id: adminId,
+    })
+  } catch (err) { console.error("[admin-backup] audit failed:", String(err)) }
+}
+
+async function rateLimited(key: string, max: number, windowSeconds: number): Promise<boolean> {
+  try {
+    const { data, error } = await service.rpc("consume_rate_limit", { p_key: key, p_max: max, p_window_seconds: windowSeconds })
+    if (error) { console.error("[admin-backup] rate-limit rpc failed:", error.message); return true }
+    return data === true
+  } catch { return true }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
@@ -506,6 +529,8 @@ Deno.serve(async (req: Request) => {
     // =====================================================================
     if (action === "create" || action === "retry") {
       if (!admin) return json({ error: "Admin access required" }, 403)
+      // Rate limit: 6 manual backups / 30 min per admin (backups are heavy).
+      if (!(await rateLimited(`ab-create:${admin.id}`, 6, 1800))) return json({ error: "تم إنشاء نسخ احتياطية كثيرة مؤخرًا — انتظر قليلًا ثم أعد المحاولة" }, 429)
 
       let backupId: string | null = body.backupId ? String(body.backupId) : null
 
@@ -547,6 +572,8 @@ Deno.serve(async (req: Request) => {
       }
       const { data: signed, error: signError } = await service.storage.from(BUCKET).createSignedUrl(row.file_path, 3600, { download: row.file_name ?? undefined })
       if (signError || !signed) return json({ error: signError?.message ?? "signing failed" }, 500)
+      // EXPORT AUDIT: every backup download (data-export event) is recorded.
+      await auditExport(admin.id, backupId)
       return json({ ok: true, url: signed.signedUrl, expiresIn: 3600 })
     }
 
@@ -620,6 +647,9 @@ Deno.serve(async (req: Request) => {
     // =====================================================================
     if (action === "restore") {
       if (!admin) return json({ error: "Admin access required" }, 403)
+      // SAFEGUARD: restore overwrites live rows — hard-capped at 3 runs / 30 min
+      // per admin so a compromised or stuck session cannot churn production data.
+      if (!(await rateLimited(`ab-restore:${admin.id}`, 3, 1800))) return json({ error: "تم تنفيذ استعادة أكثر من مرة مؤخرًا — انتظر 30 دقيقة ثم أعد المحاولة" }, 429)
       const backupId = String(body.backupId || "")
       const teacherId = String(body.teacherId || "")
       const strategy = body.strategy === "overwrite" ? "overwrite" : "skip"

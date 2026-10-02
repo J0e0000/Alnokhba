@@ -92,6 +92,68 @@ function seed() {
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'تسجيل الحضور: حاضر (+1 نقطة)', points_delta: 1, created_at: iso(-80) },
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'إجابة وتفاعل (+3 نقطة)', points_delta: 3, created_at: iso(-50) },
   ]
+
+  // ── EL NO5BA CENTERS demo data (separate product, same account) ──
+  const centerId = 'c0000000-0000-4000-8000-00000000c0de'
+  const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const now = new Date()
+  const cRoom = (name, capacity) => ({ id: uid(), center_id: centerId, name, capacity, notes: null, created_at: iso(-60 * 24 * 40) })
+  const cRooms = [cRoom('قاعة 1', 20), cRoom('قاعة 2', 14)]
+  const cTeachers = [
+    { id: uid(), center_id: centerId, name: 'أحمد علي', phone: '01011111111', subject: 'رياضيات', notes: null, created_at: iso(-60 * 24 * 40) },
+    { id: uid(), center_id: centerId, name: 'سارة محمود', phone: '01022222222', subject: 'لغة عربية', notes: null, created_at: iso(-60 * 24 * 39) },
+    { id: uid(), center_id: centerId, name: 'كريم فؤاد', phone: '01033333333', subject: 'فيزياء', notes: null, created_at: iso(-60 * 24 * 38) },
+  ]
+  const cStudent = (name, stage, phone) => ({ id: uid(), center_id: centerId, name, phone, parent_phone: '01' + String(200000000 + Math.floor(Math.random() * 899999999)), stage, notes: null, created_at: iso(-60 * 24 * 30) })
+  const cStudents = [
+    cStudent('مالك أحمد', 'الثالث الثانوي', '01055550001'), cStudent('هنا وليد', 'الثالث الثانوي', '01055550002'),
+    cStudent('زياد أشرف', 'الثالث الثانوي', '01055550003'), cStudent('ندى بدر', 'الثالث الثانوي', '01055550004'),
+    cStudent('عبدالرحمن طارق', 'الثاني الثانوي', '01055550005'), cStudent('مريم عادل', 'الثاني الثانوي', '01055550006'),
+    cStudent('كريم سمير', 'الثاني الثانوي', '01055550007'), cStudent('دينا حسام', 'الثاني الثانوي', '01055550008'),
+    cStudent('طارق منير', 'الأول الثانوي', '01055550009'), cStudent('لينا صبري', 'الأول الثانوي', '01055550010'),
+    cStudent('فادي رأفت', 'الأول الثانوي', '01055550011'), cStudent('سلمى ياسر', 'الأول الثانوي', '01055550012'),
+  ]
+  const cGroup = (name, subject, grade, teacherIdx, roomIdx, weekday, start, end) => ({
+    id: uid(), center_id: centerId, name, subject, grade,
+    teacher_id: cTeachers[teacherIdx].id, room_id: cRooms[roomIdx].id, capacity: cRooms[roomIdx].capacity,
+    color: null, schedule: [{ weekday, start, end }], created_at: iso(-60 * 24 * 35),
+  })
+  const cGroups = [
+    cGroup('رياضيات — تالتة ثانوي', 'رياضيات', 'الثالث الثانوي', 0, 0, now.getDay(), '17:00', '19:00'),
+    cGroup('عربي — تالتة ثانوي', 'لغة عربية', 'الثالث الثانوي', 1, 1, now.getDay(), '13:00', '14:30'),
+    cGroup('فيزياء — تانية ثانوي', 'فيزياء', 'الثاني الثانوي', 2, 0, (now.getDay() + 2) % 7, '15:00', '16:30'),
+    cGroup('رياضيات — أولى ثانوي', 'رياضيات', 'الأول الثانوي', 0, 1, (now.getDay() + 1) % 7, '10:00', '11:30'),
+  ]
+  const cEnroll = (gIdx, sIdx) => ({ id: uid(), center_id: centerId, group_id: cGroups[gIdx].id, student_id: cStudents[sIdx].id, created_at: iso(-60 * 24 * 20) })
+  const cEnrollments = [
+    cEnroll(0, 0), cEnroll(0, 1), cEnroll(0, 2), cEnroll(0, 3),
+    cEnroll(1, 0), cEnroll(1, 1), cEnroll(1, 3),
+    cEnroll(2, 4), cEnroll(2, 5), cEnroll(2, 6), cEnroll(2, 7),
+    cEnroll(3, 8), cEnroll(3, 9), cEnroll(3, 10), cEnroll(3, 11),
+  ]
+  // today: group1 completed (morning), group2 LIVE right now, and one more
+  // upcoming this evening; yesterday: physics completed (report material).
+  const cSession = (gIdx, date, start, end, status, topic) => ({
+    id: uid(), center_id: centerId, group_id: cGroups[gIdx].id, room_id: cGroups[gIdx].room_id,
+    teacher_id: cGroups[gIdx].teacher_id, session_date: date, starts_at: start, ends_at: end,
+    status, topic: topic || null, notes: null, completed_at: status === 'completed' ? iso(-60) : null,
+    created_at: iso(-60 * 30), updated_at: iso(-30),
+  })
+  const liveStart = new Date(now.getTime() - 30 * 60000)
+  const liveEnd = new Date(now.getTime() + 60 * 60000)
+  const cSessions = [
+    cSession(1, todayStr(), '13:00', '14:30', 'completed', 'البلاغة — التشبيه'),
+    cSession(0, todayStr(), hhmm(liveStart), hhmm(liveEnd), 'live', 'التكامل بالتعويض'),
+    cSession(0, dayStr(-2), '17:00', '19:00', 'completed', 'الهندسة الفراغية'),
+    cSession(2, dayStr(-1), '15:00', '16:30', 'completed', 'الكهربية الساكنة'),
+    cSession(3, dayStr(1), '10:00', '11:30', 'upcoming', null),
+  ]
+  const cAtt = (sIdx, stIdx, status) => ({ id: uid(), center_id: centerId, session_id: cSessions[sIdx].id, student_id: cStudents[stIdx].id, status, note: null, updated_at: iso(-20) })
+  const cAttendance = [
+    cAtt(0, 0, 'present'), cAtt(0, 1, 'late'), cAtt(0, 2, 'absent'), cAtt(0, 3, 'present'),
+    cAtt(2, 0, 'present'), cAtt(2, 1, 'present'), cAtt(2, 2, 'excused'), cAtt(2, 3, 'absent'),
+    cAtt(3, 4, 'present'), cAtt(3, 5, 'present'), cAtt(3, 6, 'late'), cAtt(3, 7, 'present'),
+  ]
   const settings = {
     teacher_id: t,
     groups,
@@ -123,6 +185,20 @@ function seed() {
     workspace_branding: [branding], broadcast_messages: broadcasts,
     student_qr_tokens: [], student_notifications: [], teacher_notification_events: [],
     session_logs: [], homework_tasks: [], homework_task_status: [], announcements: [],
+    // EL NO5BA CENTERS
+    centers: [{
+      id: centerId, owner_id: t, name: 'مركز النخبة التعليمي', phone: '0223334444',
+      address: 'مدينة نصر — القاهرة', notes: null, created_at: iso(-60 * 24 * 45),
+    }],
+    center_members: [{ id: uid(), center_id: centerId, user_id: t, role: 'owner', created_at: iso(-60 * 24 * 45) }],
+    center_rooms: cRooms,
+    center_teachers: cTeachers,
+    center_students: cStudents,
+    center_groups: cGroups,
+    center_group_students: cEnrollments,
+    center_sessions: cSessions,
+    center_attendance: cAttendance,
+    center_audit_logs: [{ id: 1, center_id: centerId, actor_id: t, action: 'create_center', target_type: 'centers', target_id: centerId, details: 'إنشاء مركز: مركز النخبة التعليمي', metadata: {}, created_at: iso(-60 * 24 * 45) }],
   }
 }
 

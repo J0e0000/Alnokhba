@@ -32,6 +32,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const AuthAction = lazy(() => import('./pages/AuthAction'))
 const Signup = lazy(() => import('./pages/Signup'))
 const MarketingRouter = lazy(() => import('./marketing/MarketingRouter'))
+const CentersApp = lazy(() => import('./centers/CentersApp'))
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-brand-bg text-fg-subtle text-sm">
@@ -45,6 +46,26 @@ const PageFallback = () => (
  */
 function isPublicQRPath() {
   return /^\/qr\//.test(window.location.pathname)
+}
+
+// /centers — EL NO5BA CENTERS (separate product, same ecosystem/auth/branding).
+function isCentersPath() {
+  return window.location.pathname === '/centers' || /^\/centers(\/|$)/.test(window.location.pathname)
+}
+
+// Auth gate for the Centers product: same session requirement as the EDU app.
+function CentersRoot() {
+  const { session, loading } = useAuth()
+  useEffect(() => {
+    if (!loading && !session) window.location.assign('/?auth=login')
+  }, [loading, session])
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-brand-bg text-fg-subtle text-sm">جاري التحميل...</div>
+  }
+  if (!session) {
+    return <div className="min-h-screen flex items-center justify-center bg-brand-bg text-fg-subtle text-sm">جاري تحويلك لتسجيل الدخول...</div>
+  }
+  return <CentersApp />
 }
 
 function getAuthCallbackError() {
@@ -198,6 +219,20 @@ export default function App() {
   // Public QR page — no auth, no providers needed
   if (isPublicQRPath()) {
     return <ProductionErrorBoundary><Suspense fallback={<PageFallback />}><PublicQRPage /></Suspense></ProductionErrorBoundary>
+  }
+  // EL NO5BA CENTERS — separate product; shares auth/branding, own workflow.
+  if (isCentersPath()) {
+    return (
+      <ProductionErrorBoundary>
+        <ThemeProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <Suspense fallback={<PageFallback />}><CentersRoot /></Suspense>
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
+      </ProductionErrorBoundary>
+    )
   }
   if (getAuthActionPath()) {
     return <ProductionErrorBoundary><ThemeProvider><ToastProvider><AuthProvider><Suspense fallback={<PageFallback />}><AuthAction onDone={() => { window.location.replace('/?auth=login') }} /></Suspense></AuthProvider></ToastProvider></ThemeProvider></ProductionErrorBoundary>

@@ -21,6 +21,13 @@ const ACTION_LABEL = {
   backup_deleted_retention: '🗑️ حذف تلقائي (سياسة الاحتفاظ)',
   backup_schedule_updated: '⚙️ تحديث إعدادات النسخ',
   restore_applied: '♻️ استعادة بيانات',
+  confirm_account: '✅ تأكيد حساب',
+  set_password: '🔑 تغيير كلمة مرور',
+  renew_subscription: '🔄 تجديد اشتراك',
+  disable_user: '⛔ تعطيل حساب',
+  enable_user: '▶️ إعادة تفعيل حساب',
+  backup_download: '⬇️ تنزيل نسخة احتياطية',
+  rate_limit_block: '🚫 حظر مؤقت (كثرة عمليات)',
 }
 
 /**
