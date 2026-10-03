@@ -1284,3 +1284,94 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
 @media (prefers-reduced-motion: reduce) {
   .lp-float, .lp-float-slow, .lp-pulse-dot { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LEADERBOARD (لائحة المتصدرين) — Students area panel
+   Podium + ranked rows over the points system. All colors ride the theme
+   vars, so light/dark both work; silver/bronze use color-mix over the
+   surface to stay soft on light and visible on dark.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.nk-lb-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+.nk-lb-pod {
+  min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border-radius: 16px;
+  padding: 13px 8px 11px;
+  text-align: center;
+  background: var(--surface-solid);
+  border: 1.5px solid var(--surface-border);
+  cursor: pointer; font-family: inherit;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.nk-lb-pod:hover {
+  transform: translateY(-2px);
+  border-color: var(--surface-border-hover);
+  box-shadow: var(--shadow-sm);
+}
+.nk-lb-pod--1 {
+  border-color: color-mix(in srgb, var(--brand-gold) 55%, transparent);
+  background: linear-gradient(180deg, var(--brand-gold-surface), var(--surface-solid) 88%);
+}
+.nk-lb-pod--2 {
+  border-color: color-mix(in srgb, #94a3b8 55%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, #94a3b8 14%, var(--surface-solid)), var(--surface-solid) 88%);
+}
+.nk-lb-pod--3 {
+  border-color: color-mix(in srgb, #d99a5b 60%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, #d99a5b 15%, var(--surface-solid)), var(--surface-solid) 88%);
+}
+.nk-lb-medal { font-size: 1.3rem; line-height: 1.2; }
+.nk-lb-pod--1 .nk-lb-medal { font-size: 1.75rem; }
+.nk-lb-pod-name {
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .76rem; font-weight: 900; color: var(--fg);
+}
+.nk-lb-pod-sub {
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .62rem; font-weight: 700; color: var(--fg-muted);
+}
+/* Ranked rows below the podium */
+.nk-lb-row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-width: 0;
+  padding: 9px 12px;
+  border-radius: 13px;
+  background: var(--surface-solid);
+  border: 1px solid var(--surface-border);
+  cursor: pointer; font-family: inherit; text-align: inherit;
+  transition: border-color .15s ease, background .15s ease;
+}
+.nk-lb-row:hover { border-color: var(--surface-border-hover); background: var(--surface-container); }
+.nk-lb-pos {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  background: var(--surface-container-high); color: var(--fg-muted);
+  font-size: .72rem; font-weight: 900;
+}
+.nk-lb-row-name {
+  display: block;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .8rem; font-weight: 800; color: var(--fg);
+}
+.nk-lb-row-sub { display: block; font-size: .64rem; font-weight: 700; color: var(--fg-muted); }
+.nk-lb-row-rank {
+  flex-shrink: 0;
+  font-size: .66rem; font-weight: 800; color: var(--fg-subtle);
+  max-width: 88px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Very small phones: keep the podium legible (3 tiles ≈ 105px each) */
+@media (max-width: 380px) {
+  .nk-lb-podium { gap: 6px; }
+  .nk-lb-pod { padding: 10px 5px 9px; }
+  .nk-lb-pod-name { font-size: .7rem; }
+  .nk-lb-row-rank { display: none; }
+}

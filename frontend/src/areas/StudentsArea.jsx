@@ -3,6 +3,7 @@ import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/
 import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
+import LeaderboardPanel from '../components/LeaderboardPanel'
 import CustomMessageModal from '../components/CustomMessageModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
@@ -54,6 +55,17 @@ export default function StudentsArea() {
       return true
     })
   }, [ws.students, ws.examScoresByStudent, search, stageFilter, groupFilter, statusFilter])
+
+  // Pool for the leaderboard (لائحة المتصدرين): stage + group filters apply
+  // so the top list is contextual, but the text search and the status filter
+  // deliberately do NOT — typing or filtering "غائب" must never empty the
+  // leaderboard. Ranking itself (ties, podium, rank titles) lives in the
+  // LeaderboardPanel component.
+  const leaderboardPool = useMemo(() => ws.students.filter((s) => {
+    if (groupFilter !== 'all' && s.group_name !== groupFilter) return false
+    if (stageFilter !== 'الكل' && stageCategoryOf(s.stage) !== stageFilter) return false
+    return true
+  }), [ws.students, stageFilter, groupFilter])
 
   const toggleSelect = (id) => setSelected((prev) => {
     const n = new Set(prev)
@@ -179,6 +191,17 @@ export default function StudentsArea() {
           </button>
         </div>
       </div>
+
+      {/* Leaderboard (لائحة المتصدرين) — ranked by the points balance the
+          sessions award; hidden entirely for a brand-new empty account. */}
+      {ws.students.length > 0 && (
+        <LeaderboardPanel
+          students={leaderboardPool}
+          ranks={ws.ranks}
+          isArabic={isArabic}
+          onOpenStudent={(id) => ui.openStudentHistory(id)}
+        />
+      )}
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 mb-2">
