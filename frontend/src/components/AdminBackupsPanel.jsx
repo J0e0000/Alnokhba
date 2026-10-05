@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { describeEdgeFunctionError } from '../lib/edgeFunctionErrors'
 import ConfirmDialog from './ConfirmDialog'
 import Modal from './Modal'
 
@@ -44,7 +45,6 @@ function fmtDuration(ms) {
 }
 
 /** استدعاء Edge Function مع رسائل عربية واضحة + كشف حالة "لم تُنشر بعد" */
-const NOT_DEPLOYED_RE = /fetch|not found|404|Failed/i
 
 /** كود دالة admin-backup منشور كملف ثابت على الموقع (عدّل المصدر supabase/functions ثم أعد النشر لتحديثه) */
 const FN_CODE_URL = '/deploy/admin-backup-index.txt'
@@ -54,11 +54,11 @@ async function invokeBackupAction(body) {
     const { data, error } = await supabase.functions.invoke('admin-backup', { body })
     if (data?.error) return { error: data.error === 'Admin access required' ? 'صلاحيات الأدمن مطلوبة' : (data.message || data.error) }
     if (error) {
-      const msg = String(error.message || '')
-      if (NOT_DEPLOYED_RE.test(msg)) {
-        return { error: 'Edge Function (admin-backup) غير منشورة بعد — انشرها من مجلد supabase/functions/admin-backup ثم أعد المحاولة', notDeployed: true }
-      }
-      return { error: msg }
+      // describeEdgeFunctionError reads the REAL response body (error.message
+      // is always the generic "non-2x status code") and maps known causes to
+      // clear Arabic guidance; notDeployed = function unreachable/missing.
+      const described = await describeEdgeFunctionError(error, { functionName: 'admin-backup' })
+      return { error: described.message, notDeployed: !!described.notDeployed }
     }
     return { data }
   } catch (err) {
@@ -72,7 +72,10 @@ async function checkEdgeFunctionDeployed() {
     const { data, error } = await supabase.functions.invoke('admin-backup', { body: { action: 'ping' } })
     if (data?.ok && data?.service === 'admin-backup') return 'ready'
     // وصل للدالة لكن ردّت خطأ (نسخة قديمة بلا ping) → الدالة موجودة فعلًا
-    if (error && NOT_DEPLOYED_RE.test(String(error.message || ''))) return 'missing'
+    if (error) {
+      const described = await describeEdgeFunctionError(error, { functionName: 'admin-backup' })
+      return described.notDeployed ? 'missing' : 'ready'
+    }
     return 'ready'
   } catch {
     return 'unknown'

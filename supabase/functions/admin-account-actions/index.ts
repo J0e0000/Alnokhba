@@ -130,7 +130,11 @@ async function rateLimited(
   return data === true;
 }
 
-Deno.serve(async (req: Request) => {
+// Handler extracted from Deno.serve so the wrapper below can catch ANY
+// unexpected throw (bad import, env glitch, library error) and still return a
+// readable JSON error — a bare platform 500 is what produced the opaque
+// "Edge Function returned a non-2x status code" toast on the client.
+async function handleAdminAction(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
@@ -335,4 +339,13 @@ Deno.serve(async (req: Request) => {
   }
 
   return json({ error: "Unsupported action" }, 400);
+}
+
+Deno.serve(async (req: Request) => {
+  try {
+    return await handleAdminAction(req);
+  } catch (err) {
+    console.error("[admin-account-actions] unhandled error:", String((err as Error)?.stack || err));
+    return json({ error: `Server error: ${String((err as Error)?.message || err)}` }, 500);
+  }
 });

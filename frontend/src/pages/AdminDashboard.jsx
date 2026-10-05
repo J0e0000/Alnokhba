@@ -9,6 +9,7 @@ import AdminBackupsPanel from '../components/AdminBackupsPanel'
 import AdminAuditLogsPanel from '../components/AdminAuditLogsPanel'
 import AdminSupportAccessModal from '../components/AdminSupportAccessModal'
 import { downloadCSV, localDateStr } from '../lib/csv'
+import { describeEdgeFunctionError } from '../lib/edgeFunctionErrors'
 
 const STATUS_LABEL = { trial: 'تجربة مجانية', active: 'مشترك فعّال', expired: 'منتهي', cancelled: 'ملغي' }
 const ACTION_LABEL = { extend: 'تفعيل/تمديد', cancel: 'إلغاء اشتراك', verify: 'تأكيد حساب', password_change: 'تغيير كلمة مرور', backup_failed: '⚠️ فشل نسخة احتياطية' }
@@ -119,7 +120,11 @@ export default function AdminDashboard({ onBack }) {
 
   const invokeAdminAction = async (body) => {
     const { data, error } = await supabase.functions.invoke('admin-account-actions', { body })
-    if (error) throw error
+    // Read the REAL response body — error.message is always the generic
+    // "non-2x status code" string; the body tells us WHY (unsupported action
+    // on an old deployment → applyExpiry's graceful fallback, rate limit,
+    // admin check…). Without this the legacy fallback below is dead code.
+    if (error) throw await describeEdgeFunctionError(error, { functionName: 'admin-account-actions' })
     if (data?.error) throw new Error(data.error)
     return data
   }
