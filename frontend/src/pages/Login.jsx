@@ -6,6 +6,11 @@ export default function Login({ onSwitchToSignup }) {
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // «خلّيني مسجّل دخول على الجهاز ده» — مفعّل افتراضيًا: مفيش خروج تلقائي بعد
+  // 30 دقيقة عدم نشاط، والجلسة بتفضل حية لحد ما يسجّل خروج بنفسه.
+  const [remember, setRemember] = useState(() => {
+    try { return localStorage.getItem('nk-remember-me') !== '0' } catch { return true }
+  })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -34,7 +39,7 @@ export default function Login({ onSwitchToSignup }) {
     if (cooldown > 0) return
     setError('')
     setLoading(true)
-    const { error } = await signIn({ email, password })
+    const { error } = await signIn({ email, password, remember })
     setLoading(false)
     if (error) {
       const next = failedAttempts + 1
@@ -136,6 +141,14 @@ export default function Login({ onSwitchToSignup }) {
               className="w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm focus:border-brand-gold outline-none"
             />
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none w-fit">
+            <input
+              type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+              className="w-4 h-4 accent-[#FB9C1B]"
+            />
+            <span className="text-xs text-fg-subtle">خلّيني مسجّل دخول على الجهاز ده</span>
+          </label>
 
           {error && <p className="text-rose-400 text-xs">{error}</p>}
 

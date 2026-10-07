@@ -5,6 +5,16 @@ import { clearQueue } from '../lib/offlineQueue'
 
 const AuthContext = createContext(null)
 const INACTIVITY_LIMIT_MS = 30 * 60 * 1000 // 30 دقيقة
+const REMEMBER_KEY = 'nk-remember-me'
+
+// «خلّيني مسجّل دخول» — الجهاز شخصي والمستخدم اختار يفضل داخل من غير ما يعيد
+// تسجيل الدخول كل مرة. الاختيار بيتخزن محليًا، والغياب = متذكّر (الافتراضي):
+// كده حتى الجلسات القديمة اللي اتعملت قبل الميزة بتستفيد فورًا ومن غير ما
+// تعيد الدخول مرة أولى. اللي يعلّم الاختيار (جهاز مشترك) بيرجع للخروج
+// التلقائي بعد 30 دقيقة عدم نشاط زي الأول.
+function isRememberMe() {
+  try { return localStorage.getItem(REMEMBER_KEY) !== '0' } catch { return true }
+}
 
 // ── Network-resilient profile loading ──────────────────────────────────────
 // WHY THIS EXISTS — the "تعذر الاتصال" hard-stuck screen (fixed):
@@ -66,6 +76,10 @@ export function AuthProvider({ children }) {
   // تسجيل خروج تلقائي بعد فترة عدم نشاط طويلة، لحماية الحساب لو الجهاز اتسيب مفتوح
   useEffect(() => {
     if (!session) return
+    // «خلّيني مسجّل دخول» مفعّل على الجهاز ده → مفيش خروج تلقائي أصلًا.
+    // الجلسة نفسها بتفضل حية في localStorage وبتتجدّد تلقائيًا (supabase-js
+    // autoRefreshToken) — يفضل داخل لحد ما يسجّل خروج بنفسه.
+    if (isRememberMe()) return
     let timer
     const resetTimer = () => {
       clearTimeout(timer)
@@ -261,7 +275,10 @@ export function AuthProvider({ children }) {
     })
   }
 
-  const signIn = async ({ email, password }) => {
+  const signIn = async ({ email, password, remember }) => {
+    // الاختيار بيتخزن قبل الدخول عشان يطبّق فورًا على الجلسة الجديدة؛
+    // remember === undefined (مسار تاني مش صفحة الدخول) = متذكّر.
+    try { localStorage.setItem(REMEMBER_KEY, remember === false ? '0' : '1') } catch { /* storage blocked */ }
     return supabase.auth.signInWithPassword({ email, password })
   }
 
