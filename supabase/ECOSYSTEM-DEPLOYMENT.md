@@ -2,12 +2,30 @@
 
 ## الجزء الأول — تشغيل المايجريشن (SQL Editor — 5 دقائق)
 
+### الطريقة السريعة (الموصى بها — لصقة واحدة)
+
+1. افتح Supabase Dashboard → **SQL Editor** → New query.
+2. الصق محتوى **`supabase/APPLY-ALL-049-050-051-052.sql`** كامل → **Run**.
+   (الحزمة الشاملة: 049 تدقيق/حدود/فهارس + 050 سنترز + 051 الامتحانات المنفصلة
+   + 052 نتائج الامتحانات في بوابة الطالب — كلها بترتيب صحيح وidempotent،
+   وفي آخرها فحص ذاتي يطبع «تم تطبيق كل المايجريشنز بنجاح» لو كل حاجة تمام).
+
+### الطريقة التفصيلية (لو حبيت تشغلهم واحد واحد)
+
 1. افتح Supabase Dashboard → **SQL Editor** → New query.
 2. الصق محتوى `supabase/migration_049_audit_rate_indexes.sql` كامل → **Run**.
    (يضيف: `admin_log_audit` RPC + `consume_rate_limit` محدد معدل + فهارس أداء).
 3. الصق محتوى `supabase/migration_050_centers.sql` كامل → **Run**.
    (ينشئ: جداول المنتج الجديد centers كاملة + عزل RLS + تدقيق + `create_center` RPC).
-4. (اختياري — اختبار العزل) الصق `supabase/rls_isolation_tests.sql` بعد تعديل
+4. الصق محتوى `supabase/migration_051_standalone_exams.sql` كامل → **Run**.
+   (ينشئ: `standalone_exams` + `standalone_exam_scores` — الامتحانات المنفصلة
+   خارج نظام الحصص، مع RLS بنمط can_access_workspace + فهارس. بدونها تظهر
+   ميزة «إنشاء امتحان منفصل» فارغة للحسابات الحقيقية والباقي يعمل عاديًا).
+5. الصق محتوى `supabase/migration_052_standalone_exams_portal.sql` كامل → **Run**.
+   (RPC `get_student_standalone_exams` — نتائج الامتحانات المنفصلة تظهر في
+   بوابة الطالب/ولي الأمر مع اسم التقدير من سلم كل امتحان. بدونها البوابة
+   شغالة عادي والقسم بس مش هيظهر).
+6. (اختياري — اختبار العزل) الصق `supabase/rls_isolation_tests.sql` بعد تعديل
    المعرفات أعلى الملف بمعرفات حقيقية، وشغّله: كل الاختبارات ROLLBACK ولا تغيّر شيئًا.
 
 الملفات idempotent — إعادة التشغيل آمنة ولا تحذف أي بيانات.

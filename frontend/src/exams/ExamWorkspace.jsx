@@ -3,6 +3,7 @@ import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import useIsMobile from '../shell/useIsMobile'
 import { DEFAULT_GRADE_SCALE, normalizeGradeScale, gradeOf } from '../lib/helpers'
+import { printExamReport } from './printExam'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXAM WORKSPACE — الامتحان المنفصل (نفس فكرة الحصص بنفس الشكل، لكن للامتحانات فقط)
@@ -249,6 +250,46 @@ function ExamGrading({ exam }) {
     return { total: pool.length, gradedCount: graded.length, avg, top }
   }, [graded, pool.length])
 
+  // توزيع التقديرات — عدد اللي نالوا كل تقدير (يظهر جنب السلم)
+  const tierCounts = useMemo(() => {
+    const counts = {}
+    graded.forEach(({ row }) => {
+      const g = gradeOf(Number(row.score), exam.max_score, exam.grade_scale)
+      counts[g] = (counts[g] || 0) + 1
+    })
+    return counts
+  }, [graded, exam.max_score, exam.grade_scale])
+
+  // تقرير A4 مطبوع — نفس الطابع الرسمي بتاع مراكز النخبة
+  const printReport = () => {
+    printExamReport({
+      exam,
+      stats: {
+        total: stats.total,
+        gradedCount: stats.gradedCount,
+        avg: stats.avg != null ? Math.round(stats.avg * 10) / 10 : null,
+        top: stats.top,
+      },
+      isArabic,
+      rows: pool
+        .map((s) => {
+          const row = scoresByStudent[s.id]
+          return {
+            name: s.name,
+            code: s.code || '',
+            score: row ? Number(row.score) : null,
+            grade: row ? gradeOf(Number(row.score), exam.max_score, exam.grade_scale) : '',
+          }
+        })
+        .sort((a, b) => {
+          if (a.score == null && b.score == null) return 0
+          if (a.score == null) return 1
+          if (b.score == null) return -1
+          return b.score - a.score
+        }),
+    })
+  }
+
   // إدخال فوري: كل تغيير درجة بيتحفظ علطول (debounce قصير لكتابة الأرقام)
   const [pending, setPending] = useState({}) // studentId → value being typed
   const timersRef = useRef({})
@@ -375,6 +416,7 @@ function ExamGrading({ exam }) {
               {open ? `● ${isArabic ? 'جاري الرصد' : 'Grading'}` : `✓ ${isArabic ? 'منتهي' : 'Completed'}`}
             </span>
             <span className="flex gap-1.5">
+              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={printReport} aria-label={isArabic ? 'طباعة نتيجة الامتحان' : 'Print exam report'}>🖨 {isArabic ? 'طباعة' : 'Print'}</button>
               {!editingMeta && open && (
                 <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setEditingMeta(true)}>✎ {isArabic ? 'العنوان والنهائي' : 'Title & max'}</button>
               )}
@@ -414,6 +456,19 @@ function ExamGrading({ exam }) {
             </button>
           )}
         </div>
+        {stats.gradedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="text-[.64rem] text-fg-muted">{isArabic ? 'التوزيع:' : 'Distribution:'}</span>
+            {normalizeGradeScale(exam.grade_scale).filter((g) => tierCounts[g.name]).map((g, i) => {
+              const c = gradeColor(g.name)
+              return (
+                <span key={`tc-${g.name}-${i}`} className="nk-pill !text-[.62rem]" style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.fg }}>
+                  {g.name} · {tierCounts[g.name]}
+                </span>
+              )
+            })}
+          </div>
+        )}
         {open && scaleOpen && (
           <div className="mt-3">
             <GradeScaleEditor scale={scaleDraft} setScale={setScaleDraft} maxScore={Number(exam.max_score)} isArabic={isArabic} compact />

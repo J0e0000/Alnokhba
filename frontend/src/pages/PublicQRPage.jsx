@@ -16,7 +16,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import { getStudentRank, isIOSBrowser } from '../lib/helpers'
+import { getStudentRank, isIOSBrowser, gradeOf } from '../lib/helpers'
 import { getPalette } from '../lib/palettes'
 import { generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { registerStudentPush } from '../lib/pushNotifications'
@@ -101,11 +101,15 @@ export default function PublicQRPage() {
       const tnCachePre = teacherNameCacheRef.current
       const tnCacheFreshPre = tnCachePre.name !== null && (Date.now() - tnCachePre.at) < TEACHER_NAME_TTL_MS
       const needTeacherName = !isBackgroundRefresh || reason === 'visible' || !tnCacheFreshPre
-      const [dataRes, accessRes, teacherNameRes] = await Promise.all([
+      const [dataRes, accessRes, teacherNameRes, standaloneRes] = await Promise.all([
         supabase.rpc('get_student_portal_data', { p_token: token }),
         supabase.rpc('get_student_portal_access', { p_token: token }),
         needTeacherName ? supabase.rpc('get_portal_teacher_name', { p_token: token }) : Promise.resolve(null),
+        // Standalone exam results (migration_052) — OPTIONAL like the other two:
+        // if the RPC is missing (migration not run yet) the card just hides.
+        supabase.rpc('get_student_standalone_exams', { p_token: token }),
       ])
+      if (standaloneRes?.error) console.warn('[PublicQRPage] optional standalone-exams RPC failed:', standaloneRes.error.message || standaloneRes.error)
       const { data: payload, error } = dataRes
       if (error) {
         console.error('[PublicQRPage] RPC error:', error.message || error, 'code:', error.code)
@@ -244,6 +248,23 @@ export default function PublicQRPage() {
         }
       })
 
+      // Standalone exams (الامتحانات المنفصلة): every row = the student took
+      // the exam. Grade name computed client-side from the exam's editable
+      // scale (same first-match-from-top rule as the teacher workspace).
+      const standaloneResults = asArray(standaloneRes?.data).filter((r) => r && typeof r === 'object').map((r) => {
+        const max = asNum(r.max_score)
+        const score = asNum(r.score)
+        const grade = max > 0 ? gradeOf(score, max, Array.isArray(r.grade_scale) ? r.grade_scale : []) : ''
+        return {
+          id: r.exam_id,
+          title: asText(r.title || 'امتحان'),
+          score,
+          max,
+          date: r.exam_date || r.graded_at,
+          grade,
+        }
+      })
+
       // Map homework tasks with their done status
       const homeworkStatusByTask = {}
       for (const hs of homeworkStatus) homeworkStatusByTask[hs.task_id] = hs.done
@@ -292,6 +313,7 @@ export default function PublicQRPage() {
         activity: [...finalActivity, ...buildActivityFeed([], behavior)],
         homework,
         examResults,
+        standaloneExams: standaloneResults,
         streak,
         tokenSource: payload.token_source || 'db',
         accessStatus,
@@ -607,7 +629,7 @@ export default function PublicQRPage() {
       </Shell>
     )
   }
-  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
+  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, standaloneExams, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
   const rank = getStudentRank(student.points, ranks)
   const lessonTimeline = buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance)
 
@@ -766,6 +788,23 @@ export default function PublicQRPage() {
           </div>
         ))}
       </SectionCard>
+
+      {/* Standalone exams (الامتحانات المنفصلة) — hidden entirely when the RPC
+          is missing (migration_052 not applied) or the student has no rows */}
+      {(standaloneExams || []).length > 0 && (
+        <SectionCard title="الامتحانات المنفصلة">
+          {standaloneExams.map((e) => (
+            <div key={e.id} style={feedItem}>
+              <p style={feedTitle}>{e.title}</p>
+              <p style={feedMsg}>
+                {e.score} / {e.max}
+                {e.grade ? <span style={{ color: GOLD, fontWeight: 700 }}> — {e.grade}</span> : null}
+              </p>
+              <p style={feedDate}>{formatDateTime(e.date)}</p>
+            </div>
+          ))}
+        </SectionCard>
+      )}
 
       {/* Recent activity */}
       <SectionCard title="آخر النشاطات">

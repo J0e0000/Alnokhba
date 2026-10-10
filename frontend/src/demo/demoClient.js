@@ -622,6 +622,32 @@ function rpcCall(db, name, args) {
         error: null,
       }
     }
+    case 'get_student_standalone_exams': {
+      // Mirrors migration_052: the student's standalone-exam score rows
+      // (took it = has a row) + the exam's editable grade scale so the
+      // portal computes the grade name client-side like the teacher panel.
+      const raw = String(args.p_token || '')
+      const m = raw.match(/([a-z0-9]{20})/i)
+      const tok = m ? db.student_qr_tokens.find((x) => x.token === m[1].toLowerCase() && !x.revoked_at) : null
+      const student = tok ? db.students.find((s) => s.id === tok.student_id) : null
+      if (!student) return { data: [], error: null }
+      const rows = db.standalone_exam_scores
+        .filter((r) => r.student_id === student.id)
+        .map((r) => {
+          const exam = db.standalone_exams.find((e) => e.id === r.exam_id)
+          return {
+            exam_id: r.exam_id,
+            title: exam?.title || 'امتحان',
+            exam_date: exam?.exam_date,
+            exam_status: exam?.status || 'open',
+            score: r.score,
+            max_score: exam?.max_score ?? 100,
+            grade_scale: exam?.grade_scale || [],
+            graded_at: r.updated_at,
+          }
+        })
+      return { data: rows, error: null }
+    }
     default:
       return { data: null, error: { message: `demo: RPC ${name} not implemented` } }
   }
