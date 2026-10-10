@@ -15,6 +15,7 @@ import MessageQueueModal from '../components/MessageQueueModal'
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
 import HomePage from '../home/HomePage'
 import SessionWorkspace from '../session/SessionWorkspace'
+import ExamWorkspace from '../exams/ExamWorkspace'
 import TourOverlay from '../components/TourOverlay'
 
 // PERF (bundle splitting): Home and the Session Workspace stay in the main
@@ -84,7 +85,8 @@ export default function AppShell({ onOpenAdmin }) {
   // unmount, not a CSS hide — so nothing competes with the current task and
   // nothing keeps re-rendering behind it. "Exit Focus" (in the workspace's
   // focused header) leaves the task back to Home; it is NEVER logout.
-  const focusActive = isMobile && ui.area === 'session'
+  // الامتحان المنفصل يدخل نفس وضع التركيز — نفس فكرة الحصة.
+  const focusActive = isMobile && (ui.area === 'session' || ui.area === 'exam')
 
   const [accountOpen, setAccountOpen] = useState(false)
   const [notifCenterOpen, setNotifCenterOpen] = useState(false)
@@ -270,6 +272,7 @@ export default function AppShell({ onOpenAdmin }) {
         <main className="flex-1 min-w-0">
           {ui.area === 'home' && <HomePage />}
           {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
+          {ui.area === 'exam' && <ExamWorkspace params={ui.examParams} />}
           <Suspense fallback={<div className="py-10 text-center text-sm text-fg-muted" role="status">{isArabic ? AREA_FALLBACK_AR : AREA_FALLBACK_EN}</div>}>
             {ui.area === 'students' && <StudentsArea />}
             {ui.area === 'history' && <HistoryArea />}

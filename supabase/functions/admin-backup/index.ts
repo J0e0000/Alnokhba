@@ -43,6 +43,10 @@ const TEACHER_TABLES: Array<{ table: string; teacherCol: string | null }> = [
   { table: "announcements", teacherCol: "teacher_id" },
   { table: "exams", teacherCol: "teacher_id" },
   { table: "exam_scores", teacherCol: "teacher_id" },
+  // migration 051 — الامتحانات المنفصلة (مصدّرة في كل نسخة احتياطية؛ الاستعادة
+  // لها تحتاج توسيع قائمة admin_restore_apply في SQL أولاً)
+  { table: "standalone_exams", teacherCol: "teacher_id" },
+  { table: "standalone_exam_scores", teacherCol: "teacher_id" },
   { table: "student_notifications", teacherCol: "teacher_id" },
   { table: "report_templates", teacherCol: "teacher_id" },
   { table: "group_schedule", teacherCol: "teacher_id" },

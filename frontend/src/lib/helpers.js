@@ -133,6 +133,46 @@ export function getStudentRankPosition(studentId, allStudents) {
   return index !== -1 ? index + 1 : '-'
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// الامتحانات المنفصلة — سلم التقديرات
+// التقييمات نسب مئوية من الدرجة النهائية (ممتاز من 80 يعني 80% فأكثر —
+// 80 من 100 أو 40 من 50). المدرس يعدل الأسماء والحدود والعدد بحرية؛
+// المقيّم الأول (من الأعلى) تحققه نسبة الطالب هو تقديره، وآخر صف هو
+// الشامل دائمًا (min: 0) فلا يوجد طالب بدون تقدير.
+// ═══════════════════════════════════════════════════════════════════════════
+export const DEFAULT_GRADE_SCALE = [
+  { name: 'ممتاز', min: 80 },
+  { name: 'جيد', min: 70 },
+  { name: 'مقبول', min: 60 },
+  { name: 'ضعيف', min: 0 },
+]
+
+export function normalizeGradeScale(scale) {
+  if (!Array.isArray(scale)) return [...DEFAULT_GRADE_SCALE]
+  const rows = scale
+    .filter((g) => g && typeof g === 'object' && String(g.name || '').trim())
+    .map((g) => ({ name: String(g.name).trim().slice(0, 40), min: Math.max(0, Math.min(100, Number(g.min) || 0)) }))
+  if (!rows.length) return [...DEFAULT_GRADE_SCALE]
+  // تنازلي بالحد الأدنى + إزالة التكرار الكامل — أول تطابق هو التقدير
+  const seen = new Set()
+  const deduped = []
+  for (const g of [...rows].sort((a, b) => b.min - a.min)) {
+    const key = `${g.name}::${g.min}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(g)
+  }
+  return deduped
+}
+
+export function gradeOf(score, maxScore, scale) {
+  const safeScale = normalizeGradeScale(scale)
+  const max = Number(maxScore)
+  const pct = Number.isFinite(max) && max > 0 ? (Number(score) || 0) / max * 100 : 0
+  for (const g of safeScale) { if (pct >= g.min) return g.name }
+  return safeScale[safeScale.length - 1]?.name || ''
+}
+
 // طالب فيه تراجع أكاديمي: آخر امتحانين والنسبة نزلت 15% أو أكتر
 export function checkAcademicWarning(exams) {
   if (!exams || exams.length < 2) return false

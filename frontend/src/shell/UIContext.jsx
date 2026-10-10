@@ -58,8 +58,26 @@ function readNavState(teacherId) {
       const fresh = s.savedAt && (Date.now() - new Date(s.savedAt).getTime()) < SESSION_CONTEXT_TTL_MS
       if (!fresh || !s.sessionParams?.groupId) return { area: 'home', sessionParams: null }
     }
+    // exam workspace: same 12h freshness — and a half-created exam ('new')
+    // is NEVER revived into a form after reload; it starts fresh from Home.
+    if (s?.area === 'exam') {
+      const fresh = s.savedAt && (Date.now() - new Date(s.savedAt).getTime()) < SESSION_CONTEXT_TTL_MS
+      if (!fresh || !s.examParams?.examId || s.examParams.examId === 'new') return { area: 'home', sessionParams: null }
+    }
     return { area: s?.area || 'home', sessionParams: s?.sessionParams || null }
   } catch { return { area: 'home', sessionParams: null } }
+}
+
+// Valid persisted exam id for the restore path (never 'new' — a half-created
+// exam restarts fresh). Complements readNavState which gates area==='exam'.
+function safeStoredExamId(teacherId) {
+  try {
+    const raw = localStorage.getItem(NAV_KEY(teacherId))
+    if (!raw) return null
+    const s = JSON.parse(raw)
+    const id = s?.examParams?.examId
+    return id && id !== 'new' ? id : null
+  } catch { return null }
 }
 
 function readStoredQueue(teacherId) {
@@ -80,9 +98,10 @@ function readStoredQueue(teacherId) {
 }
 
 export function UIProvider({ teacherId, children }) {
-  // area: 'home' | 'session' | 'students' | 'history' | 'reports' | 'analytics' | 'settings'
+  // area: 'home' | 'session' | 'exam' | 'students' | 'history' | 'reports' | 'analytics' | 'settings'
   const [area, setAreaState] = useState(() => readNavState(teacherId).area)
   const [sessionParams, setSessionParams] = useState(() => readNavState(teacherId).sessionParams)
+  const [examParams, setExamParams] = useState(() => (readNavState(teacherId).area === 'exam' ? { examId: safeStoredExamId(teacherId) } : null))
   const [historyStudentId, setHistoryStudentId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   // فريق التحليل deep-open intent: the notification center (and any helper
@@ -103,6 +122,7 @@ export function UIProvider({ teacherId, children }) {
       setSessionParams(null)
       persistNav(a, null)
     }
+    if (a !== 'exam') setExamParams(null)
   }, [persistNav])
 
   // Persist to localStorage WITH the real open flag: a reload while the modal
@@ -126,6 +146,19 @@ export function UIProvider({ teacherId, children }) {
 
   const closeSession = useCallback(() => {
     setSessionParams(null)
+    setAreaState('home')
+    persistNav('home', null)
+  }, [persistNav])
+
+  // الامتحان المنفصل — نفس نمط فتح/قفل الحصة (localStorage persist للرجوع بعد reload)
+  const openExam = useCallback((params) => {
+    setExamParams(params)
+    setAreaState('exam')
+    try { localStorage.setItem(NAV_KEY(teacherId), JSON.stringify({ area: 'exam', examParams: params, savedAt: new Date().toISOString() })) } catch { /* ignore */ }
+  }, [teacherId])
+
+  const closeExam = useCallback(() => {
+    setExamParams(null)
     setAreaState('home')
     persistNav('home', null)
   }, [persistNav])
@@ -226,12 +259,13 @@ export function UIProvider({ teacherId, children }) {
 
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
+    examParams, openExam, closeExam,
     queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
     insightsIntent, openInsights, clearInsightsIntent,
     tourActive, setTourActive,
-  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
+  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, examParams, openExam, closeExam, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
 
   return (
     <UIContext.Provider value={value}>

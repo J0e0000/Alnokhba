@@ -28,7 +28,8 @@ const EN_WD_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Fri
 //     exists — no overlays, nothing covers the working area.
 // ═══════════════════════════════════════════════════════════════════════════
 export default function HomePage() {
-  const { loading, students, lessonSessions, todayGroups, groupMeta, allAttendance, isArabic } = useWorkspace()
+  const ws = useWorkspace()
+  const { loading, students, lessonSessions, todayGroups, groupMeta, allAttendance, isArabic } = ws
   const ui = useUI()
   const { isArabic: ar } = useLanguage()
   void isArabic
@@ -119,6 +120,15 @@ export default function HomePage() {
     return { sessionsToday, studentsToday, pending }
   }, [sessions])
 
+  // الامتحانات المنفصلة — أحدث 4 امتحانات كبطاقات بنفس شكل حصص اليوم
+  const standaloneExams = ws.standaloneExams || []
+  const standaloneScores = ws.standaloneExamScores || []
+  const examCards = useMemo(() => standaloneExams.slice(0, 4).map((exam) => {
+    const graded = standaloneScores.filter((r) => r.exam_id === exam.id).length
+    const pool = exam.group_name ? students.filter((s) => s.group_name === exam.group_name).length : students.length
+    return { exam, graded, pool }
+  }), [standaloneExams, standaloneScores, students])
+
   const statusPill = (status) => {
     if (status === 'in_progress') return <span className="nk-pill nk-pill-live">● {ar ? 'جارية الآن' : 'In progress'}</span>
     if (status === 'completed') return <span className="nk-pill nk-pill-done">✓ {ar ? 'منتهية' : 'Completed'}</span>
@@ -174,9 +184,17 @@ export default function HomePage() {
         </div>
         {/* CTA (guidance, not decoration): an empty center needs its first
             student before anything else makes sense. */}
-        {students.length === 0 && (
+        {students.length === 0 ? (
           <button className="btn-navy rounded-xl px-4 py-2.5 text-[.76rem] font-extrabold" onClick={() => ui.setArea('students')}>
             ＋ {ar ? 'أضف أول طالب' : 'Add your first student'}
+          </button>
+        ) : (
+          <button
+            className="btn-gold rounded-xl px-4 py-2.5 text-[.76rem] font-extrabold"
+            onClick={() => ui.openExam({ examId: 'new' })}
+            data-tour="new-standalone-exam"
+          >
+            ✎ {ar ? 'إنشاء امتحان منفصل' : 'New standalone exam'}
           </button>
         )}
       </div>
@@ -295,6 +313,56 @@ export default function HomePage() {
             <button className="btn-gold rounded-xl px-3.5 py-2 text-[.72rem] font-extrabold shrink-0" onClick={() => ui.openSession({ groupId: pendingSession.groupName })}>
               {ar ? 'إكمال الرصد ←' : 'Finish marking →'}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* ══ الامتحانات المنفصلة — نفس شكل بطاقات الحصص ══ */}
+      {students.length > 0 && (
+        <div className="mt-7">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-3">
+            <h2 className="text-[.98rem] font-extrabold m-0">{ar ? 'الامتحانات المنفصلة' : 'Standalone exams'}</h2>
+            <button className="text-[.7rem] font-extrabold cursor-pointer bg-transparent border-0 p-0" style={{ color: 'var(--brand-gold)' }} onClick={() => ui.openExam({ examId: 'new' })}>
+              ＋ {ar ? 'إنشاء امتحان منفصل' : 'New exam'}
+            </button>
+          </div>
+          {examCards.length === 0 ? (
+            <p className="text-[.74rem] text-fg-muted m-0">
+              {ar ? 'لا يوجد امتحانات منفصلة بعد — امتحان مستقل عن الحصص: اللي امتحن هو اللي حضر، وسلم تقديرات بتتحكم فيه بالكامل.' : 'No standalone exams yet — independent from sessions: whoever took it is present, with a fully customizable grade scale.'}
+            </p>
+          ) : (
+            <div className="grid gap-2.5">
+              {examCards.map(({ exam, graded, pool }) => (
+                <button
+                  key={exam.id}
+                  className="nk-session-card"
+                  onClick={() => ui.openExam({ examId: exam.id })}
+                  aria-label={`${ar ? 'فتح الامتحان' : 'Open exam'} ${exam.title}`}
+                >
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className="nk-session-icon" aria-hidden="true">✎</span>
+                    <span className="min-w-0">
+                      <b className="block text-[.88rem] truncate">{exam.title}</b>
+                      <small className="block text-[.7rem] text-fg-muted mt-1 truncate">
+                        {exam.exam_date}{exam.group_name ? ` · ${exam.group_name}` : ''} · {ar ? 'النهائي' : 'Max'}: {exam.max_score}
+                      </small>
+                      <span className="flex items-center gap-2 mt-1.5">
+                        <span className="nk-bar nk-bar--ok w-24"><span style={{ width: `${pool ? Math.round((graded / pool) * 100) : 0}%` }} /></span>
+                        <span className="text-[.64rem] text-fg-muted">{graded}/{pool} {ar ? 'رصدوا' : 'graded'}</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`nk-pill ${exam.status === 'open' ? 'nk-pill-live' : 'nk-pill-done'}`}>
+                      {exam.status === 'open' ? (ar ? '● جاري الرصد' : '● Grading') : (ar ? '✓ منتهي' : '✓ Done')}
+                    </span>
+                    <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
+                      {exam.status === 'open' ? (ar ? 'متابعة الرصد ←' : 'Grade →') : (ar ? 'عرض ←' : 'View →')}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}

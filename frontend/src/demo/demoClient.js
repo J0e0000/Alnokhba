@@ -88,6 +88,19 @@ function seed() {
     id: uid(), teacher_id: t, exam_id: exam.id, student_id: s.id, lesson_session_id: lessonYesterday.id,
     section_scores: { 'السؤال الأول': 15 - i, 'السؤال الثاني': 17 - i }, total_score: 32 - i * 2, version: 1, created_at: iso(-60 * 24 * 60), updated_at: iso(-60 * 24 * 60),
   }))
+  // الامتحان المنفصل (migration 051) — مستقل عن الحصص: امتحن = حضر
+  const saExam = {
+    id: uid(), teacher_id: t, title: 'امتحان منفصل — الوحدة الأولى', exam_date: dayStr(-2),
+    group_name: groups[0], max_score: 100,
+    grade_scale: [{ name: 'ممتاز', min: 80 }, { name: 'جيد', min: 70 }, { name: 'مقبول', min: 60 }, { name: 'ضعيف', min: 0 }],
+    status: 'open', created_at: iso(-60 * 24 * 48), updated_at: iso(-60 * 24 * 48),
+  }
+  const saScores = students.slice(0, 4).map((s, i) => ({
+    id: uid(), teacher_id: t, exam_id: saExam.id, student_id: s.id,
+    score: [88, 74, 62, 45][i], created_at: iso(-60 * 24 * 47), updated_at: iso(-60 * 24 * 47),
+  }))
+  const standalone_exams = [saExam]
+  const standalone_exam_scores = saScores
   const behavior_logs = [
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'تسجيل الحضور: حاضر (+1 نقطة)', points_delta: 1, created_at: iso(-80) },
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'إجابة وتفاعل (+3 نقطة)', points_delta: 3, created_at: iso(-50) },
@@ -182,6 +195,7 @@ function seed() {
   return {
     profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonYesterday],
     attendance_records, exams, exam_scores, behavior_logs, teacher_settings: [settings],
+    standalone_exams, standalone_exam_scores,
     workspace_branding: [branding], broadcast_messages: broadcasts,
     student_qr_tokens: [], student_notifications: [], teacher_notification_events: [],
     session_logs: [], homework_tasks: [], homework_task_status: [], announcements: [],
