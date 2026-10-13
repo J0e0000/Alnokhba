@@ -431,7 +431,7 @@ export const BRICKS_BY_KIND = {
   ],
   exam: [
     ['اسم الطالب', '{studentName}'], ['المجموعة', '{group}'], ['اسم الاختبار', '{examTitle}'],
-    ['الدرجة', '{score}'], ['من', '{max}'], ['النسبة', '{percentage}'], ['سطر الملاحظة', '{noteLine}'],
+    ['الدرجة', '{score}'], ['من', '{max}'], ['النسبة', '{percentage}'], ['التقدير', '{grade}'], ['سطر الملاحظة', '{noteLine}'],
   ],
   'teacher-session': [
     ['المجموعة', '{group}'], ['التاريخ', '{date}'], ['حاضر', '{present}'], ['غياب', '{absent}'],
@@ -470,11 +470,11 @@ export function studentWeeklyVars({ student, stats, weekLabel, allStudents = [],
   }
 }
 
-export function examResultVars({ student, scoreRow, groupName = '', note = '' }) {
+export function examResultVars({ student, scoreRow, groupName = '', grade = '', note = '' }) {
   const parts = examScoreParts(scoreRow)
   const score = parts ? parts.earned : Number(scoreRow?.total_score ?? 0)
   const max = parts ? parts.max : '—'
-  const percentage = parts ? `${pctOf(parts.earned, parts.max)}%` : '—'
+  const percentage = parts ? String(pctOf(parts.earned, parts.max) ?? '—') : '—'
   return {
     studentName: student?.name || '',
     group: groupName || student?.group_name || '',
@@ -482,6 +482,7 @@ export function examResultVars({ student, scoreRow, groupName = '', note = '' })
     score,
     max,
     percentage,
+    grade,
     noteLine: note || '',
   }
 }

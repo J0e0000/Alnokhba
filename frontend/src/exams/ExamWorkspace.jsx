@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import useIsMobile from '../shell/useIsMobile'
-import { DEFAULT_GRADE_SCALE, normalizeGradeScale, gradeOf } from '../lib/helpers'
+import { DEFAULT_GRADE_SCALE, normalizeGradeScale, gradeOf, isValidPhone, normalizeEgyptianPhone } from '../lib/helpers'
+import { DEFAULT_TEMPLATES, interpolateTemplate, pctOf } from '../lib/reportBuilders'
+import RecipientPickerModal from '../components/RecipientPickerModal'
 import { printExamReport } from './printExam'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -215,6 +217,7 @@ function ExamGrading({ exam }) {
   const [titleDraft, setTitleDraft] = useState(exam.title)
   const [maxDraft, setMaxDraft] = useState(String(exam.max_score))
   const [busy, setBusy] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
 
   const open = exam.status === 'open'
 
@@ -289,6 +292,38 @@ function ExamGrading({ exam }) {
         }),
     })
   }
+
+  // ── إرسال التقارير: رسالة واتساب لكل طالب امتحن — مبنية من قالب «نتيجة اختبار» ──
+  // نفس قالب التقرير القابل للتخصيص (msg_student_exam) بنفس أسماء الحقول + {grade}
+  // من سلم التقديرات. المرشّحون = اللي امتحنوا بس (من غير درجة = مش داخل في الامتحان).
+  const sendCandidates = useMemo(() => {
+    const tpl = ws.settings?.msg_student_exam || DEFAULT_TEMPLATES.msg_student_exam
+    return graded.map(({ student, row }) => {
+      const score = Number(row.score)
+      const gradeName = gradeOf(score, exam.max_score, exam.grade_scale)
+      const pct = pctOf(score, exam.max_score)
+      const hasPhone = Boolean(student.phone && isValidPhone(student.phone))
+      return {
+        key: student.id,
+        kind: 'standalone_exam_result',
+        student,
+        phone: hasPhone ? normalizeEgyptianPhone(student.phone) : '',
+        message: interpolateTemplate(tpl, {
+          studentName: student.name || '',
+          group: exam.group_name || '',
+          examTitle: exam.title,
+          score,
+          max: exam.max_score,
+          percentage: pct != null ? String(pct) : '—',
+          grade: gradeName || '',
+          noteLine: gradeName ? `التقدير: ${gradeName}` : '',
+        }),
+        statusLabel: pct != null ? `${pct}%${gradeName ? ` · ${gradeName}` : ''}` : 'مسجل',
+        statusType: 'present', // امتحن = حضر (نفس منطق النظام)
+        disabled: !hasPhone,
+      }
+    })
+  }, [graded, exam, ws.settings])
 
   // إدخال فوري: كل تغيير درجة بيتحفظ علطول (debounce قصير لكتابة الأرقام)
   const [pending, setPending] = useState({}) // studentId → value being typed
@@ -417,6 +452,15 @@ function ExamGrading({ exam }) {
             </span>
             <span className="flex gap-1.5">
               <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={printReport} aria-label={isArabic ? 'طباعة نتيجة الامتحان' : 'Print exam report'}>🖨 {isArabic ? 'طباعة' : 'Print'}</button>
+              <button
+                className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                onClick={() => setSendOpen(true)}
+                disabled={stats.gradedCount === 0}
+                title={stats.gradedCount === 0 ? (isArabic ? 'سجّل درجات الأول' : 'Grade students first') : undefined}
+                aria-label={isArabic ? 'إرسال التقارير على واتساب' : 'Send reports on WhatsApp'}
+              >
+                ↗ {isArabic ? 'إرسال التقارير' : 'Send reports'}
+              </button>
               {!editingMeta && open && (
                 <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setEditingMeta(true)}>✎ {isArabic ? 'العنوان والنهائي' : 'Title & max'}</button>
               )}
@@ -546,6 +590,36 @@ function ExamGrading({ exam }) {
           </div>
         )}
       </section>
+
+      {/* ── الامتحان خلص: CTA إرسال النتائج — اللحظة الطبيعية للموبايلة للطلاب ── */}
+      {!open && stats.gradedCount > 0 && (
+        <section className="nk-content !py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <b className="block text-[.85rem] m-0">{isArabic ? 'الامتحان خلص — ابعت النتيجة لكل من امتحن' : 'Exam done — send the results'}</b>
+              <small className="text-fg-muted block mt-1">{isArabic ? 'رسالة واتساب لكل طالب بدرجته وتقديره — بتتفتح واحدة واحدة وتقدر تعدّل أي رسالة قبل إرسالها.' : 'One WhatsApp message per student with score and grade — editable before sending.'}</small>
+            </div>
+            <button className="btn-gold action-button !min-h-[3rem]" onClick={() => setSendOpen(true)}>
+              ↗ {isArabic ? 'إرسال التقارير' : 'Send reports'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ── اختيار المستلمين ثم قائمة الإرسال (نفس باب تقارير الحصص بالظبط) ── */}
+      {sendOpen && (
+        <RecipientPickerModal
+          open
+          onClose={() => setSendOpen(false)}
+          candidates={sendCandidates}
+          title={isArabic ? `إرسال نتائج «${exam.title}»` : `Send results — ${exam.title}`}
+          subtitle={isArabic
+            ? 'المقترح: كل من امتحن ولديه رقم صحيح. الرسالة من قالب «نتيجة اختبار» — قابل للتخصيص من قوالب التقارير، وتقدر تعدّل أي رسالة قبل إرسالها. مفيش حاجة تتبعت غير لما تضغط متابعة.'
+            : 'Suggested: everyone graded with a valid phone. Messages come from the exam-result template and stay editable before sending.'}
+          preselected={(c) => !c.disabled}
+          onStart={(items) => { setSendOpen(false); ui.startQueue(items) }}
+        />
+      )}
     </div>
   )
 }
