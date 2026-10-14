@@ -19,7 +19,7 @@
 //     channel subscribes to (so realtime code paths are exercised in preview).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DB_KEY = 'alnokhba_demo_db_v1'
+const DB_KEY = 'alnokhba_demo_db_v2'
 const SESSION_KEY = 'alnokhba_demo_session_v1'
 
 export const DEMO_TEACHER_ID = 'a0000000-0000-4000-8000-00000000c0de'
@@ -75,19 +75,40 @@ function seed() {
     session_date: dayStr(-1), status: 'completed', lesson_topic: 'مراجعة الامتحان السابق', homework_text: '',
     video_link: '', started_at: iso(-60 * 27 * 60), ended_at: iso(-60 * 25 * 60), created_at: iso(-60 * 27 * 60), updated_at: iso(-60 * 25 * 60),
   }
+  // Task 41 demo fixtures: أسبوع ماضي بدون امتحان + حصة النهارده لمجموعة ب
+  // بامتحان أحدث من امتحان الأمبارح — لإثبات أن {examLine} بياخد درجة امتحان
+  // الحصة دي بالذات (مش الأحدث)، وبيختفي لما مفيش امتحان في الحصة.
+  const lessonLastWeek = {
+    id: uid(), teacher_id: t, group_name: groups[1], stage: 'الثالث الثانوي',
+    session_date: dayStr(-8), status: 'completed', lesson_topic: 'مدخل الوحدة الأولى', homework_text: '',
+    video_link: '', started_at: iso(-60 * 24 * 8), ended_at: iso(-60 * 23 * 60), created_at: iso(-60 * 24 * 8), updated_at: iso(-60 * 23 * 60),
+  }
+  const lessonToday2 = {
+    id: uid(), teacher_id: t, group_name: groups[1], stage: 'الثالث الثانوي',
+    session_date: todayStr(), status: 'completed', lesson_topic: 'شرح درس جديد', homework_text: 'حل أسئلة الكتاب',
+    video_link: '', started_at: iso(-200), ended_at: iso(-30), created_at: iso(-200), updated_at: iso(-30),
+  }
   const attendance_records = [
     { id: uid(), teacher_id: t, student_id: students[0].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonToday.id, recorded_at: iso(-80), attendance_date: todayStr() },
     { id: uid(), teacher_id: t, student_id: students[1].id, status: 'حاضر', homework_status: 'لم يرصد', lesson_session_id: lessonToday.id, recorded_at: iso(-79), attendance_date: todayStr() },
     { id: uid(), teacher_id: t, student_id: students[2].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonToday.id, recorded_at: iso(-78), attendance_date: todayStr() },
     { id: uid(), teacher_id: t, student_id: students[6].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonYesterday.id, recorded_at: iso(-60 * 26 * 60), attendance_date: dayStr(-1) },
     { id: uid(), teacher_id: t, student_id: students[7].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonYesterday.id, recorded_at: iso(-60 * 26 * 60), attendance_date: dayStr(-1) },
+    { id: uid(), teacher_id: t, student_id: students[6].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonLastWeek.id, recorded_at: iso(-60 * 24 * 8 + 60), attendance_date: dayStr(-8) },
+    { id: uid(), teacher_id: t, student_id: students[7].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonLastWeek.id, recorded_at: iso(-60 * 24 * 8 + 61), attendance_date: dayStr(-8) },
+    { id: uid(), teacher_id: t, student_id: students[6].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonToday2.id, recorded_at: iso(-199), attendance_date: todayStr() },
+    { id: uid(), teacher_id: t, student_id: students[7].id, status: 'حاضر', homework_status: 'لم يرصد', lesson_session_id: lessonToday2.id, recorded_at: iso(-198), attendance_date: todayStr() },
   ]
   const exam = { id: uid(), teacher_id: t, title: 'امتحان شهر أكتوبر', sections: ['السؤال الأول', 'السؤال الثاني'], max_score_per_section: 20, lesson_session_id: lessonYesterday.id, version: 1, created_at: iso(-60 * 25 * 60), updated_at: iso(-60 * 25 * 60) }
-  const exams = [exam]
+  const exam2 = { id: uid(), teacher_id: t, title: 'اختبار اليوم القصير', sections: ['أسئلة سريعة'], max_score_per_section: 10, lesson_session_id: lessonToday2.id, version: 1, created_at: iso(-30), updated_at: iso(-30) }
+  const exams = [exam, exam2]
   const exam_scores = students.slice(6).map((s, i) => ({
     id: uid(), teacher_id: t, exam_id: exam.id, student_id: s.id, lesson_session_id: lessonYesterday.id,
     section_scores: { 'السؤال الأول': 15 - i, 'السؤال الثاني': 17 - i }, total_score: 32 - i * 2, version: 1, created_at: iso(-60 * 24 * 60), updated_at: iso(-60 * 24 * 60),
   }))
+  // زياد امتحن اختبار النهارده (أحدث created_at في كل الداتا) — التقرير
+  // بتاع الأمبارح لازم يفضل يورّي «امتحان شهر أكتوبر» مش الاختبار الأحدث ده.
+  exam_scores.push({ id: uid(), teacher_id: t, exam_id: exam2.id, student_id: students[6].id, lesson_session_id: lessonToday2.id, section_scores: { 'أسئلة سريعة': 9 }, total_score: 9, version: 1, created_at: iso(-29), updated_at: iso(-29) })
   // الامتحان المنفصل (migration 051) — مستقل عن الحصص: امتحن = حضر
   const saExam = {
     id: uid(), teacher_id: t, title: 'امتحان منفصل — الوحدة الأولى', exam_date: dayStr(-2),
@@ -193,7 +214,7 @@ function seed() {
     { id: uid(), admin_id: 'admin', message: 'تحديث جديد: مسار الحصص أصبح متاحًا للجميع — جرّب مساحة الحصة الجديدة.', created_at: iso(-300) },
   ]
   return {
-    profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonYesterday],
+    profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonToday2, lessonYesterday, lessonLastWeek],
     attendance_records, exams, exam_scores, behavior_logs, teacher_settings: [settings],
     standalone_exams, standalone_exam_scores,
     workspace_branding: [branding], broadcast_messages: broadcasts,
@@ -310,10 +331,26 @@ class Query {
   }
 
   _project(row) {
-    // supports `*, exams(title, max_score_per_section)` — one level of embedding
+    // supports `*, exams(title, max_score_per_section)` — one level of embedding.
+    // NOTE: the split must be PARENTHESIS-AWARE — a naive split(',') breaks
+    // multi-column embeds (`exams(title, max_score_per_section)` → the inner
+    // comma silently kills the embed, so exam_title/max never resolve in the
+    // demo and every exam line in reports collapses for no reason).
     if (this._selectCols === '*' || !this._selectCols) return { ...row }
+    const splitTop = (s) => {
+      const parts = []
+      let depth = 0
+      let cur = ''
+      for (const ch of s) {
+        if (ch === '(') depth++
+        else if (ch === ')') depth--
+        if (ch === ',' && depth === 0) { parts.push(cur); cur = '' } else cur += ch
+      }
+      parts.push(cur)
+      return parts.map((p) => p.trim()).filter(Boolean)
+    }
     const out = {}
-    const parts = this._selectCols.split(',').map((s) => s.trim()).filter(Boolean)
+    const parts = splitTop(this._selectCols)
     for (const part of parts) {
       const embed = part.match(/^(\w+)\(([^)]*)\)$/)
       if (embed) {

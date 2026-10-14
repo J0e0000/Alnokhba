@@ -110,6 +110,7 @@ export default function ReportStudioModal({
           settings: { ...settings, msg_attendance_present: templates.present, msg_attendance_absent: templates.absent },
           groupName: group,
           examScores: (ws.examScoresByStudent || {})[pick.id] || [],
+          exams: ws.examsList || [],
         },
       )
       : ''
@@ -283,6 +284,7 @@ export default function ReportStudioModal({
           settings: { ...settings, msg_attendance_present: templates.present, msg_attendance_absent: templates.absent },
           groupName: group,
           examScores: (ws.examScoresByStudent || {})[s.id] || [],
+          exams: ws.examsList || [],
         }),
         lessonId: lesson.id, statusLabel: status,
         statusType: status === 'حاضر' ? 'present' : status === 'غائب' ? 'absent' : 'none',
@@ -344,8 +346,8 @@ export default function ReportStudioModal({
               bricks={isSessionKind ? (subType === 'present' ? BRICKS.sessionPresent : BRICKS.sessionAbsent) : (BRICKS_BY_KIND[kind] || [])}
               readyTemplate={isSessionKind ? undefined : DEFAULT_TEMPLATES[meta.settingsKey]}
               hint={isArabic
-                ? 'السطر الفاضي بيختفي من الرسالة تلقائيًا، ولو مكانه فاضي هيتحط في مكان المؤشر. لو مفيش بيانات للحبة (زي ما فيش امتحان) السطر كله بيختفي.'
-                : 'Empty lines disappear from the message; a brick with no data removes its whole line.'}
+                ? 'السطر الفاضي بيختفي من الرسالة تلقائيًا، ولو مكانه فاضي هيتحط في مكان المؤشر. سطر الامتحان بياخد درجة امتحان الحصة دي بالذات — لو الحصة مفيهاش امتحان أو مفيش درجة للطالب، السطر بيختفي.'
+                : 'Empty lines disappear from the message; the exam line reports THIS session\'s exam score only — no session exam or no score for the student → the line disappears.'}
             />
           </label>
           <button type="button" className="btn-navy action-button !min-h-[2.9rem] w-full" disabled={!dirty} onClick={save}>

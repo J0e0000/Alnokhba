@@ -763,14 +763,26 @@ function _performanceNarrative(examScores = []) {
 }
 
 /** Build an explanatory, attendance-aware report for WhatsApp and previews. */
-export function getReportTemplateValues(examScores = [], student = {}, session = null) {
+export function getReportTemplateValues(examScores = [], student = {}, session = null, exams = null) {
+  // SESSION-AWARE pick (owner: «ياخد درجة الامتحان ده، مش المتوسط ولا اخر
+  // امتحان، و لو مفيش امتحان ميكتبش حاجة»): when the caller passes the exams
+  // list, ONLY the exam(s) actually held in THIS session count — the student's
+  // newest score among those exam ids. No exam in this session, or no score
+  // for THIS student in that exam → NOTHING is reported (no leaking an
+  // older/newer exam from another session, no invented numbers). Callers
+  // without an exams list (PDF profile reports) keep the legacy LATEST pick.
   // LATEST-exam pick (bug fix): exam_scores rows arrive sorted created_at
   // ASCENDING (WorkspaceStore load) and realtime inserts append at the END,
   // so [0] was the OLDEST exam — the "آخر امتحان"/{examLine} bricks showed
   // the student's first-ever exam. Sort by created_at descending (stable
   // fallback to array order when created_at is missing, e.g. portal rows).
-  const latest = Array.isArray(examScores) && examScores.length > 0
-    ? [...examScores].sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0))[0]
+  const sessionExamIds = (session?.id && Array.isArray(exams))
+    ? exams.filter((e) => e && e.lesson_session_id === session.id).map((e) => e.id)
+    : null
+  const pool = (Array.isArray(examScores) ? examScores : [])
+    .filter((sc) => sc && (!sessionExamIds || sessionExamIds.includes(sc.exam_id)))
+  const latest = pool.length > 0
+    ? [...pool].sort((a, b) => new Date(b?.created_at || 0) - new Date(a?.created_at || 0))[0]
     : null
   const sections = latest ? Object.keys(latest.section_scores || {}).length || 1 : 0
   // Tolerate both exam row shapes: raw exam rows (total_score /
@@ -849,16 +861,24 @@ export const DEFAULT_ABSENT_TEMPLATE = 'تيم مستر محمد البندار�
 
 /**
  * Interpolate an attendance template with real per-student values.
- * Unknown/empty variables collapse their surrounding line instead of
- * leaving dangling "{placeholder}" text.
+ * LINE-AWARE collapse — the SAME contract as interpolateTemplate in
+ * reportBuilders.js (and what the template editors already promise):
+ * a line that HELD placeholders and became blank after substitution
+ * disappears entirely (missing data → no dangling label, no empty gap
+ * where {examLine} had nothing to say today). Intentional blank lines
+ * (never had a placeholder) stay.
  */
 function interpolateAttendance(template, vars) {
-  let out = String(template || '')
-  for (const [key, value] of Object.entries(vars)) {
-    out = out.replaceAll(`{${key}}`, String(value ?? ''))
+  const outLines = []
+  for (const rawLine of String(template || '').split('\n')) {
+    let line = rawLine
+    for (const [key, value] of Object.entries(vars)) {
+      line = line.replaceAll(`{${key}}`, String(value ?? ''))
+    }
+    if (/\{[^{}]+\}/.test(rawLine) && !line.trim()) continue
+    outLines.push(line.replace(/\s+$/, ''))
   }
-  // Collapse the blank lines left behind by empty optional blocks
-  return out.replace(/\n{3,}/g, '\n\n').trim()
+  return outLines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /**
@@ -871,9 +891,13 @@ function interpolateAttendance(template, vars) {
  *   groupName        override when the session group differs from the row
  *   today            preformatted date string
  *   examScores       student's exam_scores rows — powers the optional {examLine}
+ *   exams            ALL exam rows (ws.examsList) — with the lesson this makes
+ *                     {examLine} report ONLY the exam held in THIS session
+ *                     (the student's score in it); no session exam or no
+ *                     score for this student → the line collapses entirely.
  * @returns {string} ready-to-send message
  */
-export function buildAttendanceMessage(student, { status, lesson, settings, groupName, today, examScores } = {}) {
+export function buildAttendanceMessage(student, { status, lesson, settings, groupName, today, examScores, exams } = {}) {
   const s = student || {}
   const isPresent = String(status || '').includes('حاضر')
   const threshold = Number(settings?.insight_config?.max_warnings ?? 3)
@@ -886,7 +910,7 @@ export function buildAttendanceMessage(student, { status, lesson, settings, grou
   // when its data is missing (no exam that day → no exam line), so old saved
   // templates that don't use them are unaffected and new ones never show
   // dangling labels or invented numbers.
-  const examVals = getReportTemplateValues(examScores || [], s, lesson)
+  const examVals = getReportTemplateValues(examScores || [], s, lesson, exams)
   const examLine = examVals.examTitle && examVals.examScore !== '' && examVals.examMaxScore
     ? `درجة الامتحان: اختبار «${examVals.examTitle}» — ${examVals.examScore} من ${examVals.examMaxScore}${examVals.examPercentage !== '' ? ` (${examVals.examPercentage}%)` : ''}`
     : ''

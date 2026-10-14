@@ -56,7 +56,7 @@ export default function ReportsArea() {
           kind: 'session_report',
           student: reportStudent,
           phone: hasPhone ? normalizeEgyptianPhone(s.phone) : '',
-          message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings, examScores: ws.examScoresByStudent?.[s.id] || [] }),
+          message: buildAttendanceMessage(reportStudent, { status, lesson, settings: ws.settings, examScores: ws.examScoresByStudent?.[s.id] || [], exams: ws.examsList || [] }),
           lessonId: lesson.id,
           statusLabel: status,
           statusType: status === 'حاضر' ? 'present' : status === 'غائب' ? 'absent' : 'none',
