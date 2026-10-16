@@ -138,14 +138,21 @@ export function WorkspaceProvider({ children }) {
     const clean = (ids || []).filter(Boolean)
     if (!clean.length) return { ok: 0 }
     const now = new Date().toISOString()
-    const { error } = await supabase.from('students')
-      .update({ archived: false, archived_at: null, archived_reason: null, auto_archive_marker: now })
-      .in('id', clean)
-    if (error) {
-      if (!opts?.silent) showToast(isArabicRef.current ? 'تعذر الاسترجاع — حاول تاني.' : 'Restore failed — try again.', 'error')
-      return { ok: 0, error }
+    // دفعات زي الأرشفة — .in() بعشرات/مئات الـ ids ممكن يكسر طول الـ URL
+    const BATCH = 100
+    let lastError = null
+    for (let i = 0; i < clean.length; i += BATCH) {
+      const { error } = await supabase.from('students')
+        .update({ archived: false, archived_at: null, archived_reason: null, auto_archive_marker: now })
+        .in('id', clean.slice(i, i + BATCH))
+      if (error) { lastError = error; break }
     }
-    setStudents((prev) => prev.map((row) => (clean.includes(row.id)
+    if (lastError) {
+      if (!opts?.silent) showToast(isArabicRef.current ? 'تعذر الاسترجاع — حاول تاني.' : 'Restore failed — try again.', 'error')
+      return { ok: 0, error: lastError }
+    }
+    const idSet = new Set(clean)
+    setStudents((prev) => prev.map((row) => (idSet.has(row.id)
       ? { ...row, archived: false, archived_at: null, archived_reason: null, auto_archive_marker: now }
       : row)))
     if (!opts?.silent) {
@@ -225,31 +232,41 @@ export function WorkspaceProvider({ children }) {
     ctl.busy = true
     const now = new Date().toISOString()
     const reason = 'غياب عن آخر حصتين للمجموعة (أرشفة تلقائية)'
-    const archivedNow = []
-    for (const s of candidates) {
+    // تحديث مجمع على دفعات (ممكن تكون مئات الصفوف في أول تشغيل رجعي —
+    // 958 صف في داتا الاختبار!) بدل صف-لكل-طلب: أسرع بكثير وأقل ضغط على الشبكة.
+    const ids = candidates.map((s) => s.id)
+    const BATCH = 100
+    let batchError = null
+    for (let i = 0; i < ids.length; i += BATCH) {
       const { error } = await supabase.from('students').update({
         archived: true, archived_at: now, archived_reason: reason, auto_archive_marker: now,
-      }).eq('id', s.id)
-      if (error) {
-        // أعمدة الترحيل ناقصة على الحساب ده → عطّل المحرك هدوءًا (مفيش سبام أخطاء)
-        if (/archived|auto_archive|column|PGRST204|42703/i.test(error.message || '')) ctl.disabled = true
-        break
-      }
-      archivedNow.push(s)
+      }).in('id', ids.slice(i, i + BATCH))
+      if (error) { batchError = error; break }
+    }
+    let archivedNow = []
+    if (batchError) {
+      // أعمدة الترحيل ناقصة على الحساب ده → عطّل المحرك هدوءًا (مفيش سبام أخطاء)
+      if (/archived|auto_archive|column|PGRST204|42703/i.test(batchError.message || '')) ctl.disabled = true
+      else showToast(isArabicRef.current ? 'تعذر حفظ الأرشفة التلقائية — هتحاول تاني لاحقًا.' : 'Auto-archive save failed — will retry later.', 'error')
+    } else {
+      archivedNow = candidates
     }
     if (archivedNow.length) {
-      setStudents((prev) => prev.map((row) => {
-        const hit = archivedNow.find((s) => s.id === row.id)
-        return hit ? { ...row, archived: true, archived_at: now, archived_reason: reason, auto_archive_marker: now } : row
-      }))
-      const names = archivedNow.map((s) => s.name).join('، ')
+      const idSet = new Set(ids)
+      setStudents((prev) => prev.map((row) => (idSet.has(row.id)
+        ? { ...row, archived: true, archived_at: now, archived_reason: reason, auto_archive_marker: now }
+        : row)))
+      // التوست ما يطبعش مئات الأسماء — أول 3 وباقي العدد
+      const shown = archivedNow.slice(0, 3).map((s) => s.name).join('، ')
+      const rest = archivedNow.length - 3
+      const names = rest > 0 ? `${shown} و${rest} ${isArabicRef.current ? 'طالب تانيين' : 'more'}` : shown
       showToast(
         isArabicRef.current
           ? `تم أرشفة ${names} تلقائيًا — غايب عن آخر حصتين للمجموعة. بيقدروا يترجعوا من تبويب «المؤرشفين» في صفحة الطلاب أو شريط «المؤرشفون» في شاشة الحصة.`
-          : `Auto-archived (absent from the group's last 2 lectures): ${names}. Restore them from the Students page.`,
-        'info', 10000,
+          : `Auto-archived (absent from the group's last 2 lectures): ${names}. Restore from the Students page.`,
+        'info', 12000,
         {
-          label: isArabicRef.current ? '↩ استرجاع' : '↩ Restore',
+          label: isArabicRef.current ? '↩ استرجاع الكل' : '↩ Restore all',
           onClick: () => { restoreStudents(archivedNow.map((s) => s.id), { silent: true }) },
         },
       )
