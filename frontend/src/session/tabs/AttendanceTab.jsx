@@ -41,6 +41,9 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
   const [filter, setFilter] = useState('all') // all | present | absent | unrecorded
   const [qrOpen, setQrOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  // Task 42 — الطلاب المؤرشفون في المجموعة دي (غايبين عن آخر حصتين تلقائيًا):
+  // شريط مطوي أسفل القائمة — الطالب اللي رجع يسترجع من هنا ويظهر في الشبكة فورًا.
+  const [showArchived, setShowArchived] = useState(false)
   // EDIT PAST SESSION: lessonOpen (today's flow) OR the explicit edit toggle
   // from the workspace header both unlock the same controls.
   const editable = lessonOpen || Boolean(editingPast)
@@ -48,6 +51,7 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
   const editOpts = lessonOpen ? undefined : { allowCompleted: true }
 
   const students = ws.sessionStudentsFor(groupId)
+  const archivedForGroup = useMemo(() => (ws.archivedStudents || []).filter((s) => s.group_name === groupId), [ws.archivedStudents, groupId])
   const attendanceMap = ws.lessonAttendanceByStudent
   const counts = ws.countsForLesson(groupId)
 
@@ -76,6 +80,39 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
   }, [absentIntent])
 
   const savingAny = wsMeta.savingIds.size > 0
+
+  // Task 42 — شريط المؤرشفين مشترك بين العرضين (للقراءة والتحرير) — الطالب
+  // الراجع يسترجع من هنا في الحالتين.
+  const archivedStrip = archivedForGroup.length > 0 ? (
+    <div className="mt-2 rounded-xl border border-dashed" style={{ borderColor: 'var(--surface-border)' }}>
+      <button
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-[.72rem] font-bold text-fg-muted bg-transparent border-0 cursor-pointer"
+        onClick={() => setShowArchived((v) => !v)}
+        aria-expanded={showArchived}
+      >
+        <span>📦 {isArabic ? `المؤرشفون (${archivedForGroup.length}) — غايبين عن آخر حصتين` : `Archived (${archivedForGroup.length}) — missed the last 2 lectures`}</span>
+        <span>{showArchived ? '▴' : '▾'}</span>
+      </button>
+      {showArchived && (
+        <div className="grid gap-1.5 px-3 pb-3">
+          {archivedForGroup.map((s) => (
+            <div key={s.id} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5" style={{ background: 'var(--surface-container-high)' }}>
+              <span className="min-w-0">
+                <b className="block truncate text-[.8rem]" style={{ color: 'var(--fg)' }}>{s.name}</b>
+                {s.archived_at && <small className="text-fg-subtle text-[.62rem]">{new Date(s.archived_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en-GB')}</small>}
+              </span>
+              <button
+                className="!min-h-0 shrink-0 rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold"
+                style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
+                onClick={() => ws.restoreStudents?.([s.id])}
+                title={isArabic ? 'إرجاع الطالب لقائمة الحضور' : 'Bring the student back to the attendance list'}
+              >↩ {isArabic ? 'استرجاع' : 'Restore'}</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null
 
   // ── Read-only view (completed session, edit mode OFF) ──
   if (!editable) {
@@ -110,6 +147,7 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
           })}
           {visible.length === 0 && <p className="text-sm text-fg-muted text-center py-6">{isArabic ? (search ? 'لا نتائج مطابقة' : 'لا يوجد طلاب في هذه المجموعة') : (search ? 'No matching students' : 'No students in this group')}</p>}
         </div>
+        {archivedStrip}
       </div>
     )
   }
@@ -259,6 +297,8 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
           </p>
         )}
       </div>
+
+      {archivedStrip}
 
       {/* The primary "Complete Attendance" action lives at the TOP of this
           tab (inline-END); the sticky bottom bar no longer exists. */}

@@ -19,7 +19,7 @@
 //     channel subscribes to (so realtime code paths are exercised in preview).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DB_KEY = 'alnokhba_demo_db_v2'
+const DB_KEY = 'alnokhba_demo_db_v3'
 const SESSION_KEY = 'alnokhba_demo_session_v1'
 
 export const DEMO_TEACHER_ID = 'a0000000-0000-4000-8000-00000000c0de'
@@ -88,6 +88,20 @@ function seed() {
     session_date: todayStr(), status: 'completed', lesson_topic: 'شرح درس جديد', homework_text: 'حل أسئلة الكتاب',
     video_link: '', started_at: iso(-200), ended_at: iso(-30), created_at: iso(-200), updated_at: iso(-30),
   }
+  // Task 42 fixtures: آخر حصتين لمجموعة أ (كلهم مكتملين وتاريخهم فات) —
+  // يوسف عبدالله غايب في الاتنين → لازم يتأرشف تلقائيًا عند أول تحميل،
+  // وأحمد مصطفى حاضر فيهم، وسلمى حسن غايب في واحدة بس — الاتنين لازم يفضلوا
+  // نشطين (تمييز دقيق: غياب واحد لا يكفي، والغياب لازم يكون صريحًا في الحصتين).
+  const lessonA1 = {
+    id: uid(), teacher_id: t, group_name: groups[0], stage: 'الثاني الثانوي',
+    session_date: dayStr(-2), status: 'completed', lesson_topic: 'حل امتحان التجربة', homework_text: '',
+    video_link: '', started_at: iso(-60 * 24 * 2 * 60), ended_at: iso(-60 * 24 * 2 * 60 + 90), created_at: iso(-60 * 24 * 2 * 60), updated_at: iso(-60 * 24 * 2 * 60 + 90),
+  }
+  const lessonA2 = {
+    id: uid(), teacher_id: t, group_name: groups[0], stage: 'الثاني الثانوي',
+    session_date: dayStr(-5), status: 'completed', lesson_topic: 'الوحدة الثانية — التمهيد', homework_text: '',
+    video_link: '', started_at: iso(-60 * 24 * 5 * 60), ended_at: iso(-60 * 24 * 5 * 60 + 90), created_at: iso(-60 * 24 * 5 * 60), updated_at: iso(-60 * 24 * 5 * 60 + 90),
+  }
   const attendance_records = [
     { id: uid(), teacher_id: t, student_id: students[0].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonToday.id, recorded_at: iso(-80), attendance_date: todayStr() },
     { id: uid(), teacher_id: t, student_id: students[1].id, status: 'حاضر', homework_status: 'لم يرصد', lesson_session_id: lessonToday.id, recorded_at: iso(-79), attendance_date: todayStr() },
@@ -98,6 +112,13 @@ function seed() {
     { id: uid(), teacher_id: t, student_id: students[7].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonLastWeek.id, recorded_at: iso(-60 * 24 * 8 + 61), attendance_date: dayStr(-8) },
     { id: uid(), teacher_id: t, student_id: students[6].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonToday2.id, recorded_at: iso(-199), attendance_date: todayStr() },
     { id: uid(), teacher_id: t, student_id: students[7].id, status: 'حاضر', homework_status: 'لم يرصد', lesson_session_id: lessonToday2.id, recorded_at: iso(-198), attendance_date: todayStr() },
+    // Task 42: يوسف غايب في آخر حصتين لمجموعة أ → أرشفة تلقائية عند التحميل
+    { id: uid(), teacher_id: t, student_id: students[2].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonA1.id, recorded_at: iso(-60 * 24 * 2 * 60 + 30), attendance_date: dayStr(-2) },
+    { id: uid(), teacher_id: t, student_id: students[0].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonA1.id, recorded_at: iso(-60 * 24 * 2 * 60 + 31), attendance_date: dayStr(-2) },
+    { id: uid(), teacher_id: t, student_id: students[3].id, status: 'حاضر', homework_status: 'لم يرصد', lesson_session_id: lessonA1.id, recorded_at: iso(-60 * 24 * 2 * 60 + 32), attendance_date: dayStr(-2) },
+    { id: uid(), teacher_id: t, student_id: students[2].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonA2.id, recorded_at: iso(-60 * 24 * 5 * 60 + 30), attendance_date: dayStr(-5) },
+    { id: uid(), teacher_id: t, student_id: students[0].id, status: 'حاضر', homework_status: 'مكتمل', lesson_session_id: lessonA2.id, recorded_at: iso(-60 * 24 * 5 * 60 + 31), attendance_date: dayStr(-5) },
+    { id: uid(), teacher_id: t, student_id: students[3].id, status: 'غائب', homework_status: 'لم يرصد', lesson_session_id: lessonA2.id, recorded_at: iso(-60 * 24 * 5 * 60 + 32), attendance_date: dayStr(-5) },
   ]
   const exam = { id: uid(), teacher_id: t, title: 'امتحان شهر أكتوبر', sections: ['السؤال الأول', 'السؤال الثاني'], max_score_per_section: 20, lesson_session_id: lessonYesterday.id, version: 1, created_at: iso(-60 * 25 * 60), updated_at: iso(-60 * 25 * 60) }
   const exam2 = { id: uid(), teacher_id: t, title: 'اختبار اليوم القصير', sections: ['أسئلة سريعة'], max_score_per_section: 10, lesson_session_id: lessonToday2.id, version: 1, created_at: iso(-30), updated_at: iso(-30) }
@@ -214,7 +235,7 @@ function seed() {
     { id: uid(), admin_id: 'admin', message: 'تحديث جديد: مسار الحصص أصبح متاحًا للجميع — جرّب مساحة الحصة الجديدة.', created_at: iso(-300) },
   ]
   return {
-    profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonToday2, lessonYesterday, lessonLastWeek],
+    profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonToday2, lessonYesterday, lessonLastWeek, lessonA1, lessonA2],
     attendance_records, exams, exam_scores, behavior_logs, teacher_settings: [settings],
     standalone_exams, standalone_exam_scores,
     workspace_branding: [branding], broadcast_messages: broadcasts,

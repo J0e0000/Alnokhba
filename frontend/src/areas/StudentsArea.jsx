@@ -39,9 +39,13 @@ export default function StudentsArea() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [busyBulk, setBusyBulk] = useState('')
 
+  // Task 42: التبويب «المؤرشفون» يسحب من ws.archivedStudents بدل النشطين —
+  // بحث + فلتر المجموعة/المرحلة شغالين، وفلتر الحالة الفرعية لا ينطبق هنا.
+  const sourcePool = statusFilter === 'archived' ? (ws.archivedStudents || []) : ws.students
+
   const filtered = useMemo(() => {
     const q = normalizeArabicSearch(search)
-    return ws.students.filter((s) => {
+    return sourcePool.filter((s) => {
       const searchable = normalizeArabicSearch([s.name, s.phone, s.code, s.stage, s.group_name].filter(Boolean).join(' '))
       if (q && !searchable.includes(q)) return false
       if (groupFilter !== 'all' && s.group_name !== groupFilter) return false
@@ -54,7 +58,7 @@ export default function StudentsArea() {
       if (statusFilter === 'hw_missing' && !(s.hw_status === 'لم يتم' || s.hw_status === 'ناقص')) return false
       return true
     })
-  }, [ws.students, ws.examScoresByStudent, search, stageFilter, groupFilter, statusFilter])
+  }, [sourcePool, ws.examScoresByStudent, search, stageFilter, groupFilter, statusFilter])
 
   // Pool for the leaderboard (لائحة المتصدرين): stage + group filters apply
   // so the top list is contextual, but the text search and the status filter
@@ -222,6 +226,9 @@ export default function StudentsArea() {
           <option value="absent">{isArabic ? 'غائب' : 'Absent'}</option>
           <option value="warning">{isArabic ? 'إنذار أكاديمي' : 'Academic warning'}</option>
           <option value="hw_missing">{isArabic ? 'واجب ناقص' : 'Homework missing'}</option>
+          {(ws.archivedStudents || []).length > 0 && (
+            <option value="archived">{isArabic ? `المؤرشفون (${ws.archivedStudents.length})` : `Archived (${ws.archivedStudents.length})`}</option>
+          )}
         </select>
       </div>
 
@@ -243,8 +250,8 @@ export default function StudentsArea() {
         })}
       </div>
 
-      {/* Select-all chip (spec 21): only meaningful with results */}
-      {filtered.length > 0 && (
+      {/* Select-all chip (spec 21): only meaningful with results (active view only) */}
+      {filtered.length > 0 && statusFilter !== 'archived' && (
         <div className="flex items-center gap-2 mb-2">
           <button className="nk-att-chip" onClick={toggleSelectAll} aria-pressed={allFilteredSelected}>
             {allFilteredSelected ? (isArabic ? '☑ إلغاء تحديد الكل' : '☑ Unselect all') : (isArabic ? `☐ تحديد الكل (${filtered.length})` : `☐ Select all (${filtered.length})`)}
@@ -252,17 +259,27 @@ export default function StudentsArea() {
         </div>
       )}
 
+      {/* Task 42 — archived view hint */}
+      {statusFilter === 'archived' && filtered.length > 0 && (
+        <p className="text-[.72rem] text-fg-muted mb-2 leading-relaxed">
+          {isArabic
+            ? 'المؤرشفون مخفيين عن الحصص والدرجات والتقارير — وسجلهم كله محفوظ. الاسترجاع بيرجعهم فورًا، والأرشفة التلقائية مش هتشيلهم تاني غير لو غابوا عن حصتين جداد للمجموعة.'
+            : 'Archived students are hidden from sessions, grades and reports — their full history is kept. Restoring brings them back instantly; re-archiving requires two fresh absences in new group lectures.'}
+        </p>
+      )}
+
       {/* Student cards/rows */}
       <div className="grid gap-2 pb-20 lg:pb-0">
         {filtered.map((s) => {
           const isSel = selected.has(s.id)
           const isSavingRow = wsMeta.savingIds.has(s.id)
+          const archivedView = statusFilter === 'archived'
           return (
             <div
               key={s.id}
-              className="nk-row !flex-wrap cursor-pointer select-none"
-              style={isSel ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}
-              onClick={(e) => {
+              className={`nk-row !flex-wrap select-none ${archivedView ? 'opacity-80' : 'cursor-pointer'}`}
+              style={isSel && !archivedView ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}
+              onClick={archivedView ? undefined : (e) => {
                 // Name → profile; anything else on the row → select.
                 // Buttons/checkbox/links keep their own behavior.
                 if (e.target.closest('button, input, a, label')) return
@@ -270,7 +287,9 @@ export default function StudentsArea() {
               }}
             >
               <span className="flex items-center gap-2 min-w-0">
-                <input type="checkbox" className="w-4 h-4 accent-[var(--brand-gold)] cursor-pointer" checked={isSel} onChange={() => toggleSelect(s.id)} onClick={(e) => e.stopPropagation()} aria-label={`تحديد ${s.name}`} />
+                {!archivedView && (
+                  <input type="checkbox" className="w-4 h-4 accent-[var(--brand-gold)] cursor-pointer" checked={isSel} onChange={() => toggleSelect(s.id)} onClick={(e) => e.stopPropagation()} aria-label={`تحديد ${s.name}`} />
+                )}
                 <button
                   className="bg-transparent border-0 p-0 m-0 text-right min-w-0 cursor-pointer font-[inherit] hover:underline underline-offset-4 decoration-2"
                   onClick={(e) => { e.stopPropagation(); ui.openStudentHistory(s.id) }}
@@ -280,34 +299,54 @@ export default function StudentsArea() {
                   <small className="block">{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.stage ? ` · ${s.stage}` : ''}</small>
                 </button>
               </span>
-              {/* Points ONLY — no attendance/homework status pill here (it
-                  lives in the session); warnings stay visible when present. */}
-              <span className="flex flex-wrap items-center gap-1.5">
-                <span className="nk-pill nk-pill-gold">{s.points || 0}</span>
-                {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
-              </span>
+              {archivedView ? (
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="nk-pill nk-pill-neutral" title={s.archived_reason || ''}>📦 {isArabic ? 'مؤرشف' : 'Archived'}</span>
+                  {s.archived_at && (
+                    <small className="text-fg-subtle">{new Date(s.archived_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en-GB')}</small>
+                  )}
+                </span>
+              ) : (
+                /* Points ONLY — no attendance/homework status pill here (it
+                    lives in the session); warnings stay visible when present. */
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span className="nk-pill nk-pill-gold">{s.points || 0}</span>
+                  {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
+                </span>
+              )}
               <span className="flex flex-wrap items-center gap-1.5 ms-auto">
-                <button
-                  className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
-                  style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
-                  onClick={() => sendWhatsApp(s, (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name))}
-                  title="WhatsApp"
-                >✆</button>
-                <button
-                  className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
-                  style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
-                  onClick={() => openStudentQR(s)}
-                  title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
-                >QR</button>
-                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
-                <button
-                  className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
-                  style={{ background: 'var(--danger-bg)', color: 'var(--danger-strong)', border: '1px solid var(--danger-border)' }}
-                  onClick={async () => {
-                    const ok = await ui.askConfirm(`حذف الطالب ${s.name}؟ لا يمكن التراجع عن حذف سجلاته من السيرفر.`, { danger: true, confirmLabel: 'حذف' })
-                    if (ok) ws.deleteStudent(s)
-                  }}
-                >🗑</button>
+                {archivedView ? (
+                  <button
+                    className="!min-h-0 rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold"
+                    style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
+                    onClick={() => ws.restoreStudents?.([s.id])}
+                    title={isArabic ? 'إرجاع الطالب لقوائم الحضور والتقارير' : 'Bring the student back to attendance and reports'}
+                  >↩ {isArabic ? 'استرجاع' : 'Restore'}</button>
+                ) : (
+                  <>
+                    <button
+                      className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                      style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
+                      onClick={() => sendWhatsApp(s, (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name))}
+                      title="WhatsApp"
+                    >✆</button>
+                    <button
+                      className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                      style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
+                      onClick={() => openStudentQR(s)}
+                      title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
+                    >QR</button>
+                    <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
+                    <button
+                      className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                      style={{ background: 'var(--danger-bg)', color: 'var(--danger-strong)', border: '1px solid var(--danger-border)' }}
+                      onClick={async () => {
+                        const ok = await ui.askConfirm(`حذف الطالب ${s.name}؟ لا يمكن التراجع عن حذف سجلاته من السيرفر.`, { danger: true, confirmLabel: 'حذف' })
+                        if (ok) ws.deleteStudent(s)
+                      }}
+                    >🗑</button>
+                  </>
+                )}
               </span>
             </div>
           )

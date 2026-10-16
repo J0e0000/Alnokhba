@@ -36,13 +36,17 @@ export default function HistoryArea() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ui.historyStudentId])
 
+  // Task 42: البحث التاريخي يشمل المؤرشفين كذلك — المدرس ممكن يدور على طالب
+  // قديم مؤرشف عشان يشوف سجله (مفيش قائمة المؤرشفين هنا — بحث بس).
+  const allPool = useMemo(() => [...ws.students, ...(ws.archivedStudents || [])], [ws.students, ws.archivedStudents])
+
   const matches = useMemo(() => {
     const q = normalizeArabicSearch(search)
     if (!q) return []
-    return ws.students.filter((s) => normalizeArabicSearch([s.name, s.code, s.phone].filter(Boolean).join(' ')).includes(q)).slice(0, 8)
-  }, [ws.students, search])
+    return allPool.filter((s) => normalizeArabicSearch([s.name, s.code, s.phone].filter(Boolean).join(' ')).includes(q)).slice(0, 8)
+  }, [allPool, search])
 
-  const student = ws.students.find((s) => s.id === selectedId) || null
+  const student = allPool.find((s) => s.id === selectedId) || null
 
   useEffect(() => {
     let alive = true
@@ -81,7 +85,9 @@ export default function HistoryArea() {
                 <b className="truncate">{s.name}</b>
                 <small>{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.phone ? ` · ${s.phone}` : ''}</small>
               </span>
-              <span className="nk-pill nk-pill-gold">{getStudentRank(s.points || 0, ws.ranks)}</span>
+              {s.archived
+                ? <span className="nk-pill nk-pill-neutral">📦 {isArabic ? 'مؤرشف' : 'Archived'}</span>
+                : <span className="nk-pill nk-pill-gold">{getStudentRank(s.points || 0, ws.ranks)}</span>}
             </button>
           ))}
           {search && matches.length === 0 && <p className="text-center py-6 text-sm text-fg-muted">{isArabic ? 'لا نتائج' : 'No results'}</p>}

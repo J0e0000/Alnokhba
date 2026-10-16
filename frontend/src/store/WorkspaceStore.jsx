@@ -101,6 +101,7 @@ export function WorkspaceProvider({ children }) {
   // render-scoped variable (refs are synced during every render).
   const studentsRef = useRef(students); studentsRef.current = students
   const lessonSessionsRef = useRef(lessonSessions); lessonSessionsRef.current = lessonSessions
+  const allAttendanceRef = useRef(allAttendance); allAttendanceRef.current = allAttendance
   const lessonAttendanceRef = useRef(lessonAttendanceByStudent); lessonAttendanceRef.current = lessonAttendanceByStudent
   const savingIdsRef = useRef(savingIds); savingIdsRef.current = savingIds
   const settingsRef = useRef(settings); settingsRef.current = settings
@@ -114,6 +115,158 @@ export function WorkspaceProvider({ children }) {
   const examScoresByStudentRef = useRef(examScoresByStudent); examScoresByStudentRef.current = examScoresByStudent
   const standaloneExamsRef = useRef(standaloneExams); standaloneExamsRef.current = standaloneExams
   const standaloneExamScoresRef = useRef(standaloneExamScores); standaloneExamScoresRef.current = standaloneExamScores
+
+  // ════════════════════ AUTO-ARCHIVE (Task 42 — أرشفة الغايبين) ════════════════════
+  // "خلي النظام نفسه يشوف مين غايب عن آخر حصتين ويأرشفه — مش بس يبدأ من
+  //  الحصص الجاية". القاعدة: آخر حصتين «اتعملت» للمجموعة (مكتملة أو تاريخها
+  //  فات — الحصص الجاية لا تُحسب أبدًا) — الطالب المعلّم «غائب» في الاتنين
+  //  بيترشح تلقائيًا للأرشفة. يختفي من القوائم النشطة (حضور، درجات، تقارير)
+  //  وسجله كله محفوظ، والاسترجاع بضغطة واحدة.
+  //  بيشتغل رجعيًا بطبيعته: أول تشغيل بعد الترحيل بيفحص الحصص اللي فاتت
+  //  فعلًا — فمش محتاج backfill ولا بداية من النهارده.
+  //  حماية ضد الحلقة المفرغة (الأرشفة «بتاكل الأدلة»): auto_archive_marker —
+  //  نفس الحصتين اللي خلّت الطالب يتأرشف (أو اترجع) ما تترشحش تاني؛ القاعدة
+  //  تنظر لحصتين جداد اتحملتا بعد الـ marker بس.
+  //  ولو أعمدة الترحيل 053 مش موجودة (حساب قديم قبل الترحيل) المحرك
+  //  بيتعطل بصمت بدل ما يزعج بأخطاء.
+  //  ملاحظة الترتيب: الكتلة دي قبل loadAll عشان يستخدمها في deps (TDZ).
+  const autoArchiveCtlRef = useRef({ busy: false, disabled: false })
+
+  // استرجاع طالب/طلاب مؤرشفين — marker يتحدث لـ الآن فالأدلة القديمة
+  // (الحصتين اللي فاتوا) تتاكل ومفيش إعادة أرشفة غير بحصتين جديدتين بعدها.
+  const restoreStudents = useCallback(async (ids, opts = {}) => {
+    const clean = (ids || []).filter(Boolean)
+    if (!clean.length) return { ok: 0 }
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('students')
+      .update({ archived: false, archived_at: null, archived_reason: null, auto_archive_marker: now })
+      .in('id', clean)
+    if (error) {
+      if (!opts?.silent) showToast(isArabicRef.current ? 'تعذر الاسترجاع — حاول تاني.' : 'Restore failed — try again.', 'error')
+      return { ok: 0, error }
+    }
+    setStudents((prev) => prev.map((row) => (clean.includes(row.id)
+      ? { ...row, archived: false, archived_at: null, archived_reason: null, auto_archive_marker: now }
+      : row)))
+    if (!opts?.silent) {
+      const restored = studentsRef.current.filter((s) => clean.includes(s.id))
+      const label = restored.length > 1 ? `${restored.length} طلاب` : (restored[0]?.name || 'الطالب')
+      showToast(isArabicRef.current
+        ? `تم استرجاع ${label} — الأرشفة التلقائية مش هتشيله تاني غير بغيابين في حصتين جداد.`
+        : `${label} restored — auto-archive needs 2 fresh absences to apply again.`, 'success')
+    }
+    return { ok: clean.length }
+  }, [showToast])
+
+  // المحرك نفسه — snapshot اختياري (loadAll يمرر الداتا الطازة مباشرة
+  // بدل ما يستنى setState). يقرأ refs في وضع التشغيل العادي.
+  const runAutoArchiveCheck = useCallback(async (snapshot = {}) => {
+    const ctl = autoArchiveCtlRef.current
+    if (ctl.busy || ctl.disabled) return
+    const all = snapshot.students || studentsRef.current || []
+    const sessions = snapshot.sessions || lessonSessionsRef.current || []
+    const attendance = snapshot.attendance || allAttendanceRef.current || []
+    if (!all.length || !sessions.length) return
+    // تاريخ محلي (مش UTC): قواعد «فات تاريخه» لازم تتحسب بتوقيت القاهرة —
+    // بعد منتصف الليل بيغير UTC التاريخ ويصنّف حصص الأمبارح غلط.
+    const _now = new Date()
+    const today = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`
+
+    // 1) آخر حصتين «اتعملت» لكل مجموعة — مكتملة أو تاريخها فات.
+    //    حصة النهارده لسه مفتوحة = مش محسوبة (المدرس ممكن يعدّل لحد ما ينهيها).
+    const heldByGroup = new Map()
+    for (const l of sessions) {
+      if (!l?.group_name) continue
+      const held = l.status === 'completed' || (l.session_date && l.session_date < today)
+      if (!held) continue
+      if (!heldByGroup.has(l.group_name)) heldByGroup.set(l.group_name, [])
+      heldByGroup.get(l.group_name).push(l)
+    }
+    const last2ByGroup = new Map()
+    for (const [group, list] of heldByGroup) {
+      if (list.length < 2) continue
+      const sorted = [...list].sort((a, b) => String(b.session_date || '').localeCompare(String(a.session_date || '')))
+      last2ByGroup.set(group, sorted.slice(0, 2))
+    }
+
+    // 2) فهرس حضور الطالب لكل حصة — آخر رصد هو اللي يتحسب. الـ allAttendance
+    //    مرتب نازل بالأحدث وفيه صفوف قديمة+جديدة لنفس (طالب، حصة) بعد تغيير
+    //    الرصد — فبنختار الأحدث recorded_at صراحةً بدل الاعتماد على ترتيب الحلقة.
+    const attByStudent = new Map()
+    for (const r of attendance) {
+      if (!r?.student_id || !r?.lesson_session_id) continue
+      if (!attByStudent.has(r.student_id)) attByStudent.set(r.student_id, new Map())
+      const m = attByStudent.get(r.student_id)
+      const cur = m.get(r.lesson_session_id)
+      if (!cur || String(r.recorded_at || '') > String(cur.recorded_at || '')) m.set(r.lesson_session_id, r)
+    }
+
+    // 3) الترشيح: غائب صراحةً في الحصتين الاتنين
+    const candidates = []
+    for (const s of all) {
+      if (s.archived || !s.group_name) continue
+      const pair = last2ByGroup.get(s.group_name)
+      if (!pair) continue
+      const recs = attByStudent.get(s.id)
+      if (!recs) continue
+      if (!pair.every((l) => recs.get(l.id)?.status === 'غائب')) continue
+      // الأرشفة «بتاكل الأدلة»: بعد آخر أرشفة/استرجاع (auto_archive_marker)
+      // نفس الحصتين القديمة ما تترشحش تاني — لازم حصتين اتحملتا بعد الـ marker.
+      // (بدلها كان الحضور بعد الاسترجاع يعيد تسليح القاعدة ويأرشف الطالب
+      //  الراجع فورًا رغم إنه حاضر في الشاشة — باغ لوجيكي حقيقي اتصلح هنا).
+      if (s.auto_archive_marker) {
+        const markerDay = String(s.auto_archive_marker).slice(0, 10)
+        if (pair.every((l) => String(l.session_date || '') < markerDay)) continue
+      }
+      candidates.push(s)
+    }
+    if (!candidates.length) return
+
+    ctl.busy = true
+    const now = new Date().toISOString()
+    const reason = 'غياب عن آخر حصتين للمجموعة (أرشفة تلقائية)'
+    const archivedNow = []
+    for (const s of candidates) {
+      const { error } = await supabase.from('students').update({
+        archived: true, archived_at: now, archived_reason: reason, auto_archive_marker: now,
+      }).eq('id', s.id)
+      if (error) {
+        // أعمدة الترحيل ناقصة على الحساب ده → عطّل المحرك هدوءًا (مفيش سبام أخطاء)
+        if (/archived|auto_archive|column|PGRST204|42703/i.test(error.message || '')) ctl.disabled = true
+        break
+      }
+      archivedNow.push(s)
+    }
+    if (archivedNow.length) {
+      setStudents((prev) => prev.map((row) => {
+        const hit = archivedNow.find((s) => s.id === row.id)
+        return hit ? { ...row, archived: true, archived_at: now, archived_reason: reason, auto_archive_marker: now } : row
+      }))
+      const names = archivedNow.map((s) => s.name).join('، ')
+      showToast(
+        isArabicRef.current
+          ? `تم أرشفة ${names} تلقائيًا — غايب عن آخر حصتين للمجموعة. بيقدروا يترجعوا من تبويب «المؤرشفين» في صفحة الطلاب أو شريط «المؤرشفون» في شاشة الحصة.`
+          : `Auto-archived (absent from the group's last 2 lectures): ${names}. Restore them from the Students page.`,
+        'info', 10000,
+        {
+          label: isArabicRef.current ? '↩ استرجاع' : '↩ Restore',
+          onClick: () => { restoreStudents(archivedNow.map((s) => s.id), { silent: true }) },
+        },
+      )
+    }
+    ctl.busy = false
+  }, [showToast, restoreStudents])
+
+  // مشغّل مؤجل: أي تغيير في الحضور/الحصص/الطلاب (حتى من realtime) يعيد
+  // التقييم — وده اللي بيخلي الأرشفة تشتغل لحظة إنهاء حصة، مش بس عند التحديث.
+  const autoArchiveTimerRef = useRef(null)
+  useEffect(() => {
+    if (loading) return
+    if (autoArchiveTimerRef.current) clearTimeout(autoArchiveTimerRef.current)
+    autoArchiveTimerRef.current = setTimeout(() => { runAutoArchiveCheck() }, 1500)
+    return () => { if (autoArchiveTimerRef.current) clearTimeout(autoArchiveTimerRef.current) }
+  }, [allAttendance, lessonSessions, students, loading, runAutoArchiveCheck])
+  useEffect(() => () => { if (autoArchiveTimerRef.current) clearTimeout(autoArchiveTimerRef.current) }, [])
 
   const flashSaved = useCallback((id) => {
     setSavedIds((p) => new Set([...p, id]))
@@ -183,11 +336,14 @@ export function WorkspaceProvider({ children }) {
         const latestOpen = loaded.find((lesson) => lesson.status === 'open' && lesson.session_date === today)
         return latestOpen?.id || ''
       })
+      // الأرشفة التلقائية تشتغل على الداتا الطازة مباشرة (رجعيًا: بتفحص الحصص
+      // اللي فاتت فعلًا من أول تشغيل — مش من الحصص الجاية بس)
+      runAutoArchiveCheck({ students: st, sessions: loaded, attendance })
     } catch (err) {
       console.error('Failed to load data:', err)
       showToast(isArabicRef.current ? 'فشل تحميل البيانات' : 'Failed to load data', 'error')
     } finally { setLoading(false) }
-  }, [showToast, effectiveTeacherId])
+  }, [showToast, effectiveTeacherId, runAutoArchiveCheck])
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -462,7 +618,9 @@ export function WorkspaceProvider({ children }) {
       cache.map = new Map()
     }
     if (cache.map.has(groupName)) return cache.map.get(groupName)
-    const result = studentsRef.current.filter((s) => s.group_name === groupName).map((s) => ({
+    // المؤرشفون خارج مسار العمل اليومي (حضور/درجات/تقارير) — سجلاتهم كاملة،
+    // والاسترجاع من صفحة الطلاب أو شريط «المؤرشفون» هنا في تاب الحضور.
+    const result = studentsRef.current.filter((s) => s.group_name === groupName && !s.archived).map((s) => ({
       ...s,
       attendance_status: activeLessonIdRef.current ? (lessonAttendanceRef.current[s.id]?.status || 'لم يرصد') : s.attendance_status,
       hw_status: activeLessonIdRef.current ? (lessonAttendanceRef.current[s.id]?.homework_status || 'لم يرصد') : s.hw_status,
@@ -1590,6 +1748,13 @@ export function WorkspaceProvider({ children }) {
   // (all actions read refs, so they stay correct while frozen), and the
   // save-feedback state lives in a separate MetaCtx consumed only by the
   // small indicator components.
+  // ── التقسيم النشط/المؤرشف (Task 42): ws.students = النشطون فقط (كل مسار
+  // العمل اليومي بيشتغل عليه تلقائيًا)، ws.archivedStudents = المؤرشفون،
+  // ws.allStudents = الكل (للبحث التاريخي). الحالة الداخلية/الـ refs تفضل
+  // بالقائمة الكاملة عشان كل مواضع الحفظ الحالية تفضل شغالة زي ما هي.
+  const activeStudents = useMemo(() => students.filter((s) => !s.archived), [students])
+  const archivedStudents = useMemo(() => students.filter((s) => s.archived), [students])
+
   const metaValue = useMemo(() => ({
     savingIds, savedIds, isSaving, saveStatus, lastSavedAt,
     undoSnackbar, setUndoSnackbar, canRedo: canRedoState,
@@ -1597,8 +1762,8 @@ export function WorkspaceProvider({ children }) {
   }), [savingIds, savedIds, isSaving, saveStatus, lastSavedAt, undoSnackbar, canRedoState, queuePending, queueSyncing])
 
   const value = useMemo(() => ({
-    // server state
-    loading, students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
+    // server state — students هنا النشطون فقط (المؤرشفون في archivedStudents)
+    loading, students: activeStudents, archivedStudents, allStudents: students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
     standaloneExams, standaloneExamScores,
@@ -1607,7 +1772,7 @@ export function WorkspaceProvider({ children }) {
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
     openLessonForGroup, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
-    bulkAssignGroup, bulkDeleteStudents,
+    bulkAssignGroup, bulkDeleteStudents, restoreStudents,
     saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
     createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
@@ -1616,7 +1781,7 @@ export function WorkspaceProvider({ children }) {
     checkAcademicWarning: (sid) => checkAcademicWarning(examScoresByStudent[sid] || []),
     isArabic, t,
     isOnline,
-  }), [loading, students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
+  }), [loading, students, activeStudents, archivedStudents, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
     standaloneExams, standaloneExamScores,
