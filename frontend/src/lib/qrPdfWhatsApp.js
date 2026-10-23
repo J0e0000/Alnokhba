@@ -1386,7 +1386,7 @@ export async function generateLessonSummaryPDF(lesson, rows = [], students = [],
     const present = rows.filter((r) => r.status === 'حاضر')
     const absent = rows.filter((r) => r.status === 'غائب')
     const unmarked = rows.filter((r) => r.status !== 'حاضر' && r.status !== 'غائب')
-    const hwDone = rows.filter((r) => r.homework_status === 'تم' || r.homework_status === 'اكتمل').length
+    const hwDone = rows.filter((r) => r.homework_status === 'تم' || r.homework_status === 'مكتمل').length
 
     const container = document.createElement('div')
     container.setAttribute('dir', 'rtl')

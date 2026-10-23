@@ -43,12 +43,15 @@ const TEACHER_TABLES: Array<{ table: string; teacherCol: string | null }> = [
   { table: "attendance_records", teacherCol: "teacher_id" },
   { table: "behavior_logs", teacherCol: "teacher_id" },
   { table: "homework_tasks", teacherCol: "teacher_id" },
+  // TASK44 — per-student task completion (no teacher_id column → grouped via
+  // the parent task's teacher, same pattern as student_qr_tokens)
+  { table: "homework_task_status", teacherCol: null },
   { table: "student_payments", teacherCol: "teacher_id" },
   { table: "announcements", teacherCol: "teacher_id" },
   { table: "exams", teacherCol: "teacher_id" },
   { table: "exam_scores", teacherCol: "teacher_id" },
-  // migration 051 — الامتحانات المنفصلة (مصدّرة في كل نسخة احتياطية؛ الاستعادة
-  // لها تحتاج توسيع قائمة admin_restore_apply في SQL أولاً)
+  // migration 051 — الامتحانات المنفصلة (restorable since migration 055
+  // extended admin_restore_apply's allowlist to match this list)
   { table: "standalone_exams", teacherCol: "teacher_id" },
   { table: "standalone_exam_scores", teacherCol: "teacher_id" },
   { table: "student_notifications", teacherCol: "teacher_id" },
@@ -65,9 +68,10 @@ const TEACHER_TABLES: Array<{ table: string; teacherCol: string | null }> = [
 // Whitelist used by the restore path — MUST match admin_restore_apply in SQL.
 const RESTORE_TABLES = [
   "groups", "lesson_sessions", "students", "attendance_records", "behavior_logs",
-  "homework_tasks", "student_payments", "announcements", "exams", "exam_scores",
+  "homework_tasks", "homework_task_status", "student_payments", "announcements", "exams", "exam_scores",
   "student_notifications", "student_qr_tokens", "report_templates", "group_schedule",
   "session_logs", "feature_unlocks", "qb_questions", "qb_exams", "teacher_settings",
+  "standalone_exams", "standalone_exam_scores",
 ]
 
 const corsHeaders = {
@@ -159,13 +163,16 @@ async function collectAllData(service: ReturnType<typeof createClient>): Promise
   return { profiles, tableData, dbInfo, warnings }
 }
 
-function groupByTeacher(def: { table: string; teacherCol: string | null }, rows: Array<Record<string, unknown>>, studentTeacher: Map<string, string>) {
+function groupByTeacher(def: { table: string; teacherCol: string | null }, rows: Array<Record<string, unknown>>, studentTeacher: Map<string, string>, taskTeacher: Map<string, string>) {
   const map = new Map<string, Array<Record<string, unknown>>>()
   for (const row of rows) {
     let teacherId: string | null = null
     if (def.teacherCol) teacherId = (row[def.teacherCol] as string) ?? null
     else if (def.table === "student_qr_tokens") {
       teacherId = studentTeacher.get(String(row.student_id)) ?? null
+    } else if (def.table === "homework_task_status") {
+      // TASK44: completion rows carry task_id only — inherit the task's teacher
+      teacherId = taskTeacher.get(String(row.task_id)) ?? null
     }
     if (!teacherId) continue
     if (!map.has(teacherId)) map.set(teacherId, [])
@@ -181,9 +188,13 @@ function buildWorkbook(data: BackupData, backupId: string, backupType: string) {
   const studentTeacher = new Map<string, string>()
   for (const s of students) if (s.teacher_id) studentTeacher.set(String(s.id), String(s.teacher_id))
 
+  // TASK44: task → teacher map so homework_task_status rows group correctly
+  const taskTeacher = new Map<string, string>()
+  for (const t of tableData["homework_tasks"] ?? []) if (t.teacher_id) taskTeacher.set(String(t.id), String(t.teacher_id))
+
   const grouped = new Map<string, Map<string, Array<Record<string, unknown>>>>()
   for (const def of TEACHER_TABLES) {
-    grouped.set(def.table, groupByTeacher(def, tableData[def.table] ?? [], studentTeacher))
+    grouped.set(def.table, groupByTeacher(def, tableData[def.table] ?? [], studentTeacher, taskTeacher))
   }
 
   const recordsCount = Object.entries(tableData)

@@ -764,7 +764,10 @@ export function WorkspaceProvider({ children }) {
           await addToQueue({ method: 'rpc', rpcName: 'upsert_lesson_attendance', rpcArgs: { p_lesson_session_id: lessonId, p_student_id: id, p_status: status } })
         } else {
           await addToQueue({ table: 'students', method: 'update', data: { attendance_status: status, points: newPoints, updated_at: new Date().toISOString() }, match: { id } })
-          await addToQueue({ table: 'attendance_records', method: 'upsert', data: { teacher_id: effectiveTeacherId, student_id: id, status, homework_status: s.hw_status || 'لم يرصد' }, upsertOpts: { onConflict: 'teacher_id,student_id' } })
+          // TASK44: raw upsert with onConflict 'teacher_id,student_id' matched no
+          // unique index → replay always failed 42P10. The new RPC mirrors the
+          // online day path exactly (same lookup, same insert/update semantics).
+          await addToQueue({ method: 'rpc', rpcName: 'upsert_student_day_attendance', rpcArgs: { p_student_id: id, p_status: status, p_day: todayISO() } })
         }
         setSaveStatus('saved_locally')
       } else {
