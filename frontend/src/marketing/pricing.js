@@ -4,10 +4,14 @@
 // FAQ) reads from this file. NO price numbers are hard-coded anywhere else.
 //
 // Approved plan table (owner-approved, monthly, EGP):
-//   Starter     up to 300 students    1 branch              399 EGP
-//   Growth      up to 1,000 students  3 branches            799 EGP
-//   Pro         up to 3,000 students  unlimited (5+)        1,499 EGP
-//   Enterprise  3,000+ students       custom                custom quote
+//   Starter     up to 300 students    399 EGP
+//   Growth      up to 1,000 students  799 EGP
+//   Pro         up to 3,000 students  1,499 EGP
+//   Enterprise  3,000+ students       custom quote
+//
+// NOTE (audit 2026-10): multi-branch management is NOT implemented yet —
+// branch fields are labelled «قريبًا» everywhere and never used as the
+// sizing axis. The sizing axis is active students.
 //
 // Honest model rules (verified in code, do not violate):
 //  - No self-serve payment gateway exists → activation/renewal happens on
@@ -47,7 +51,7 @@ export const PLANS = [
     annualPrice: null, // لا توجد أسعار سنوية معتمدة — تتفق عليها على واتساب
     priceUnit: 'جنيه/شهر',
     studentLimit: 'حتى ٣٠٠ طالب نشط',
-    branchLimit: 'فرع واحد',
+    branchLimit: 'فرع واحد — قريبًا',
     highlighted: false,
     cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
     capabilities: [
@@ -67,7 +71,7 @@ export const PLANS = [
     annualPrice: null,
     priceUnit: 'جنيه/شهر',
     studentLimit: 'حتى ١٬٠٠٠ طالب نشط',
-    branchLimit: '٣ فروع',
+    branchLimit: '٣ فروع — قريبًا',
     highlighted: true, // الأكثر اختيارًا — التوازن بين السعر والقدرات لأغلب المراكز
     cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
     capabilities: [
@@ -75,7 +79,7 @@ export const PLANS = [
       'الامتحانات والدرجات بأقسامها',
       'فريق التحليل الأسبوعي',
       'إشعارات أولياء الأمور والطلاب',
-      '٣ فروع — ومساعدون بصلاحيات محددة',
+      'حسابات مساعدين لفريق الشغل',
     ],
   },
   {
@@ -87,12 +91,12 @@ export const PLANS = [
     annualPrice: null,
     priceUnit: 'جنيه/شهر',
     studentLimit: 'حتى ٣٬٠٠٠ طالب نشط',
-    branchLimit: 'فروع غير محدودة (٥+)',
+    branchLimit: 'فروع غير محدودة — قريبًا',
     highlighted: false,
     cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
     capabilities: [
       'كل قدرات Growth — حتى ٣٬٠٠٠ طالب',
-      'فروع غير محدودة تحت إدارة واحدة',
+      'امتحانات منفصلة بإرسال النتايج على واتساب',
       'قائمة الإرسال المحصّنة للواتساب',
       'تقارير موسّعة وسجل عمليات كامل',
       'دعم مباشر على واتساب',
@@ -112,7 +116,7 @@ export const PLANS = [
     cta: { label: 'كلمنا على واتساب', kind: 'whatsapp' },
     capabilities: [
       'كل قدرات Pro بلا حد عملي للطلاب',
-      'هيكل فروع متعدد بمساحات مشتركة للفريق',
+      'هيكل مخصص للسلاسل — حسابات منفصلة بعزل بيانات كامل',
       'إعداد وتفعيل بمساعدة مباشرة',
       'مرونة في البنية حسب حجم شغلك',
       'أولوية في الدعم على واتساب',

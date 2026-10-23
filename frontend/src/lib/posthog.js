@@ -40,6 +40,16 @@ export function initPostHog() {
       },
     })
     track('app_opened')
+    // Expose the client for the marketing track() bridge + drain the backlog
+    // of conversion events that fired before PostHog was idle-loaded.
+    try {
+      window.__nkPosthog = posthog
+      const backlog = window.__nkQueue
+      if (Array.isArray(backlog) && backlog.length) {
+        backlog.slice(-200).forEach((e) => { try { posthog.capture(e.event, e) } catch { /* ignore */ } })
+        window.__nkQueue = []
+      }
+    } catch { /* never break init */ }
   } catch { /* analytics must never break the app */ }
 }
 

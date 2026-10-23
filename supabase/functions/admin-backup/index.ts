@@ -18,7 +18,11 @@
 //     • All DB mutations go through security-definer RPCs that re-check authorization.
 //     • Backup files live in the PRIVATE `admin-backups` bucket; downloads require
 //       a signed URL minted here, only for admins.
-//     • NO passwords, hashes, tokens or keys are ever exported.
+//     • NO passwords, hashes or signing keys are ever exported. NOTE (audit
+//       2026-10): student_qr_tokens rows ARE exported INCLUDING the portal
+//       `token` value — required so student QR links survive a disaster
+//       restore (regenerating would break every printed QR). Exposure is
+//       bounded: PRIVATE bucket, admin-gated, signed 60-min URLs, audited.
 // ============================================================================
 
 import * as XLSX from "npm:xlsx@0.18.5"

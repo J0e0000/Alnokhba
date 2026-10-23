@@ -48,7 +48,13 @@ export const normalizeArabicSearch = (value) => String(value || '').toLowerCase(
   .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
   .replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/\s+/g, ' ').trim()
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+// تاريخ محلي (مش UTC) — نفس قاعدة محرك الأرشفة التلقائية: بعد منتصف الليل
+// بتوقيت القاهرة، toISOString() (UTC+0) بيزحّف التاريخ ليوم جديد قبل الأوان
+// (في نافذة 00:00–02:00) فيفتح/يلوّم الحصص بتاريخ «امبارح» غلط.
+const todayISO = () => {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+}
 
 export function WorkspaceProvider({ children }) {
   markRender('WorkspaceProvider')
@@ -1529,7 +1535,19 @@ export function WorkspaceProvider({ children }) {
       const next = [...prev]; next[idx] = { ...next[idx], score: value }
       return next
     })
-    if (!isOnline) { showToast(isArabic ? 'أنت غير متصل — الدرجة اتحفظت محليًا وستُزامن عند الاتصال' : 'Offline — score queued for sync', 'info'); return true }
+    if (!isOnline) {
+      // FIX (audit W1): كان التوست بيوعد بمزامنة الرصّة والميعاد كان بيرجع من غير
+      // ما يحطّ حاجة في الطابور — أي إعادة تحميل كانت بتمسح الدرجة. نفس مسار
+      // الحضور أوفلاين بالظبط: upsert مؤجّل بنفس مفتاح التعارض.
+      try {
+        await addToQueue({ table: 'standalone_exam_scores', method: 'upsert', data: { teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId, score: value }, upsertOpts: { onConflict: 'exam_id,student_id' } })
+        showToast(isArabic ? 'أنت غير متصل — الدرجة اتحفظت محليًا وستُزامن عند الاتصال' : 'Offline — score queued for sync', 'info')
+      } catch (qErr) {
+        console.error('Queue standalone score error:', qErr)
+        showToast(isArabic ? 'أنت غير متصل وتعذر حفظ الدرجة محليًا — حاول تاني عند رجوع النت' : 'Offline — could not queue the score, try again when online', 'error')
+      }
+      return true
+    }
     try {
       const { data, error } = await supabase.from('standalone_exam_scores').upsert(
         { teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId, score: value },

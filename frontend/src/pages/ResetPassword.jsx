@@ -12,7 +12,7 @@ export default function ResetPassword() {
   const submit = async (e) => {
     e.preventDefault()
     setError('')
-    if (password.length < 6) { setError('كلمة المرور لازم تكون 6 حروف/أرقام على الأقل.'); return }
+    if (password.length < 8) { setError('كلمة المرور لازم تكون 8 حروف/أرقام على الأقل — نفس شاشة إنشاء الحساب.'); return }
     if (password !== confirm) { setError('كلمتا المرور مش متطابقتين.'); return }
     setLoading(true)
     const { error } = await setNewPassword(password)

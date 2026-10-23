@@ -10,8 +10,8 @@ export const WA_NUMBER = '201014996636'
 export const WA_TEXT = encodeURIComponent('مرحبًا، أريد معرفة المزيد عن منصة النخبة')
 export const WHATSAPP_URL = `https://wa.me/${WA_NUMBER}?text=${WA_TEXT}`
 // Trial model (owner-approved): 14 days, full core product, no card. After the
-// trial the account is paused (not deleted) and data is kept 30 days.
-// Mirrors src/marketing/pricing.js TRIAL — keep both in sync.
+// trial the account is paused (not deleted) — data is preserved indefinitely;
+// renewal restores everything. Mirrors src/marketing/pricing.js TRIAL.
 export const TRIAL_DAYS = 14
 // Verified: signup needs email + password + name only — no card, no auto-billing.
 // Verified: renewal/activation happens over WhatsApp after payment confirmation
@@ -49,5 +49,16 @@ export function track(event, params = {}) {
     log.push(payload)
     if (log.length > 400) log.splice(0, log.length - 400)
     localStorage.setItem('nokhba_mkt_events', JSON.stringify(log))
+    // PostHog bridge (audit 2026-10): conversion-funnel events (trial_cta_click,
+    // signup_submit, whatsapp_click, pricing_plan_selected…) used to live ONLY
+    // in dataLayer/localStorage — invisible to product analytics. Forward to
+    // the app's PostHog client when it is loaded; queue a small backlog until
+    // lib/posthog.initPostHog drains it. Never throws.
+    if (window.__nkPosthog) {
+      window.__nkPosthog.capture(event, params)
+    } else {
+      window.__nkQueue = window.__nkQueue || []
+      if (window.__nkQueue.length < 200) window.__nkQueue.push(payload)
+    }
   } catch { /* tracking must never break the page */ }
 }

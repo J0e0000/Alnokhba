@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // PUBLIC PRICING PAGE — reads ONLY from ../pricing.js (single source of truth).
 // Honest model: 14-day full trial, no card, WhatsApp-based activation/renewal.
-// After the trial: account PAUSED (not deleted) + 30-day data retention.
+// After the trial: account PAUSED (not deleted) — data preserved indefinitely.
 // ═══════════════════════════════════════════════════════════════════════════
 import { useState } from 'react'
 import MarketingLayout, { SectionHead, TrialCta, WaCta, FaqList } from '../MarketingLayout.jsx'
@@ -10,8 +10,8 @@ import { PLANS, TRIAL, PRICING_NOTE, recommendPlan, formatPrice, fmtAr } from '.
 import { track, WHATSAPP_URL, SCREENS } from '../config.js'
 
 const PRICE_FAQS = [
-  ['إزاي بتحسبوا السعر؟', 'السعر باين جوّه كل باقة فوق: اشتراك شهري بالجنيه المصري بيتبع حجم مركزك — عدد الطلاب النشطين وعدد الفروع. السعر بيتأكد معك شخصيًا على واتساب قبل أي دفع، ومفيش تجديد تلقائي.'],
-  ['هل في تجربة مجانية؟', `أيوه — تجربة مجانية ${fmtAr(TRIAL.days)} يوم بكامل المميزات الأساسية (طلاب، حصص، حضور، واجبات، امتحانات، مصروفات، تقارير، تحليلات)، من غير بطاقة دفع ومن غير تجديد تلقائي. تعرف جرب المنصة على بيانات مركزك الحقيقية قبل أي قرار.`],
+  ['إزاي بتحسبوا السعر؟', 'السعر باين جوّه كل باقة فوق: اشتراك شهري بالجنيه المصري بيتبع حجم مركزك — عدد الطلاب النشطين. السعر بيتأكد معك شخصيًا على واتساب قبل أي دفع، ومفيش تجديد تلقائي.'],
+  ['هل في تجربة مجانية؟', `أيوه — تجربة مجانية ${fmtAr(TRIAL.days)} يوم بكامل المميزات الأساسية (طلاب، حصص، حضور، واجبات، امتحانات، تقارير، تحليلات)، من غير بطاقة دفع ومن غير تجديد تلقائي. تعرف جرب المنصة على بيانات مركزك الحقيقية قبل أي قرار. العُدّ بيبدأ من لحظة إنشاء الحساب — فعّل إيميلك بدري.`],
   ['هل محتاج بطاقة دفع؟', 'لا. إنشاء الحساب بيحتاج الاسم ورقم الواتساب والإيميل وكلمة مرور بس، ومفيش أي وسيلة دفع مرتبطة بالحساب. التفعيل والتجديد بيتم بعد تأكيدك على واتساب.'],
   ['إيه اللي بيحصل بعد انتهاء التجربة؟', `الحساب بيتوقف مؤقتًا — مش حذف. بياناتك تفضل محفوظة ومش بتتحذف تلقائيًا أبدًا، ولو قررت تكمل بتفعّل الباقة على واتساب وكل حاجة ترجع زي ما هي — وتقدر ترجع في أي وقت.`],
   ['أقدر أغيّر الباقة بعدين؟', 'أيوه — تقدر ترفع أو تنزّل باقتك في أي وقت حسب حجم مركزك، والتعديل بيتم على واتساب مباشرة.'],
@@ -41,6 +41,7 @@ function PlanCard({ plan }) {
         <div className="rounded-xl bg-white/5 px-3 py-2.5"><dt className="font-bold text-slate-400">الطلاب النشطون</dt><dd className="mt-0.5 font-black">{plan.studentLimit}</dd></div>
         <div className="rounded-xl bg-white/5 px-3 py-2.5"><dt className="font-bold text-slate-400">الفروع</dt><dd className="mt-0.5 font-black">{plan.branchLimit}</dd></div>
       </dl>
+      <p className="mt-3 text-[11px] leading-5 text-slate-500">إدارة الفروع المتعددة قيد التطوير (قريبًا) — حاليًا كل حساب بيدير كل مجموعات مركزك في مساحة واحدة بعزل بيانات كامل.</p>
       <ul className="mt-6 flex-1 space-y-3">
         {plan.capabilities.map((c) => (
           <li key={c} className="flex items-start gap-2.5 text-sm leading-6 text-slate-200">

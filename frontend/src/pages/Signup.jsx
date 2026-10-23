@@ -5,12 +5,13 @@ import { TRIAL, fmtAr } from '../marketing/pricing.js'
 
 // Trial facts rendered here come from the single pricing source of truth so
 // the signup page can never drift from /pricing (14 days, no card, paused
-// after the trial with 30-day retention — never "free forever").
+// after the trial the account is paused — never "free forever"). Data is
+// preserved indefinitely: expiry pauses access only, nothing auto-deletes.
 const TRIAL_FEATURES = [
   ['الطلاب والمجموعات', 'بطاقة لكل طالب وملف كامل بملاحظاته ودرجاته'],
   ['مسار الحصة', 'حضور بلمسة، تفاعل، وواجب بأحواله — والحفظ تلقائي'],
   ['الامتحانات والدرجات', 'درجات بأقسامها وتوزيع تلقائي على الطلاب'],
-  ['المصروفات والتسديدات', 'متابعة إيرادات كل مجموعة ومتأخرات كل طالب'],
+  ['الأرشفة التلقائية للغايبين', 'النظام نفسه بيرصد الغياب المتكرر ويأرشف — وتسترجع بألمسة واحدة'],
   ['تقارير واتساب', 'تقرير جاهز لأولياء الأمور بمراجعة قبل الإرسال'],
   ['فريق التحليل الأسبوعي', 'ملخص أسبوعي يقولك أنهي مجموعة محتاجة تدخلك'],
 ]

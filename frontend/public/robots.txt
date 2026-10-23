@@ -11,33 +11,41 @@ Disallow: /deploy/
 User-agent: GPTBot
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: OAI-SearchBot
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: ChatGPT-User
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: ClaudeBot
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: PerplexityBot
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: Google-Extended
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: Applebot-Extended
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 User-agent: CCBot
 Disallow: /?auth=
 Disallow: /qr/
+Disallow: /deploy/
 
 Sitemap: https://al-nokhbba.vercel.app/sitemap.xml

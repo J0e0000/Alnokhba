@@ -89,9 +89,9 @@ export default function Login({ onSwitchToSignup }) {
           ) : (
             <form onSubmit={handleForgotSubmit} className="space-y-4 mt-4">
               <div>
-                <label className="block text-sm text-fg-subtle mb-1">البريد الإلكتروني المسجّل</label>
+                <label htmlFor="forgot-email" className="block text-sm text-fg-subtle mb-1">البريد الإلكتروني المسجّل</label>
                 <input
-                  type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)}
+                  id="forgot-email" type="email" required value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)}
                   className="w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm focus:border-brand-gold outline-none"
                 />
               </div>
@@ -123,21 +123,21 @@ export default function Login({ onSwitchToSignup }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-fg-subtle mb-1">البريد الإلكتروني</label>
+            <label htmlFor="login-email" className="block text-sm text-fg-subtle mb-1">البريد الإلكتروني</label>
             <input
-              type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+              id="login-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
               className="w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm focus:border-brand-gold outline-none"
             />
           </div>
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="block text-sm text-fg-subtle">كلمة المرور</label>
+              <label htmlFor="login-password" className="block text-sm text-fg-subtle">كلمة المرور</label>
               <button type="button" onClick={() => { setForgotMode(true); setForgotEmail(email) }} className="text-brand-gold-hover hover:text-brand-gold-hover text-xs">
                 نسيت كلمة السر؟
               </button>
             </div>
             <input
-              type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+              id="login-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
               className="w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm focus:border-brand-gold outline-none"
             />
           </div>
@@ -150,7 +150,7 @@ export default function Login({ onSwitchToSignup }) {
             <span className="text-xs text-fg-subtle">خلّيني مسجّل دخول على الجهاز ده</span>
           </label>
 
-          {error && <p className="text-rose-400 text-xs">{error}</p>}
+          {error && <p className="text-rose-600 text-xs">{error}</p>}
 
           <button
             type="submit" disabled={loading || cooldown > 0}
