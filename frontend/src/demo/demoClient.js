@@ -19,7 +19,7 @@
 //     channel subscribes to (so realtime code paths are exercised in preview).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DB_KEY = 'alnokhba_demo_db_v4'
+const DB_KEY = 'alnokhba_demo_db_v5'
 const SESSION_KEY = 'alnokhba_demo_session_v1'
 
 export const DEMO_TEACHER_ID = 'a0000000-0000-4000-8000-00000000c0de'
@@ -178,6 +178,30 @@ function seed() {
   const homework_submissions = [
     { id: uid(), teacher_id: t, task_id: hwTask.id, student_id: students[0].id, answers: [1, 1], score: 10, max_score: 10, correct_count: 2, question_count: 2, submitted_at: iso(-60 * 20), updated_at: iso(-60 * 20) },
   ]
+  // امتحان أونلاين (057) — مؤقت سيرفر + محاولة واحدة لكل طالب + تسليم نموذجي
+  const oeExam = {
+    id: uid(), teacher_id: t, title: 'امتحان أونلاين — الوحدة الأولى',
+    instructions: 'اختار الإجابة الصحيحة — الوقت بيكمل حتى لو قفلت الصفحة.',
+    group_name: null, status: 'open',
+    opens_at: null, closes_at: iso(60 * 24 * 7),
+    duration_minutes: 15,
+    questions: [
+      { text: 'ما ناتج 12 × 3؟', choices: ['36', '34', '38', '30'], correct: 0, marks: 5 },
+      { text: 'أكبر كوكب في المجموعة الشمسية؟', choices: ['الأرض', 'المشتري', 'زحل'], correct: 1, marks: 5 },
+      { text: 'جمع 25 + 17؟', choices: ['41', '42', '43'], correct: 1, marks: 10 },
+    ],
+    shuffle_questions: false, max_score: 20, question_count: 3,
+    created_at: iso(-60 * 5), updated_at: iso(-60 * 5),
+  }
+  const oeAttempt = {
+    id: uid(), exam_id: oeExam.id, student_id: students[1].id, teacher_id: t,
+    status: 'submitted', started_at: iso(-60 * 4), deadline_at: iso(-60 * 4 + 15),
+    submitted_at: iso(-60 * 4 + 9), answers: [0, 1, 0], question_order: [0, 1, 2],
+    score: 10, max_score: 20, correct_count: 2, question_count: 3,
+    results: [true, true, false], updated_at: iso(-60 * 4 + 9),
+  }
+  const online_exams = [oeExam]
+  const online_exam_attempts = [oeAttempt]
   const behavior_logs = [
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'تسجيل الحضور: حاضر (+1 نقطة)', points_delta: 1, created_at: iso(-80) },
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'إجابة وتفاعل (+3 نقطة)', points_delta: 3, created_at: iso(-50) },
@@ -277,6 +301,7 @@ function seed() {
     workspace_branding: [branding], broadcast_messages: broadcasts,
     student_qr_tokens: [], student_notifications: [], teacher_notification_events: [],
     session_logs: [], homework_tasks, homework_task_status: [], announcements: [],
+    online_exams, online_exam_attempts,
     // EL NO5BA CENTERS
     centers: [{
       id: centerId, owner_id: t, name: 'مركز النخبة التعليمي', phone: '0223334444',
@@ -502,6 +527,42 @@ class Query {
 }
 
 // ── RPC implementations (mirror the SQL migrations) ─────────────────────────
+// ── Online exams (057) helpers — mirror migration 057 semantics ──
+function demoStudentFromToken(db, raw) {
+  const m = String(raw || '').match(/([a-z0-9]{20})/i)
+  const tok = m ? db.student_qr_tokens.find((x) => x.token === m[1].toLowerCase() && !x.revoked_at) : null
+  return tok ? db.students.find((s) => s.id === tok.student_id) : null
+}
+function demoGradeOnline(exam, attempt) {
+  const qs = Array.isArray(exam.questions) ? exam.questions : []
+  const order = Array.isArray(attempt.question_order) && attempt.question_order.length === qs.length ? attempt.question_order : qs.map((_, i) => i)
+  const answers = Array.isArray(attempt.answers) ? attempt.answers : []
+  let score = 0; let max = 0; let correct = 0
+  const results = qs.map((_, pos) => {
+    const q = qs[order[pos]] || qs[pos]
+    const marks = Math.max(Number(q.marks) || 1, 0)
+    max += marks
+    const choice = answers[pos] != null ? Number(answers[pos]) : null
+    const ok = choice != null && Number(q.correct) === choice
+    if (ok) { score += marks; correct += 1 }
+    return ok
+  })
+  return { score, max, correct, count: qs.length, results }
+}
+function demoExpireOnline(db, exam, a) {
+  const g = demoGradeOnline(exam, a)
+  const prev = { ...a }
+  a.status = 'expired'; a.submitted_at = iso(0); a.updated_at = iso(0)
+  a.score = g.score; a.max_score = g.max; a.correct_count = g.correct; a.question_count = g.count; a.results = g.results
+  emitEvent('online_exam_attempts', 'UPDATE', a, prev)
+  saveDb(db)
+  return { done: true, status: 'expired', score: a.score, max_score: a.max_score, correct_count: g.correct, question_count: g.count, results: g.results, submitted_at: a.submitted_at }
+}
+function demoSafeQuestions(exam, order) {
+  const qs = Array.isArray(exam.questions) ? exam.questions : []
+  const ord = Array.isArray(order) && order.length === qs.length ? order : qs.map((_, i) => i)
+  return ord.map((ri) => ({ text: qs[ri].text, choices: qs[ri].choices, marks: qs[ri].marks }))
+}
 function rpcCall(db, name, args) {
   const t = DEMO_TEACHER_ID
   const fail = (message) => ({ data: null, error: { message } })
@@ -915,6 +976,134 @@ function rpcCall(db, name, args) {
       }
       saveDb(db)
       return { data: { task_id: task.id, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: sub.submitted_at, results }, error: null }
+    }
+    // ═══ الامتحانات الأونلاين (057) — مؤقت سيرفر + حفظ تلقائي + تسليم ═══
+    case 'get_student_online_exams': {
+      const student = demoStudentFromToken(db, args.p_token)
+      if (!student) return fail('invalid_token')
+      // lazy-expire: أي محاولة جارية عدّى موعدها تتصحح من آخر حفظ
+      db.online_exam_attempts.forEach((a) => {
+        if (a.student_id === student.id && a.status === 'in_progress' && Date.now() >= new Date(a.deadline_at).getTime()) {
+          const exam = db.online_exams.find((e) => e.id === a.exam_id)
+          if (exam) demoExpireOnline(db, exam, a)
+        }
+      })
+      const exams = db.online_exams
+        .filter((e) => e.teacher_id === student.teacher_id
+          && (e.group_name == null || e.group_name === student.group_name)
+          && (e.status === 'open' || db.online_exam_attempts.some((a) => a.exam_id === e.id && a.student_id === student.id)))
+        .map((e) => {
+          const a = db.online_exam_attempts.find((x) => x.exam_id === e.id && x.student_id === student.id)
+          const available = e.status === 'open'
+            && (!e.opens_at || Date.now() >= new Date(e.opens_at).getTime())
+            && (!e.closes_at || Date.now() < new Date(e.closes_at).getTime())
+            && (!a || a.status === 'in_progress')
+          return {
+            id: e.id, title: e.title, instructions: e.instructions, status: e.status,
+            group_name: e.group_name, duration_minutes: e.duration_minutes,
+            max_score: e.max_score, question_count: e.question_count,
+            opens_at: e.opens_at, closes_at: e.closes_at, available,
+            my: a ? {
+              status: a.status, started_at: a.started_at, deadline_at: a.deadline_at,
+              submitted_at: a.submitted_at, score: a.score, max_score: a.max_score,
+              correct_count: a.correct_count, question_count: a.question_count,
+            } : null,
+          }
+        })
+      return { data: { server_now: iso(0), exams }, error: null }
+    }
+    case 'start_online_exam': {
+      const student = demoStudentFromToken(db, args.p_token)
+      if (!student) return fail('invalid_token')
+      const exam = db.online_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam || exam.teacher_id !== student.teacher_id) return fail('exam_not_found')
+      if (exam.group_name != null && exam.group_name !== student.group_name) return fail('not_for_your_group')
+      let a = db.online_exam_attempts.find((x) => x.exam_id === exam.id && x.student_id === student.id)
+      if (a && a.status !== 'in_progress') {
+        return { data: { done: true, status: a.status, score: a.score, max_score: a.max_score, correct_count: a.correct_count, question_count: a.question_count, results: a.results, submitted_at: a.submitted_at }, error: null }
+      }
+      if (a && Date.now() >= new Date(a.deadline_at).getTime()) {
+        return { data: demoExpireOnline(db, exam, a), error: null }
+      }
+      if (a) {
+        // استكمال — نفس الترتيب والإجابات المحفوظة
+        return { data: { resumed: true, attempt_id: a.id, deadline_at: a.deadline_at, server_now: iso(0), duration_minutes: exam.duration_minutes, order: a.question_order, answers: a.answers, questions: demoSafeQuestions(exam, a.question_order) }, error: null }
+      }
+      if (exam.status !== 'open'
+        || (exam.opens_at && Date.now() < new Date(exam.opens_at).getTime())
+        || (exam.closes_at && Date.now() >= new Date(exam.closes_at).getTime())) {
+        return fail('exam_not_open')
+      }
+      const order = exam.shuffle_questions
+        ? exam.questions.map((_, i) => i).sort(() => Math.random() - 0.5)
+        : exam.questions.map((_, i) => i)
+      a = {
+        id: uid(), exam_id: exam.id, student_id: student.id, teacher_id: student.teacher_id,
+        status: 'in_progress', started_at: iso(0), deadline_at: iso(exam.duration_minutes),
+        submitted_at: null, answers: exam.questions.map(() => null), question_order: order,
+        score: null, max_score: null, correct_count: null, question_count: exam.question_count,
+        results: null, updated_at: iso(0),
+      }
+      db.online_exam_attempts.push(a)
+      emitEvent('online_exam_attempts', 'INSERT', a, null)
+      saveDb(db)
+      return { data: { started: true, attempt_id: a.id, deadline_at: a.deadline_at, server_now: iso(0), duration_minutes: exam.duration_minutes, order, answers: a.answers, questions: demoSafeQuestions(exam, order) }, error: null }
+    }
+    case 'autosave_online_exam_answers': {
+      const student = demoStudentFromToken(db, args.p_token)
+      if (!student) return fail('invalid_token')
+      const exam = db.online_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam || exam.teacher_id !== student.teacher_id) return fail('exam_not_found')
+      const a = db.online_exam_attempts.find((x) => x.exam_id === exam.id && x.student_id === student.id)
+      if (!a) return fail('no_attempt')
+      if (a.status !== 'in_progress') return { data: { ok: false, closed: true, status: a.status }, error: null }
+      if (Date.now() >= new Date(a.deadline_at).getTime()) {
+        return { data: { ok: false, expired: true, ...demoExpireOnline(db, exam, a) }, error: null }
+      }
+      const answers = Array.isArray(args.p_answers) ? args.p_answers : null
+      if (!answers || answers.length > exam.questions.length) return fail('invalid_answers')
+      const badIdx = exam.questions.findIndex((_, i) => {
+        if (answers[i] == null) return false
+        const n = Number(answers[i])
+        return !Number.isInteger(n) || n < 0 || n >= (Array.isArray(exam.questions[i].choices) ? exam.questions[i].choices.length : 0)
+      })
+      if (badIdx >= 0) return fail('invalid_answers')
+      const prev = { ...a }
+      a.answers = answers; a.updated_at = iso(0)
+      emitEvent('online_exam_attempts', 'UPDATE', a, prev)
+      saveDb(db)
+      return { data: { ok: true, saved_at: iso(0) }, error: null }
+    }
+    case 'submit_online_exam': {
+      const student = demoStudentFromToken(db, args.p_token)
+      if (!student) return fail('invalid_token')
+      const exam = db.online_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam || exam.teacher_id !== student.teacher_id) return fail('exam_not_found')
+      const a = db.online_exam_attempts.find((x) => x.exam_id === exam.id && x.student_id === student.id)
+      if (!a) return fail('no_attempt')
+      if (a.status !== 'in_progress') {
+        return { data: { done: true, status: a.status, score: a.score, max_score: a.max_score, correct_count: a.correct_count, question_count: a.question_count, results: a.results, submitted_at: a.submitted_at }, error: null }
+      }
+      if (Date.now() > new Date(a.deadline_at).getTime() + 10000) {
+        // انتهى الوقت — التصحيح من آخر autosave على السيرفر
+        return { data: demoExpireOnline(db, exam, a), error: null }
+      }
+      const answers = Array.isArray(args.p_answers) ? args.p_answers : null
+      if (!answers || answers.length > exam.questions.length) return fail('invalid_answers')
+      const badIdx = exam.questions.findIndex((_, i) => {
+        if (answers[i] == null) return false
+        const n = Number(answers[i])
+        return !Number.isInteger(n) || n < 0 || n >= (Array.isArray(exam.questions[i].choices) ? exam.questions[i].choices.length : 0)
+      })
+      if (badIdx >= 0) return fail('invalid_answers')
+      a.answers = answers
+      const g = demoGradeOnline(exam, a)
+      const prev = { ...a }
+      a.status = 'submitted'; a.submitted_at = iso(0); a.updated_at = iso(0)
+      a.score = g.score; a.max_score = g.max; a.correct_count = g.correct; a.question_count = g.count; a.results = g.results
+      emitEvent('online_exam_attempts', 'UPDATE', a, prev)
+      saveDb(db)
+      return { data: { done: true, status: 'submitted', score: g.score, max_score: g.max, correct_count: g.correct, question_count: g.count, results: g.results, submitted_at: a.submitted_at }, error: null }
     }
     default:
       return { data: null, error: { message: `demo: RPC ${name} not implemented` } }

@@ -129,6 +129,14 @@ export default function HomePage() {
     const solved = (ws.homeworkSubmissions || []).filter((x) => x.task_id === task.id).length
     return { task, solved, pool: pool.length }
   }), [homeworkTasks, ws.students, ws.homeworkSubmissions])
+  // الامتحانات الأونلاين (057) — أحدث 3 امتحانات مع عدّاد المحاولات
+  const onlineExams = ws.onlineExams || []
+  const oeCards = useMemo(() => onlineExams.slice(0, 3).map((exam) => {
+    const pool = exam.group_name ? (ws.students || []).filter((s) => s.group_name === exam.group_name) : (ws.students || [])
+    const attempts = (ws.onlineExamAttempts || []).filter((x) => x.exam_id === exam.id)
+    const finished = attempts.filter((a) => a.status === 'submitted' || a.status === 'expired').length
+    return { exam, finished, started: attempts.length, pool: pool.length }
+  }), [onlineExams, ws.students, ws.onlineExamAttempts])
   const standaloneScores = ws.standaloneExamScores || []
   const examCards = useMemo(() => standaloneExams.slice(0, 4).map((exam) => {
     const graded = standaloneScores.filter((r) => r.exam_id === exam.id).length
@@ -415,6 +423,56 @@ export default function HomePage() {
                     </span>
                     <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
                       {ar ? 'عرض النتائج ←' : 'View →'}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ الامتحانات الأونلاين — مؤقت سيرفر + تصحيح تلقائي (057) ══ */}
+      {students.length > 0 && (
+        <div className="mt-7">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-3">
+            <h2 className="text-[.98rem] font-extrabold m-0">{ar ? 'الامتحانات الأونلاين' : 'Online exams'}</h2>
+            <button className="text-[.7rem] font-extrabold cursor-pointer bg-transparent border-0 p-0" style={{ color: 'var(--brand-gold)' }} onClick={() => ui.openOnlineExam({ examId: 'new' })}>
+              ＋ {ar ? 'إنشاء امتحان' : 'New exam'}
+            </button>
+          </div>
+          {oeCards.length === 0 ? (
+            <p className="text-[.74rem] text-fg-muted m-0">
+              {ar ? 'لا يوجد امتحانات أونلاين بعد — امتحان MCQ بمؤقت حقيقي يحسبه السيرفر، الطالب يحله من بوابة QR والتصحيح تلقائي.' : 'No online exams yet — timed MCQ exams with a server-computed timer, solved from the QR portal with auto-grading.'}
+            </p>
+          ) : (
+            <div className="grid gap-2.5">
+              {oeCards.map(({ exam, finished, started, pool }) => (
+                <button
+                  key={exam.id}
+                  className="nk-session-card"
+                  onClick={() => ui.openOnlineExam({ examId: exam.id })}
+                  aria-label={`${ar ? 'فتح الامتحان' : 'Open exam'} ${exam.title}`}
+                >
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className="nk-session-icon" aria-hidden="true">⏱</span>
+                    <span className="min-w-0">
+                      <b className="block text-[.88rem] truncate">{exam.title}</b>
+                      <small className="block text-[.7rem] text-fg-muted mt-1 truncate">
+                        {exam.group_name || (ar ? 'كل الطلاب' : 'All students')} · {ar ? 'المدة' : 'Duration'}: {exam.duration_minutes} {ar ? 'دقيقة' : 'min'} · {ar ? 'الإجمالي' : 'Total'}: {exam.max_score}
+                      </small>
+                      <span className="flex items-center gap-2 mt-1.5">
+                        <span className="nk-bar nk-bar--ok w-24"><span style={{ width: `${pool ? Math.round((finished / pool) * 100) : 0}%` }} /></span>
+                        <span className="text-[.64rem] text-fg-muted">{finished}/{pool} {ar ? 'سلّموا' : 'finished'}{started > finished ? ` · ${started - finished} ${ar ? 'جاري' : 'active'}` : ''}</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`nk-pill ${exam.status === 'open' ? 'nk-pill-live' : 'nk-pill-done'}`}>
+                      {exam.status === 'open' ? (ar ? '● مفتوح' : '● Open') : (exam.status === 'scheduled' ? (ar ? '⏱ مجدول' : '⏱ Scheduled') : (ar ? '✓ مغلق' : '✓ Closed'))}
+                    </span>
+                    <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
+                      {ar ? 'المراقبة ←' : 'Monitor →'}
                     </span>
                   </span>
                 </button>

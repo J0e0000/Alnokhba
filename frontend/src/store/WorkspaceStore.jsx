@@ -76,6 +76,9 @@ export function WorkspaceProvider({ children }) {
   const [standaloneExamAudit, setStandaloneExamAudit] = useState([])
   const [homeworkTasks, setHomeworkTasks] = useState([])
   const [homeworkSubmissions, setHomeworkSubmissions] = useState([])
+  // الامتحانات الأونلاين (057): مؤقت سيرفر-آثوريتيف + محاولة واحدة لكل طالب
+  const [onlineExams, setOnlineExams] = useState([])
+  const [onlineExamAttempts, setOnlineExamAttempts] = useState([])
 
   // ── session-scoped server state (shared across pipeline tabs) ─────────────
   const [activeLessonId, setActiveLessonId] = useState('')
@@ -121,6 +124,8 @@ export function WorkspaceProvider({ children }) {
   const standaloneExamScoresRef = useRef(standaloneExamScores); standaloneExamScoresRef.current = standaloneExamScores
   const homeworkTasksRef = useRef(homeworkTasks); homeworkTasksRef.current = homeworkTasks
   const homeworkSubmissionsRef = useRef(homeworkSubmissions); homeworkSubmissionsRef.current = homeworkSubmissions
+  const onlineExamsRef = useRef(onlineExams); onlineExamsRef.current = onlineExams
+  const onlineExamAttemptsRef = useRef(onlineExamAttempts); onlineExamAttemptsRef.current = onlineExamAttempts
 
   // ════════════════════ AUTO-ARCHIVE (Task 42 — أرشفة الغايبين) ════════════════════
   // "خلي النظام نفسه يشوف مين غايب عن آخر حصتين ويأرشفه — مش بس يبدأ من
@@ -306,7 +311,7 @@ export function WorkspaceProvider({ children }) {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
       const tid = effectiveTeacherId
       const empty = Promise.resolve({ data: [] })
-      const [stR, scoresR, logsR, attendanceR, lessonSessionsR, examsR, saExamsR, saScoresR, saAuditR, hwTasksR, hwSubsR] = await Promise.all(tid ? [
+      const [stR, scoresR, logsR, attendanceR, lessonSessionsR, examsR, saExamsR, saScoresR, saAuditR, hwTasksR, hwSubsR, oeR, oaR] = await Promise.all(tid ? [
         supabase.from('students').select('*').eq('teacher_id', tid).order('created_at'),
         supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
         supabase.from('behavior_logs').select('*').eq('teacher_id', tid).gte('created_at', todayStart.toISOString()).order('created_at'),
@@ -322,7 +327,9 @@ export function WorkspaceProvider({ children }) {
         supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(300),
         supabase.from('homework_tasks').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
         supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(1000),
-      ] : [empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty])
+        supabase.from('online_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
+        supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(2000),
+      ] : [empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty])
       const st = stR.data ?? []
       setStudents(st)
       const attendance = attendanceR.data ?? []
@@ -360,6 +367,8 @@ export function WorkspaceProvider({ children }) {
       setStandaloneExamAudit(saAuditR.data ?? [])
       setHomeworkTasks(hwTasksR.data ?? [])
       setHomeworkSubmissions(hwSubsR.data ?? [])
+      setOnlineExams(oeR.data ?? [])
+      setOnlineExamAttempts(oaR.data ?? [])
       setActiveLessonId((current) => {
         if (current && loaded.some((lesson) => lesson.id === current)) return current
         const today = todayISO()
@@ -1780,6 +1789,115 @@ export function WorkspaceProvider({ children }) {
     }
   }
 
+  // ════════════════════ الامتحانات الأونلاين (057) ════════════════════
+  // مؤقت سيرفر-آثوريتيتف: الـ deadline بيتحسب على السيرفر عند بدء المحاولة،
+  // والتصحيح سيرفر-آثوريتيتف في submit_online_exam. المدرس هنا: إنشاء/فتح/إغلاق/
+  // حذف + إعادة تعيين محاولة طالب (حذف الصف → الطالب يبدأ من الأول).
+  const refreshOnlineExams = useCallback(async () => {
+    const tid = teacherIdRef.current
+    if (!tid) return
+    const [eR, aR] = await Promise.all([
+      supabase.from('online_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
+      supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(2000),
+    ])
+    if (!eR.error) setOnlineExams(eR.data ?? [])
+    if (!aR.error) setOnlineExamAttempts(aR.data ?? [])
+  }, [])
+
+  const createOnlineExam = async ({ title, instructions, group_name, status, opens_at, closes_at, duration_minutes, questions, shuffle_questions }) => {
+    const isArabic = isArabicRef.current
+    const isOnline = isOnlineRef.current
+    if (!isOnline) { showToast(isArabic ? 'لا يوجد اتصال — تعذر إنشاء الامتحان' : 'No connection — could not create the exam', 'error'); return null }
+    if (isSavingRef.current) return null
+    setIsSaving(true)
+    try {
+      const clean = (questions || []).map((q) => ({
+        text: String(q.text || '').trim(),
+        choices: (q.choices || []).map((c) => String(c || '').trim()).filter(Boolean),
+        correct: Number(q.correct) || 0,
+        marks: Math.max(Number(q.marks) || 1, 0),
+      })).filter((q) => q.text && q.choices.length >= 2)
+      const { data, error } = await supabase.from('online_exams').insert({
+        teacher_id: teacherIdRef.current,
+        title: String(title || '').trim(),
+        instructions: String(instructions || '').trim() || null,
+        group_name: group_name || null,
+        status: status || 'open',
+        opens_at: opens_at || null,
+        closes_at: closes_at || null,
+        duration_minutes: Math.min(Math.max(Math.round(Number(duration_minutes) || 30), 1), 300),
+        questions: clean,
+        shuffle_questions: !!shuffle_questions,
+      }).select().single()
+      if (error) throw error
+      setOnlineExams((prev) => [data, ...prev])
+      showToast(isArabic ? `اتنشأ امتحان «${data.title}» (${data.question_count} سؤال)` : `Exam created (${data.question_count} questions)`, 'success')
+      return data
+    } catch (err) {
+      console.error('Create online exam error:', err)
+      const code = String(err?.message || '')
+      const msg = code.includes('attempts_in_progress')
+        ? (isArabic ? 'فيه محاولات جارية — ممنوع تعديل الأسئلة دلوقتي' : 'Attempts in progress — questions are locked')
+        : code.includes('invalid_questions') || code.includes('too_many_questions') || code.includes('title_required')
+          ? (isArabic ? 'بيانات الأسئلة غير صالحة' : 'Invalid question data')
+          : (isArabic ? 'تعذر إنشاء الامتحان' : 'Could not create the exam')
+      showToast(msg, 'error')
+      return null
+    } finally { setIsSaving(false) }
+  }
+
+  const setOnlineExamStatus = async (exam, status) => {
+    const isArabic = isArabicRef.current
+    const prev = exam
+    setOnlineExams((p) => p.map((e) => (e.id === exam.id ? { ...e, status } : e)))
+    try {
+      const { error } = await supabase.from('online_exams').update({ status }).eq('id', exam.id).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      return true
+    } catch (err) {
+      console.error('Online exam status error:', err)
+      setOnlineExams((p) => p.map((e) => (e.id === prev.id ? prev : e)))
+      showToast(isArabic ? 'تعذر تحديث حالة الامتحان' : 'Could not update the exam', 'error')
+      return false
+    }
+  }
+
+  const deleteOnlineExam = async (exam) => {
+    const isArabic = isArabicRef.current
+    const backup = exam
+    const backupAttempts = onlineExamAttemptsRef.current.filter((a) => a.exam_id === exam.id)
+    setOnlineExams((p) => p.filter((e) => e.id !== exam.id))
+    setOnlineExamAttempts((p) => p.filter((a) => a.exam_id !== exam.id))
+    try {
+      const { error } = await supabase.from('online_exams').delete().eq('id', exam.id).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      showToast(isArabic ? `اتحذف امتحان «${exam.title}»` : 'Exam deleted', 'success')
+      return true
+    } catch (err) {
+      console.error('Delete online exam error:', err)
+      setOnlineExams((p) => [backup, ...p])
+      setOnlineExamAttempts((p) => [...p, ...backupAttempts])
+      showToast(isArabic ? 'تعذر حذف الامتحان' : 'Could not delete the exam', 'error')
+      return false
+    }
+  }
+
+  const resetOnlineExamAttempt = async (attempt) => {
+    const isArabic = isArabicRef.current
+    const backup = attempt
+    setOnlineExamAttempts((p) => p.filter((a) => a.id !== attempt.id))
+    try {
+      const { error } = await supabase.from('online_exam_attempts').delete().eq('id', attempt.id).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      return true
+    } catch (err) {
+      console.error('Reset online exam attempt error:', err)
+      setOnlineExamAttempts((p) => [backup, ...p])
+      showToast(isArabic ? 'تعذر إعادة تعيين المحاولة' : 'Could not reset the attempt', 'error')
+      return false
+    }
+  }
+
   // ══════════════════════════ UNDO/REDO BRIDGE ════════════════════════════════
   const handleUndo = async () => {
     const result = await undoLast()
@@ -1942,7 +2060,7 @@ export function WorkspaceProvider({ children }) {
     loading, students: activeStudents, archivedStudents, allStudents: students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
-    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions,
+    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     // actions (stable — read refs internally)
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData, setActiveLessonId,
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
@@ -1952,6 +2070,7 @@ export function WorkspaceProvider({ children }) {
     saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
     createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams, ungradeStandaloneStudent,
     refreshHomework, createHomeworkTask, setHomeworkTaskStatus, deleteHomeworkTask,
+    refreshOnlineExams, createOnlineExam, setOnlineExamStatus, deleteOnlineExam, resetOnlineExamAttempt,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
     // derived helpers
     sessionStudentsFor, countsForLesson, showToast,
@@ -1961,7 +2080,7 @@ export function WorkspaceProvider({ children }) {
   }), [loading, students, activeStudents, archivedStudents, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
-    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions,
+    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,
     openLessonForGroup, finishLesson, markGroupAbsences, validateBulkRows,
     sessionStudentsFor, countsForLesson, showToast, isArabic, t, isOnline])

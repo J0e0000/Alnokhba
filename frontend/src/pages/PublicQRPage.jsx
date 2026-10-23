@@ -101,15 +101,20 @@ export default function PublicQRPage() {
       const tnCachePre = teacherNameCacheRef.current
       const tnCacheFreshPre = tnCachePre.name !== null && (Date.now() - tnCachePre.at) < TEACHER_NAME_TTL_MS
       const needTeacherName = !isBackgroundRefresh || reason === 'visible' || !tnCacheFreshPre
-      const [dataRes, accessRes, teacherNameRes, standaloneRes] = await Promise.all([
+      const [dataRes, accessRes, teacherNameRes, standaloneRes, onlineRes] = await Promise.all([
         supabase.rpc('get_student_portal_data', { p_token: token }),
         supabase.rpc('get_student_portal_access', { p_token: token }),
         needTeacherName ? supabase.rpc('get_portal_teacher_name', { p_token: token }) : Promise.resolve(null),
         // Standalone exam results (migration_052) — OPTIONAL like the other two:
         // if the RPC is missing (migration not run yet) the card just hides.
         supabase.rpc('get_student_standalone_exams', { p_token: token }),
+        // Online exams (migration_057) — OPTIONAL: list without questions
+        // (questions are only returned by start_online_exam when the timer starts).
+        supabase.rpc('get_student_online_exams', { p_token: token }),
       ])
       if (standaloneRes?.error) console.warn('[PublicQRPage] optional standalone-exams RPC failed:', standaloneRes.error.message || standaloneRes.error)
+      if (onlineRes?.error) console.warn('[PublicQRPage] optional online-exams RPC failed:', onlineRes.error.message || onlineRes.error)
+      const onlineResults = (!onlineRes?.error && onlineRes?.data) ? { serverNow: onlineRes.data.server_now, exams: asArray(onlineRes.data.exams) } : null
       const { data: payload, error } = dataRes
       if (error) {
         console.error('[PublicQRPage] RPC error:', error.message || error, 'code:', error.code)
@@ -323,6 +328,7 @@ export default function PublicQRPage() {
         homework,
         examResults,
         standaloneExams: standaloneResults,
+        onlineExams: onlineResults,
         streak,
         tokenSource: payload.token_source || 'db',
         accessStatus,
@@ -558,6 +564,122 @@ export default function PublicQRPage() {
   const [taskBusy, setTaskBusy] = useState(false)
   const [taskResult, setTaskResult] = useState({}) // taskId → submit RPC result
 
+  // ── الامتحان الأونلاين (057): مؤقت سيرفر + حفظ تلقائي + تسليم ──
+  // oeActive = { examId, attemptId, questions, answers, deadlineAt, offsetMs, busy, submitting, result }
+  // offsetMs = server_now − client_now لحظة البدء → العدّاد دايمًا على ساعة السيرفر.
+  const [oeActive, setOeActive] = useState(null)
+  const [oeBusy, setOeBusy] = useState(false)
+  const oeSaveTimerRef = useRef(null)
+  const oeActiveRef = useRef(null)
+  oeActiveRef.current = oeActive
+
+  const startOnlineExam = async (exam) => {
+    if (!tokenRef.current || oeBusy) return
+    setOeBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('start_online_exam', { p_token: tokenRef.current, p_exam_id: exam.id })
+      if (error) {
+        console.warn('[PublicQRPage] start_online_exam failed:', error.message)
+        const msg = /exam_not_open/i.test(error.message) ? 'الامتحان مقفول أو مش فات وقته.'
+          : /not_for_your_group/i.test(error.message) ? 'الامتحان ده لمجموعة تانية.'
+          : 'تعذر بدء الامتحان — تواصل مع المستر.'
+        window.alert(msg)
+        return
+      }
+      if (data?.done) {
+        // محاولة منتهية → النتيجة فقط (بدون إعادة)
+        setOeActive({
+          examId: exam.id, title: exam.title, result: data, questions: [], answers: [],
+          deadlineAt: null, offsetMs: 0,
+        })
+        // echo محلي: حدّث my.status حتى يختفي زر «ابدأ» فورًا
+        setPortal((prev) => prev?.onlineExams ? {
+          ...prev,
+          onlineExams: {
+            ...prev.onlineExams,
+            exams: prev.onlineExams.exams.map((e) => e.id === exam.id
+              ? { ...e, my: { status: data.status, score: data.score, max_score: data.max_score, correct_count: data.correct_count, question_count: data.question_count, submitted_at: data.submitted_at } }
+              : e),
+          },
+        } : prev)
+        return
+      }
+      const questions = Array.isArray(data.questions) ? data.questions : []
+      const saved = Array.isArray(data.answers) ? data.answers : []
+      const answers = questions.map((_, i) => (Number.isInteger(saved[i]) ? saved[i] : null))
+      const offsetMs = data.server_now ? (new Date(data.server_now).getTime() - Date.now()) : 0
+      setOeActive({
+        examId: exam.id, attemptId: data.attempt_id, title: exam.title, instructions: exam.instructions,
+        questions, answers, deadlineAt: new Date(data.deadline_at).getTime(), offsetMs,
+        durationMinutes: data.duration_minutes, result: null,
+      })
+    } finally { setOeBusy(false) }
+  }
+
+  const setOeAnswer = useCallback((qIdx, choiceIdx) => {
+    setOeActive((prev) => {
+      if (!prev) return prev
+      const answers = [...prev.answers]
+      answers[qIdx] = choiceIdx
+      return { ...prev, answers }
+    })
+  }, [])
+
+  // حفظ تلقائي كل 10 ثواني أثناء الامتحان — والسيرفر بيرفض بعد الوقت بهدوء
+  useEffect(() => {
+    if (!oeActive || !oeActive.attemptId || oeActive.result) return
+    oeSaveTimerRef.current = setInterval(async () => {
+      const cur = oeActiveRef.current
+      if (!cur?.attemptId || cur.result || !tokenRef.current) return
+      try {
+        await supabase.rpc('autosave_online_exam_answers', {
+          p_token: tokenRef.current, p_exam_id: cur.examId, p_answers: cur.answers,
+        })
+      } catch { /* silent — الشبكة ترجع يكمل */ }
+    }, 10000)
+    return () => clearInterval(oeSaveTimerRef.current)
+  }, [oeActive?.attemptId, oeActive?.result])
+
+  const submitOnlineExam = useCallback(async () => {
+    const cur = oeActiveRef.current
+    if (!cur || cur.submitting || !tokenRef.current) return
+    setOeActive((p) => ({ ...p, submitting: true }))
+    try {
+      const { data, error } = await supabase.rpc('submit_online_exam', {
+        p_token: tokenRef.current, p_exam_id: cur.examId, p_answers: cur.answers,
+      })
+      if (error) {
+        console.warn('[PublicQRPage] submit_online_exam failed:', error.message)
+        window.alert('تعذر تسليم الامتحان — جرّب تاني أو تواصل مع المستر.')
+        setOeActive((p) => ({ ...p, submitting: false }))
+        return
+      }
+      setOeActive((p) => ({ ...p, result: data, submitting: false }))
+      // echo محلي في القائمة
+      setPortal((prev) => prev?.onlineExams ? {
+        ...prev,
+        onlineExams: {
+          ...prev.onlineExams,
+          exams: prev.onlineExams.exams.map((e) => e.id === cur.examId
+            ? { ...e, my: { status: data.status || 'submitted', score: data.score, max_score: data.max_score, correct_count: data.correct_count, question_count: data.question_count, submitted_at: data.submitted_at } }
+            : e),
+        },
+      } : prev)
+    } catch (err) {
+      console.warn('[PublicQRPage] submit_online_exam threw:', err)
+      setOeActive((p) => ({ ...p, submitting: false }))
+    }
+  }, [])
+
+  // عدّاد الوقت — لما يوصل صفر يتسلّم لوحده (السيرفر بيحسم بالنهاية)
+  const oeRemainingMs = oeActive?.deadlineAt ? (oeActive.deadlineAt - (Date.now() + oeActive.offsetMs)) : null
+  useEffect(() => {
+    if (oeRemainingMs == null || oeRemainingMs > 0 || oeActive?.result) return
+    if (oeActive?.attemptId) submitOnlineExam()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oeRemainingMs])
+
+
   const setTaskAnswer = (taskId, qIdx, choiceIdx) => {
     setTaskAnswers((prev) => {
       const cur = Array.isArray(prev[taskId]) ? [...prev[taskId]] : []
@@ -686,7 +808,7 @@ export default function PublicQRPage() {
       </Shell>
     )
   }
-  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, standaloneExams, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
+  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, standaloneExams, onlineExams, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
   const rank = getStudentRank(student.points, ranks)
   const lessonTimeline = buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance)
 
@@ -809,6 +931,44 @@ export default function PublicQRPage() {
           </div>
         ))}
       </SectionCard>
+
+      {/* Online exams (057) — مؤقت سيرفر + تصحيح تلقائي؛ الأسئلة تظهر فقط عند البدء */}
+      {(onlineExams?.exams || []).length > 0 && (
+        <SectionCard title="الامتحانات الأونلاين">
+          {(onlineExams.exams).map((e) => {
+            const my = e.my
+            const done = my && my.status !== 'in_progress'
+            const active = my && my.status === 'in_progress'
+            return (
+              <div key={e.id} style={feedItem}>
+                <p style={feedTitle}>{e.title}</p>
+                <p style={feedDate}>
+                  {e.question_count} سؤال · {e.duration_minutes} دقيقة · الإجمالي {Number(e.max_score)}
+                  {e.instructions ? ` — ${e.instructions}` : ''}
+                </p>
+                {done && my.score != null && (
+                  <p style={{ fontSize: '12px', fontWeight: 800, color: NAVY, margin: '4px 0 0 0' }}>
+                    نتيجتك: {Number(my.score)} / {Number(my.max_score)} ({my.correct_count}/{my.question_count} صحيحة){my.status === 'expired' ? ' — انتهى الوقت واتصححت إجاباتك المحفوظة' : ''}
+                  </p>
+                )}
+                {active && (
+                  <p style={{ fontSize: '12px', fontWeight: 800, color: GOLD, margin: '4px 0 0 0' }}>
+                    ⏱ عندك امتحان شغال — الوقت بيكمل حتى لو قفلت الصفحة
+                  </p>
+                )}
+                {!done && e.available && (
+                  <button style={{ ...goldBtn, marginTop: 8 }} disabled={oeBusy} onClick={() => startOnlineExam(e)}>
+                    {active ? '▶ استكمال الامتحان' : `▶ ابدأ الامتحان (${e.duration_minutes} دقيقة)`}
+                  </button>
+                )}
+                {!done && !e.available && (
+                  <p style={feedDate}>الامتحان مقفول حاليًا</p>
+                )}
+              </div>
+            )
+          })}
+        </SectionCard>
+      )}
 
       {/* Homework — legacy checkbox tasks + interactive MCQ tasks (056) */}
       <SectionCard title="الواجبات">
@@ -983,6 +1143,20 @@ export default function PublicQRPage() {
       </div>
 
       {/* Portal notifications are shown in the in-portal notifications section above. */}
+
+      {/* Online exam player overlay (057) — server-deadline countdown */}
+      {oeActive && (
+        <OnlineExamPlayer
+          state={oeActive}
+          onClose={() => {
+            if (oeActive.result || window.confirm('لو خرجت دلوقتي الوقت بيكمل وإجاباتك المحفوظة بتفضل — تخرج؟')) {
+              setOeActive(null)
+            }
+          }}
+          onPick={setOeAnswer}
+          onSubmit={submitOnlineExam}
+        />
+      )}
 
       <p style={footerText}>Powered by النخبة</p>
     </Shell>
@@ -1187,6 +1361,107 @@ function InfoLine({ label, value }) {
 
 function EmptyLine({ text }) {
   return <p style={emptyText}>{text}</p>
+}
+
+// ── مشغّل الامتحان الأونلاين (057): مؤقت سيرفر + حفظ تلقائي + تسليم ──
+function OnlineExamPlayer({ state, onClose, onPick, onSubmit }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick((v) => v + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  if (!state) return null
+  const { title, instructions, questions, answers, deadlineAt, offsetMs, result, submitting } = state
+  const remaining = deadlineAt ? (deadlineAt - (Date.now() + offsetMs)) : null
+  const totalSec = remaining != null ? Math.max(0, Math.floor(remaining / 1000)) : null
+  const mm = totalSec != null ? Math.floor(totalSec / 60) : null
+  const ss = totalSec != null ? totalSec % 60 : null
+  const timerColor = totalSec == null ? NAVY : (totalSec > 300 ? NAVY : totalSec > 60 ? GOLD : '#DC2626')
+  const answered = (questions || []).filter((_, i) => answers?.[i] != null).length
+  const results = Array.isArray(result?.results) ? result.results : null
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(2,6,23,0.6)', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ background: '#F8FAFC', width: '100%', maxWidth: 560, overflowY: 'auto', direction: 'rtl', display: 'flex', flexDirection: 'column' }}>
+        {/* رأس ثابت: العنوان + العدّاد */}
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, background: NAVY, color: '#fff', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ margin: 0, fontWeight: 800, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title || 'امتحان'}</p>
+            {!result && (
+              <p style={{ margin: 0, fontSize: 11, opacity: 0.85 }}>
+                أجبت {answered} من {(questions || []).length} · الحفظ تلقائي
+              </p>
+            )}
+          </div>
+          {remaining != null && !result && (
+            <span style={{ background: '#fff', color: timerColor, fontWeight: 900, fontSize: 16, borderRadius: 10, padding: '4px 10px', fontVariantNumeric: 'tabular-nums', minWidth: 64, textAlign: 'center' }}>
+              {mm}:{String(ss).padStart(2, '0')}
+            </span>
+          )}
+          <button onClick={onClose} aria-label="إغلاق" style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', color: '#fff', borderRadius: 8, padding: '4px 8px', cursor: 'pointer', fontWeight: 800 }}>✕</button>
+        </div>
+
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {result ? (
+            /* ── شاشة النتيجة ── */
+            <div style={{ background: '#fff', borderRadius: 14, padding: 16, border: '1px solid rgba(148,163,184,0.3)', textAlign: 'center' }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#64748B' }}>
+                {result.status === 'expired' ? 'انتهى الوقت — اتصححت إجاباتك المحفوظة' : 'تم تسليم الامتحان'}
+              </p>
+              <p style={{ margin: '8px 0 0 0', fontSize: 30, fontWeight: 900, color: NAVY }}>
+                {Number(result.score)} <span style={{ fontSize: 16, color: '#64748B' }}>/ {Number(result.max_score)}</span>
+              </p>
+              <p style={{ margin: '4px 0 0 0', fontSize: 12, fontWeight: 800, color: GOLD }}>
+                {result.correct_count}/{result.question_count} إجابة صحيحة
+              </p>
+              <button onClick={onClose} style={{ ...goldBtn, marginTop: 12 }}>تم</button>
+            </div>
+          ) : (
+            <>
+              {instructions && (
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: '#475569', background: '#fff', border: '1px solid rgba(148,163,184,0.3)', borderRadius: 12, padding: '10px 12px' }}>{instructions}</p>
+              )}
+              {(questions || []).map((q, qi) => (
+                <div key={qi} style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid rgba(148,163,184,0.3)' }}>
+                  <p style={{ margin: '0 0 10px 0', fontWeight: 800, fontSize: 14, color: NAVY }}>
+                    {qi + 1}. {q.text} <span style={{ fontSize: 11, color: '#64748B' }}>({Number(q.marks) || 1} درجة)</span>
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(q.choices || []).map((c, ci) => {
+                      const picked = answers?.[qi] === ci
+                      const mark = results ? (results[qi] === true && picked ? ' ✓' : '') : ''
+                      return (
+                        <label key={ci} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', background: picked ? 'rgba(251,156,27,0.12)' : 'transparent', borderRadius: 10, padding: '6px 8px', border: picked ? '1px solid rgba(251,156,27,0.45)' : '1px solid transparent' }}>
+                          <input
+                            type="radio"
+                            name={`oe-q-${qi}`}
+                            checked={picked}
+                            onChange={() => onPick(qi, ci)}
+                            style={{ width: 16, height: 16, accentColor: NAVY }}
+                          />
+                          <span style={{ fontSize: 13.5, fontWeight: picked ? 800 : 600, color: picked ? NAVY : '#334155' }}>{c}{mark}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+              <button
+                onClick={onSubmit}
+                disabled={submitting}
+                style={{ ...goldBtn, opacity: submitting ? 0.6 : 1, padding: '12px 16px', fontSize: 14 }}
+              >
+                {submitting ? '...' : `تسليم الامتحان (${answered}/${(questions || []).length})`}
+              </button>
+              <p style={{ margin: '-6px 0 0 0', fontSize: 11, color: '#64748B', textAlign: 'center' }}>
+                الوقت بيتحسب على السيرفر — لو عدّى هيتم التصحيح من آخر حفظ تلقائي
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── ورقة إجابة الواجب التفاعلي (056): اختيار إجابة لكل سؤال ثم تسليم ──

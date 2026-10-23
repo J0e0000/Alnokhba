@@ -17,6 +17,7 @@ import HomePage from '../home/HomePage'
 import SessionWorkspace from '../session/SessionWorkspace'
 import ExamWorkspace from '../exams/ExamWorkspace'
 import HomeworkWorkspace from '../homework/HomeworkWorkspace'
+import OnlineExamWorkspace from '../exams/OnlineExamWorkspace'
 import TourOverlay from '../components/TourOverlay'
 
 // PERF (bundle splitting): Home and the Session Workspace stay in the main
@@ -87,7 +88,7 @@ export default function AppShell({ onOpenAdmin }) {
   // nothing keeps re-rendering behind it. "Exit Focus" (in the workspace's
   // focused header) leaves the task back to Home; it is NEVER logout.
   // الامتحان المنفصل يدخل نفس وضع التركيز — نفس فكرة الحصة.
-  const focusActive = isMobile && (ui.area === 'session' || ui.area === 'exam' || ui.area === 'task')
+  const focusActive = isMobile && (ui.area === 'session' || ui.area === 'exam' || ui.area === 'task' || ui.area === 'onlineExam')
 
   const [accountOpen, setAccountOpen] = useState(false)
   const [notifCenterOpen, setNotifCenterOpen] = useState(false)
@@ -275,6 +276,7 @@ export default function AppShell({ onOpenAdmin }) {
           {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
           {ui.area === 'exam' && <ExamWorkspace params={ui.examParams} />}
           {ui.area === 'task' && <HomeworkWorkspace params={ui.taskParams} />}
+          {ui.area === 'onlineExam' && <OnlineExamWorkspace params={ui.oeParams} />}
           <Suspense fallback={<div className="py-10 text-center text-sm text-fg-muted" role="status">{isArabic ? AREA_FALLBACK_AR : AREA_FALLBACK_EN}</div>}>
             {ui.area === 'students' && <StudentsArea />}
             {ui.area === 'history' && <HistoryArea />}
