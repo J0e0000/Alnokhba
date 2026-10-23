@@ -102,6 +102,8 @@ export function UIProvider({ teacherId, children }) {
   const [area, setAreaState] = useState(() => readNavState(teacherId).area)
   const [sessionParams, setSessionParams] = useState(() => readNavState(teacherId).sessionParams)
   const [examParams, setExamParams] = useState(() => (readNavState(teacherId).area === 'exam' ? { examId: safeStoredExamId(teacherId) } : null))
+  // مساحة الواجبات التفاعلية (056) — نفس نمط الامتحان المنفصل (persist بعد reload)
+  const [taskParams, setTaskParams] = useState(() => (readNavState(teacherId).area === 'task' ? { taskId: readNavState(teacherId).taskParams?.taskId || 'new' } : null))
   const [historyStudentId, setHistoryStudentId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   // فريق التحليل deep-open intent: the notification center (and any helper
@@ -159,6 +161,19 @@ export function UIProvider({ teacherId, children }) {
 
   const closeExam = useCallback(() => {
     setExamParams(null)
+    setAreaState('home')
+    persistNav('home', null)
+  }, [persistNav])
+
+  // الواجب التفاعلي — فتح/قفل بنفس عقد الامتحان المنفصل
+  const openTask = useCallback((params) => {
+    setTaskParams(params)
+    setAreaState('task')
+    try { localStorage.setItem(NAV_KEY(teacherId), JSON.stringify({ area: 'task', taskParams: params, savedAt: new Date().toISOString() })) } catch { /* ignore */ }
+  }, [teacherId])
+
+  const closeTask = useCallback(() => {
+    setTaskParams(null)
     setAreaState('home')
     persistNav('home', null)
   }, [persistNav])
@@ -260,12 +275,13 @@ export function UIProvider({ teacherId, children }) {
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
     examParams, openExam, closeExam,
+    taskParams, openTask, closeTask,
     queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
     insightsIntent, openInsights, clearInsightsIntent,
     tourActive, setTourActive,
-  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, examParams, openExam, closeExam, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
+  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, examParams, openExam, closeExam, taskParams, openTask, closeTask, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
 
   return (
     <UIContext.Provider value={value}>

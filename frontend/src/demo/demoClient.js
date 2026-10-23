@@ -19,7 +19,7 @@
 //     channel subscribes to (so realtime code paths are exercised in preview).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DB_KEY = 'alnokhba_demo_db_v3'
+const DB_KEY = 'alnokhba_demo_db_v4'
 const SESSION_KEY = 'alnokhba_demo_session_v1'
 
 export const DEMO_TEACHER_ID = 'a0000000-0000-4000-8000-00000000c0de'
@@ -135,14 +135,49 @@ function seed() {
     id: uid(), teacher_id: t, title: 'امتحان منفصل — الوحدة الأولى', exam_date: dayStr(-2),
     group_name: groups[0], max_score: 100,
     grade_scale: [{ name: 'ممتاز', min: 80 }, { name: 'جيد', min: 70 }, { name: 'مقبول', min: 60 }, { name: 'ضعيف', min: 0 }],
-    status: 'open', created_at: iso(-60 * 24 * 48), updated_at: iso(-60 * 24 * 48),
+    status: 'open', sections: [], version: 1, created_at: iso(-60 * 24 * 48), updated_at: iso(-60 * 24 * 48),
   }
   const saScores = students.slice(0, 4).map((s, i) => ({
     id: uid(), teacher_id: t, exam_id: saExam.id, student_id: s.id,
-    score: [88, 74, 62, 45][i], created_at: iso(-60 * 24 * 47), updated_at: iso(-60 * 24 * 47),
+    score: [88, 74, 62, 45][i], section_scores: null, version: 1, created_at: iso(-60 * 24 * 47), updated_at: iso(-60 * 24 * 47),
   }))
-  const standalone_exams = [saExam]
-  const standalone_exam_scores = saScores
+  // امتحان منفصل بأقسام (056) — partial-section percentage semantics:
+  // سلمى امتحنت القسم الأول فقط → نسبتها تُحسب على المتاح (10/20 = 50%)
+  const saExamSections = {
+    id: uid(), teacher_id: t, title: 'امتحان تجريبي بأقسام', exam_date: dayStr(-1),
+    group_name: '', max_score: 50,
+    sections: [{ name: 'القسم الأول', max: 20 }, { name: 'القسم الثاني', max: 30 }],
+    grade_scale: [{ name: 'ممتاز', min: 80 }, { name: 'جيد', min: 70 }, { name: 'مقبول', min: 60 }, { name: 'ضعيف', min: 0 }],
+    status: 'completed', version: 1, created_at: iso(-60 * 24 * 30), updated_at: iso(-60 * 24 * 30),
+  }
+  const saSectionScores = [
+    { id: uid(), teacher_id: t, exam_id: saExamSections.id, student_id: students[0].id, score: 45, section_scores: [18, 27], version: 2, created_at: iso(-60 * 24 * 29), updated_at: iso(-60 * 24 * 28) },
+    { id: uid(), teacher_id: t, exam_id: saExamSections.id, student_id: students[2].id, score: 10, section_scores: [10, null], version: 1, created_at: iso(-60 * 24 * 29), updated_at: iso(-60 * 24 * 29) },
+  ]
+  const standalone_exams = [saExam, saExamSections]
+  const standalone_exam_scores = [...saScores, ...saSectionScores]
+  // واجب تفاعلي MCQ (056) — سؤالان باختيار إجابة + تسليم واحد كنموذج
+  const hwTask = {
+    id: uid(), teacher_id: t, title: 'واجب الوحدة الأولى — اختيار الإجابة',
+    description: 'اختار الإجابة الصحيحة لكل سؤال من بوابة الطالب.',
+    group_name: null, due_date: dayStr(3),
+    questions: [
+      { text: 'كم ناتج 7 × 8؟', choices: ['54', '56', '58', '48'], correct: 1, marks: 5 },
+      { text: 'عاصمة مصر؟', choices: ['الإسكندرية', 'القاهرة'], correct: 1, marks: 5 },
+    ],
+    max_score: 10, status: 'published', version: 1,
+    created_at: iso(-60 * 24 * 2), updated_at: iso(-60 * 24 * 2),
+  }
+  const hwTaskSimple = {
+    id: uid(), teacher_id: t, title: 'حل أسئلة الكتاب صفحة ٤٥',
+    group_name: groups[0], due_date: dayStr(2), questions: null,
+    max_score: 0, status: 'published', version: 1,
+    created_at: iso(-60 * 24), updated_at: iso(-60 * 24),
+  }
+  const homework_tasks = [hwTask, hwTaskSimple]
+  const homework_submissions = [
+    { id: uid(), teacher_id: t, task_id: hwTask.id, student_id: students[0].id, answers: [1, 1], score: 10, max_score: 10, correct_count: 2, question_count: 2, submitted_at: iso(-60 * 20), updated_at: iso(-60 * 20) },
+  ]
   const behavior_logs = [
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'تسجيل الحضور: حاضر (+1 نقطة)', points_delta: 1, created_at: iso(-80) },
     { id: uid(), teacher_id: t, student_id: students[0].id, note: 'إجابة وتفاعل (+3 نقطة)', points_delta: 3, created_at: iso(-50) },
@@ -238,9 +273,10 @@ function seed() {
     profiles: [], students, group_schedule, lesson_sessions: [lessonToday, lessonToday2, lessonYesterday, lessonLastWeek, lessonA1, lessonA2],
     attendance_records, exams, exam_scores, behavior_logs, teacher_settings: [settings],
     standalone_exams, standalone_exam_scores,
+    standalone_exam_audit_logs: [], homework_submissions,
     workspace_branding: [branding], broadcast_messages: broadcasts,
     student_qr_tokens: [], student_notifications: [], teacher_notification_events: [],
-    session_logs: [], homework_tasks: [], homework_task_status: [], announcements: [],
+    session_logs: [], homework_tasks, homework_task_status: [], announcements: [],
     // EL NO5BA CENTERS
     centers: [{
       id: centerId, owner_id: t, name: 'مركز النخبة التعليمي', phone: '0223334444',
@@ -650,7 +686,21 @@ function rpcCall(db, name, args) {
       const todayLesson = db.lesson_sessions.find((l) => l.group_name === student.group_name && l.session_date === todayStr())
       const attendance = db.attendance_records.filter((r) => r.student_id === student.id)
       const lessonAttendance = todayLesson ? attendance.filter((r) => r.lesson_session_id === todayLesson.id) : []
-      const tasks = db.homework_tasks.filter((t) => t.group_name === student.group_name)
+      // TASK44/056: safe homework projection — questions WITHOUT the answer
+      // key, published-only, null-group tasks included, submission summary.
+      const tasks = db.homework_tasks
+        .filter((t) => (t.group_name === student.group_name || t.group_name == null) && t.status === 'published')
+        .map((t) => ({
+          id: t.id, title: t.title, due_date: t.due_date, created_at: t.created_at,
+          description: t.description || null, status: t.status, max_score: t.max_score,
+          has_questions: t.questions != null,
+          questions: t.questions
+            ? t.questions.map((q) => ({ text: q.text, choices: q.choices, marks: q.marks }))
+            : null,
+          submission: db.homework_submissions.find((hs) => hs.task_id === t.id && hs.student_id === student.id)
+            ? (({ score, max_score, correct_count, question_count, submitted_at }) => ({ score, max_score, correct_count, question_count, submitted_at }))(db.homework_submissions.find((hs) => hs.task_id === t.id && hs.student_id === student.id))
+            : null,
+        }))
       return {
         data: {
           student: { ...student },
@@ -693,18 +743,178 @@ function rpcCall(db, name, args) {
         .filter((r) => r.student_id === student.id)
         .map((r) => {
           const exam = db.standalone_exams.find((e) => e.id === r.exam_id)
+          const sections = Array.isArray(exam?.sections) ? exam.sections : []
+          const ss = Array.isArray(r.section_scores) ? r.section_scores : []
+          let attemptedMax = exam?.max_score ?? 100
+          let attemptedCount = null
+          if (sections.length > 0) {
+            attemptedMax = 0; attemptedCount = 0
+            sections.forEach((sec, i) => {
+              if (ss[i] != null) { attemptedMax += Number(sec.max) || 0; attemptedCount += 1 }
+            })
+          }
+          const score = Number(r.score) || 0
+          const percentage = attemptedMax > 0 ? Math.round((score / attemptedMax) * 1000) / 10 : 0
+          const scale = exam?.grade_scale || []
+          const grade = (scale.find((g) => percentage >= (Number(g.min) || 0)) || scale[scale.length - 1] || {}).name || ''
           return {
             exam_id: r.exam_id,
             title: exam?.title || 'امتحان',
             exam_date: exam?.exam_date,
             exam_status: exam?.status || 'open',
-            score: r.score,
+            score,
             max_score: exam?.max_score ?? 100,
-            grade_scale: exam?.grade_scale || [],
+            grade_scale: scale,
             graded_at: r.updated_at,
+            sections,
+            section_scores: r.section_scores ?? null,
+            sections_count: sections.length,
+            attempted_count: attemptedCount,
+            attempted_max: attemptedMax,
+            percentage,
+            grade,
           }
         })
-      return { data: rows, error: null }
+      // 055 release gate: exams still open (under grading) are NOT published
+      return { data: rows.filter((x) => x.exam_status === 'completed'), error: null }
+    }
+    case 'save_standalone_score': {
+      // Mirrors migration 056: version-checked upsert with section validation.
+      const exam = db.standalone_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam) return { data: null, error: { message: 'exam_not_found' } }
+      const student = db.students.find((s) => s.id === args.p_student_id && s.teacher_id === exam.teacher_id)
+      if (!student) return { data: null, error: { message: 'student_not_in_workspace' } }
+      if (exam.status !== 'open') return { data: null, error: { message: 'exam_closed' } }
+      let existing = db.standalone_exam_scores.find((r) => r.exam_id === args.p_exam_id && r.student_id === args.p_student_id)
+      if (existing && args.p_expected_score_version != null && existing.version !== args.p_expected_score_version) {
+        return { data: null, error: { message: 'version_conflict' } }
+      }
+      const sections = Array.isArray(exam.sections) ? exam.sections : []
+      let sectionScores = null
+      let score
+      if (sections.length > 0) {
+        const arr = Array.isArray(args.p_section_scores) ? args.p_section_scores : null
+        if (!arr || arr.length !== sections.length) return { data: null, error: { message: 'section_scores_required' } }
+        score = 0
+        sectionScores = arr.map((v, i) => {
+          if (v == null) return null
+          const n = Number(v) || 0
+          const smax = Number(sections[i].max) || 0
+          if (n < 0 || n > smax) throw { message: 'section_score_out_of_range' }
+          score += n
+          return n
+        })
+        if (sectionScores.every((v) => v == null)) return { data: null, error: { message: 'empty_section_scores' } }
+      } else {
+        score = Math.max(0, Number(args.p_score) || 0)
+        if (score > (exam.max_score ?? 100)) return { data: null, error: { message: 'invalid_score' } }
+      }
+      const prev = existing ? { ...existing } : null
+      if (existing) {
+        existing.score = score; existing.section_scores = sectionScores
+        existing.version = (existing.version || 1) + 1; existing.updated_at = iso(0)
+      } else {
+        existing = { id: uid(), teacher_id: exam.teacher_id, exam_id: exam.id, student_id: args.p_student_id, score, section_scores: sectionScores, version: 1, created_at: iso(0), updated_at: iso(0) }
+        db.standalone_exam_scores.push(existing)
+      }
+      db.standalone_exam_audit_logs.push({ id: uid(), teacher_id: exam.teacher_id, actor_id: null, change_type: 'student_score',
+        exam_id: exam.id, student_id: args.p_student_id,
+        previous_value: prev ? { score: prev.score, section_scores: prev.section_scores, version: prev.version } : null,
+        new_value: { score: existing.score, section_scores: existing.section_scores, version: existing.version },
+        reason: args.p_reason || null, exam_version: exam.version, created_at: iso(0) })
+      saveDb(db); emitEvent('standalone_exam_scores', prev ? 'UPDATE' : 'INSERT', existing, prev)
+      return { data: { ...existing }, error: null }
+    }
+    case 'ungrade_standalone_student': {
+      const exam = db.standalone_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam) return { data: null, error: { message: 'exam_not_found' } }
+      const idx = db.standalone_exam_scores.findIndex((r) => r.exam_id === args.p_exam_id && r.student_id === args.p_student_id)
+      if (idx >= 0) {
+        const [removed] = db.standalone_exam_scores.splice(idx, 1)
+        db.standalone_exam_audit_logs.push({ id: uid(), teacher_id: exam.teacher_id, actor_id: null, change_type: 'ungrade',
+          exam_id: exam.id, student_id: args.p_student_id,
+          previous_value: { score: removed.score, section_scores: removed.section_scores, version: removed.version },
+          new_value: null, reason: args.p_reason || 'إلغاء درجة', exam_version: exam.version, created_at: iso(0) })
+        saveDb(db); emitEvent('standalone_exam_scores', 'DELETE', null, removed)
+      }
+      return { data: true, error: null }
+    }
+    case 'update_standalone_exam': {
+      const patch = args.p_patch || {}
+      const exam = db.standalone_exams.find((e) => e.id === args.p_exam_id)
+      if (!exam) return { data: null, error: { message: 'exam_not_found' } }
+      if (args.p_expected_version != null && exam.version !== args.p_expected_version) {
+        return { data: null, error: { message: 'version_conflict' } }
+      }
+      const prev = { ...exam }
+      if (patch.title != null) exam.title = String(patch.title).trim()
+      if (patch.exam_date != null) exam.exam_date = patch.exam_date
+      if (patch.group_name !== undefined) exam.group_name = patch.group_name || null
+      if (patch.status != null) exam.status = patch.status
+      if (patch.grade_scale != null) exam.grade_scale = patch.grade_scale
+      if (Array.isArray(patch.sections)) {
+        if (patch.sections.length > 0) {
+          exam.sections = patch.sections
+          exam.max_score = patch.sections.reduce((a, s) => a + (Number(s.max) || 0), 0)
+        } else {
+          exam.sections = []
+          if (patch.max_score != null) exam.max_score = Number(patch.max_score) || exam.max_score
+        }
+      } else if (patch.max_score != null) {
+        exam.max_score = Number(patch.max_score) || exam.max_score
+      }
+      exam.version = (exam.version || 1) + 1
+      exam.updated_at = iso(0)
+      const atype = patch.status != null ? 'status' : patch.max_score != null ? 'max_score' : Array.isArray(patch.sections) ? 'sections' : patch.grade_scale != null ? 'scale' : 'meta'
+      db.standalone_exam_audit_logs.push({ id: uid(), teacher_id: exam.teacher_id, actor_id: null, change_type: atype,
+        exam_id: exam.id, student_id: null,
+        previous_value: Object.fromEntries(Object.keys(patch).map((k) => [k, prev[k]])),
+        new_value: Object.fromEntries(Object.keys(patch).map((k) => [k, exam[k === 'max_score' ? 'max_score' : k]])),
+        reason: args.p_reason || null, exam_version: exam.version, created_at: iso(0) })
+      saveDb(db); emitEvent('standalone_exams', 'UPDATE', exam, prev)
+      return { data: { exam: { ...exam }, version: exam.version }, error: null }
+    }
+    case 'submit_homework_task_answers': {
+      const raw = String(args.p_token || '')
+      const m = raw.match(/([a-z0-9]{20})/i)
+      const tok = m ? db.student_qr_tokens.find((x) => x.token === m[1].toLowerCase() && !x.revoked_at) : null
+      const student = tok ? db.students.find((s) => s.id === tok.student_id) : null
+      if (!student) return { data: null, error: { message: 'invalid_token' } }
+      const task = db.homework_tasks.find((x) => x.id === args.p_task_id)
+      if (!task || task.teacher_id !== student.teacher_id) return { data: null, error: { message: 'task_not_found' } }
+      if (task.status !== 'published') return { data: null, error: { message: 'task_closed' } }
+      if (!Array.isArray(task.questions) || task.questions.length === 0) return { data: null, error: { message: 'no_questions' } }
+      if (task.group_name != null && task.group_name !== student.group_name) return { data: null, error: { message: 'not_for_your_group' } }
+      const answers = Array.isArray(args.p_answers) ? args.p_answers : null
+      if (!answers || answers.length > task.questions.length) return { data: null, error: { message: 'invalid_answers' } }
+      // validate choice indices BEFORE grading (mirror the SQL RPC)
+      const badIdx = task.questions.findIndex((q, i) => {
+        if (answers[i] == null) return false
+        const n = Number(answers[i])
+        return !Number.isInteger(n) || n < 0 || n >= (Array.isArray(q.choices) ? q.choices.length : 0)
+      })
+      if (badIdx >= 0) return { data: null, error: { message: 'invalid_answers' } }
+      let score = 0; let max = 0; let correctCount = 0
+      const results = task.questions.map((q, i) => {
+        const marks = Math.max(Number(q.marks) || 1, 0)
+        max += marks
+        const choice = answers[i] != null ? Number(answers[i]) : null
+        const ok = choice != null && Number(q.correct) === choice
+        if (ok) { score += marks; correctCount += 1 }
+        return ok
+      })
+      let sub = db.homework_submissions.find((x) => x.task_id === task.id && x.student_id === student.id)
+      const prev = sub ? { ...sub } : null
+      if (sub) {
+        sub.answers = answers; sub.score = score; sub.max_score = max
+        sub.correct_count = correctCount; sub.question_count = task.questions.length
+        sub.submitted_at = iso(0); sub.updated_at = iso(0)
+      } else {
+        sub = { id: uid(), teacher_id: student.teacher_id, task_id: task.id, student_id: student.id, answers, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: iso(0), updated_at: iso(0) }
+        db.homework_submissions.push(sub)
+      }
+      saveDb(db)
+      return { data: { task_id: task.id, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: sub.submitted_at, results }, error: null }
     }
     default:
       return { data: null, error: { message: `demo: RPC ${name} not implemented` } }

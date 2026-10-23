@@ -32,6 +32,29 @@ const gradeColor = (name) => {
   return { bg: 'var(--danger-bg)', border: 'var(--danger-border)', fg: 'var(--danger-strong)' }
 }
 
+// دلالات الأقسام (056): النسبة الجزئية = المجموع ÷ أقصى الأقسام اللي امتحن فيها
+// (الفارغ = قسم لم يُمتحن فيه — مبيعاقشش النسبة ولا التقدير)
+const hasSectionsMode = (exam) => Array.isArray(exam?.sections) && exam.sections.length > 0
+const sectionMaxOf = (exam, i) => Number(exam?.sections?.[i]?.max) || 0
+const totalsFromSections = (exam, arr) => {
+  let score = 0, attemptedMax = 0, attemptedCount = 0
+  ;(arr || []).forEach((v, i) => {
+    if (v == null || v === '') return
+    const n = Number(v) || 0
+    score += n
+    attemptedMax += sectionMaxOf(exam, i)
+    attemptedCount += 1
+  })
+  const pct = attemptedMax > 0 ? Math.round((score / attemptedMax) * 1000) / 10 : null
+  return { score, attemptedMax, attemptedCount, pct }
+}
+const gradeByPct = (pct, scale) => {
+  if (pct == null) return ''
+  const rows = normalizeGradeScale(scale)
+  for (const g of rows) { if (pct >= g.min) return g.name }
+  return rows[rows.length - 1]?.name || ''
+}
+
 export default function ExamWorkspace({ params }) {
   const ws = useWorkspace()
   const ui = useUI()
@@ -65,6 +88,8 @@ function ExamSetup({ onCreated, onCancel }) {
   const [examDate, setExamDate] = useState(todayISO())
   const [groupName, setGroupName] = useState('')
   const [maxScore, setMaxScore] = useState('100')
+  const [sectionsOn, setSectionsOn] = useState(false)
+  const [sections, setSections] = useState([{ name: '', max: '10' }])
   const [scale, setScale] = useState(() => [...DEFAULT_GRADE_SCALE])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -74,16 +99,22 @@ function ExamSetup({ onCreated, onCancel }) {
     () => (groupName ? ws.students.filter((s) => s.group_name === groupName) : ws.students),
     [ws.students, groupName],
   )
+  const cleanSections = sections.map((s) => ({ name: String(s.name || '').trim(), max: Number(s.max) || 0 })).filter((s) => s.name && s.max > 0)
+  const sectionsTotal = cleanSections.reduce((a, s) => a + s.max, 0)
 
   const proceed = async () => {
     const max = Number(maxScore)
     if (!title.trim()) { setError(isArabic ? 'اكتب عنوان الامتحان' : 'Enter the exam title'); return }
-    if (!Number.isFinite(max) || max <= 0) { setError(isArabic ? 'الدرجة النهائية غير صحيحة' : 'Invalid max score'); return }
+    if (sectionsOn && cleanSections.length === 0) { setError(isArabic ? 'أضف قسمًا واحدًا على الأقل' : 'Add at least one section'); return }
+    if (!sectionsOn && (!Number.isFinite(max) || max <= 0)) { setError(isArabic ? 'الدرجة النهائية غير صحيحة' : 'Invalid max score'); return }
     const cleanScale = normalizeGradeScale(scale)
     setError('')
     setBusy(true)
     const created = await ws.createStandaloneExam({
-      title, exam_date: examDate || todayISO(), group_name: groupName || null, max_score: max, grade_scale: cleanScale, records: [],
+      title, exam_date: examDate || todayISO(), group_name: groupName || null,
+      max_score: sectionsOn ? sectionsTotal : max,
+      sections: sectionsOn ? cleanSections : [],
+      grade_scale: cleanScale, records: [],
     })
     setBusy(false)
     if (created) onCreated(created)
@@ -114,10 +145,56 @@ function ExamSetup({ onCreated, onCancel }) {
               <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'تاريخ الامتحان' : 'Exam date'}</span>
               <input type="date" className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={examDate} onChange={(e) => setExamDate(e.target.value)} />
             </label>
-            <label className="block">
-              <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'الدرجة النهائية' : 'Max score'}</span>
-              <input type="number" min="1" inputMode="decimal" className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
+            {!sectionsOn && (
+              <label className="block">
+                <span className="block text-[.75rem] font-extrabold mb-1.5">{isArabic ? 'الدرجة النهائية' : 'Max score'}</span>
+                <input type="number" min="1" inputMode="decimal" className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={maxScore} onChange={(e) => setMaxScore(e.target.value)} />
+              </label>
+            )}
+          </div>
+
+          {/* أقسام الامتحان (056) — درجة لكل قسم، والنسبة تُحسب على ما امتحنه الطالب */}
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
+            <label className="flex items-center justify-between gap-2 cursor-pointer">
+              <span className="text-[.78rem] font-extrabold">{isArabic ? 'تقسيم لأقسام بدرجات منفصلة' : 'Split into graded sections'}</span>
+              <input type="checkbox" checked={sectionsOn} onChange={(e) => setSectionsOn(e.target.checked)} className="w-4 h-4 accent-[var(--brand-navy)]" />
             </label>
+            <small className="block text-[.66rem] text-fg-muted mt-1">
+              {isArabic
+                ? 'مفيد لو الطالب مامتحنش كل الأقسام — النسبة والتقدير بيتحسبوا على الأقسام اللي امتحن فيها فقط.'
+                : 'Useful when a student skips sections — percentage and grade count only the sections they took.'}
+            </small>
+            {sectionsOn && (
+              <div className="grid gap-2 mt-3">
+                {sections.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      className="glass-input rounded-lg px-2.5 py-1.5 text-sm flex-1 min-w-0"
+                      placeholder={isArabic ? `اسم القسم ${i + 1}` : `Section ${i + 1} name`}
+                      value={s.name}
+                      onChange={(e) => { const next = [...sections]; next[i] = { ...next[i], name: e.target.value }; setSections(next) }}
+                      aria-label={isArabic ? 'اسم القسم' : 'Section name'}
+                    />
+                    <input
+                      type="number" min="1" inputMode="decimal"
+                      className="glass-input rounded-lg px-2.5 py-1.5 text-sm w-20"
+                      value={s.max}
+                      onChange={(e) => { const next = [...sections]; next[i] = { ...next[i], max: e.target.value }; setSections(next) }}
+                      aria-label={isArabic ? 'درجة القسم' : 'Section max'}
+                    />
+                    {sections.length > 1 && (
+                      <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.72rem] font-extrabold" onClick={() => setSections(sections.filter((_, j) => j !== i))} aria-label={isArabic ? 'حذف القسم' : 'Remove section'}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-2">
+                  <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" onClick={() => setSections([...sections, { name: '', max: '10' }])}>
+                    ＋ {isArabic ? 'قسم' : 'Add section'}
+                  </button>
+                  {sectionsTotal > 0 && <span className="nk-pill nk-pill-gold !text-[.66rem]">{isArabic ? 'النهائي' : 'Total'}: {sectionsTotal}</span>}
+                </div>
+              </div>
+            )}
           </div>
 
           <label className="block">
@@ -218,8 +295,11 @@ function ExamGrading({ exam }) {
   const [maxDraft, setMaxDraft] = useState(String(exam.max_score))
   const [busy, setBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
 
   const open = exam.status === 'open'
+  const secMode = hasSectionsMode(exam)
+  const secDefs = secMode ? exam.sections : []
 
   // مزامنة الحقول لو الامتحان اتغير من جهاز تاني (realtime)
   useEffect(() => { setScaleDraft(normalizeGradeScale(exam.grade_scale)) }, [exam.grade_scale])
@@ -253,15 +333,17 @@ function ExamGrading({ exam }) {
     return { total: pool.length, gradedCount: graded.length, avg, top }
   }, [graded, pool.length])
 
-  // توزيع التقديرات — عدد اللي نالوا كل تقدير (يظهر جنب السلم)
+  // توزيع التقديرات — عدد اللي نالوا كل تقدير (نسبة جزئية في وضع الأقسام)
   const tierCounts = useMemo(() => {
     const counts = {}
     graded.forEach(({ row }) => {
-      const g = gradeOf(Number(row.score), exam.max_score, exam.grade_scale)
+      const g = secMode
+        ? gradeByPct(totalsFromSections(exam, row.section_scores).pct, exam.grade_scale)
+        : gradeOf(Number(row.score), exam.max_score, exam.grade_scale)
       counts[g] = (counts[g] || 0) + 1
     })
     return counts
-  }, [graded, exam.max_score, exam.grade_scale])
+  }, [graded, exam, secMode])
 
   // تقرير A4 مطبوع — نفس الطابع الرسمي بتاع مراكز النخبة
   const printReport = () => {
@@ -277,11 +359,12 @@ function ExamGrading({ exam }) {
       rows: pool
         .map((s) => {
           const row = scoresByStudent[s.id]
+          const pct = row ? (secMode ? totalsFromSections(exam, row.section_scores).pct : pctOf(Number(row.score), exam.max_score)) : null
           return {
             name: s.name,
             code: s.code || '',
             score: row ? Number(row.score) : null,
-            grade: row ? gradeOf(Number(row.score), exam.max_score, exam.grade_scale) : '',
+            grade: row ? (secMode ? gradeByPct(pct, exam.grade_scale) : gradeOf(Number(row.score), exam.max_score, exam.grade_scale)) : '',
           }
         })
         .sort((a, b) => {
@@ -299,9 +382,11 @@ function ExamGrading({ exam }) {
   const sendCandidates = useMemo(() => {
     const tpl = ws.settings?.msg_student_exam || DEFAULT_TEMPLATES.msg_student_exam
     return graded.map(({ student, row }) => {
+      const pct = secMode
+        ? totalsFromSections(exam, row.section_scores).pct
+        : pctOf(Number(row.score), exam.max_score)
+      const gradeName = gradeByPct(pct, exam.grade_scale)
       const score = Number(row.score)
-      const gradeName = gradeOf(score, exam.max_score, exam.grade_scale)
-      const pct = pctOf(score, exam.max_score)
       const hasPhone = Boolean(student.phone && isValidPhone(student.phone))
       return {
         key: student.id,
@@ -323,21 +408,28 @@ function ExamGrading({ exam }) {
         disabled: !hasPhone,
       }
     })
-  }, [graded, exam, ws.settings])
+  }, [graded, exam, ws.settings, secMode])
 
   // إدخال فوري: كل تغيير درجة بيتحفظ علطول (debounce قصير لكتابة الأرقام)
-  const [pending, setPending] = useState({}) // studentId → value being typed
+  // وضع الأقسام: pending[sid] = مصفوفة نصوص (فارغ = قسم مش ممتحن)
+  const [pending, setPending] = useState({}) // studentId → string | string[]
   const timersRef = useRef({})
   const [flashIds, setFlashIds] = useState(new Set())
 
   const persist = useCallback((studentId, value) => {
-    const v = String(value).trim()
-    if (v === '') return
-    ws.saveStandaloneScore(exam, studentId, Number(v))
+    if (secMode) {
+      const arr = Array.isArray(value) ? value : []
+      if (arr.every((v) => v == null || v === '')) return
+      ws.saveStandaloneScore(exam, studentId, null, arr.map((v) => (v === '' || v == null ? null : Number(v))))
+    } else {
+      const v = String(value).trim()
+      if (v === '') return
+      ws.saveStandaloneScore(exam, studentId, Number(v))
+    }
     setPending((prev) => { const n = { ...prev }; delete n[studentId]; return n })
     setFlashIds((prev) => new Set([...prev, studentId]))
     setTimeout(() => setFlashIds((prev) => { const n = new Set(prev); n.delete(studentId); return n }), 1400)
-  }, [exam, ws])
+  }, [exam, ws, secMode])
 
   const changeScore = (studentId, raw) => {
     const max = Number(exam.max_score)
@@ -346,6 +438,37 @@ function ExamGrading({ exam }) {
     setPending((prev) => ({ ...prev, [studentId]: v }))
     if (timersRef.current[studentId]) clearTimeout(timersRef.current[studentId])
     timersRef.current[studentId] = setTimeout(() => persist(studentId, v), 650)
+  }
+
+  // تغيير درجة قسم واحد (وضع الأقسام) — الفارغ = قسم مش ممتحن (partial)
+  const changeSectionScore = (studentId, idx, raw) => {
+    const secMax = sectionMaxOf(exam, idx)
+    let v = String(raw).replace(/[^\d.]/g, '')
+    if (v !== '' && Number(v) > secMax) v = String(secMax)
+    setPending((prev) => {
+      const cur = Array.isArray(prev[studentId])
+        ? prev[studentId]
+        : (scoresByStudent[studentId]?.section_scores || secDefs.map(() => '')).map((x) => (x == null ? '' : String(x)))
+      const next = [...cur]; next[idx] = v
+      return { ...prev, [studentId]: next }
+    })
+    if (timersRef.current[studentId]) clearTimeout(timersRef.current[studentId])
+    timersRef.current[studentId] = setTimeout(() => {
+      setPending((prev) => {
+        const arr = prev[studentId]
+        if (Array.isArray(arr)) persist(studentId, arr)
+        return prev
+      })
+    }, 650)
+  }
+
+  // إلغاء درجة طالب (056): يرجع «لم يمتحن» + التدقيق يسجل
+  const ungradeStudent = async (s) => {
+    const ok = await ui.askConfirm(
+      isArabic ? `إلغاء درجة ${s.name}؟ الطالب هيبقى «لم يمتحن» والدرجة تتحفظ في سجل التعديلات.` : `Ungrade ${s.name}? They go back to “not graded”; the change is audit-logged.`,
+      { title: isArabic ? 'إلغاء الدرجة' : 'Ungrade student', confirmLabel: isArabic ? 'إلغاء الدرجة' : 'Ungrade', danger: true },
+    )
+    if (ok) ws.ungradeStandaloneStudent(exam, s.id)
   }
 
   // Enter → الطالب اللي بعده في القائمة (نفس Enter-to-next بتاع الحصص)
@@ -384,9 +507,11 @@ function ExamGrading({ exam }) {
 
   const saveMeta = async () => {
     const max = Number(maxDraft)
-    if (!titleDraft.trim() || !Number.isFinite(max) || max <= 0) return
+    if (!titleDraft.trim()) return
+    if (!secMode && (!Number.isFinite(max) || max <= 0)) return
     setBusy(true)
-    const ok = await ws.updateStandaloneExam(exam, { title: titleDraft, max_score: max })
+    const patch = secMode ? { title: titleDraft } : { title: titleDraft, max_score: max }
+    const ok = await ws.updateStandaloneExam(exam, patch)
     setBusy(false)
     if (ok) setEditingMeta(false)
   }
@@ -434,7 +559,9 @@ function ExamGrading({ exam }) {
             {editingMeta ? (
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <input className="glass-input rounded-lg px-3 py-1.5 text-sm w-56" value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} aria-label={isArabic ? 'عنوان الامتحان' : 'Exam title'} />
-                <input type="number" min="1" className="glass-input rounded-lg px-3 py-1.5 text-sm w-24" value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} aria-label={isArabic ? 'الدرجة النهائية' : 'Max score'} />
+                {!secMode && (
+                  <input type="number" min="1" className="glass-input rounded-lg px-3 py-1.5 text-sm w-24" value={maxDraft} onChange={(e) => setMaxDraft(e.target.value)} aria-label={isArabic ? 'الدرجة النهائية' : 'Max score'} />
+                )}
                 <button className="btn-gold rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" disabled={busy} onClick={saveMeta}>{isArabic ? 'حفظ' : 'Save'}</button>
                 <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" onClick={() => { setEditingMeta(false); setTitleDraft(exam.title); setMaxDraft(String(exam.max_score)) }}>{isArabic ? 'إلغاء' : 'Cancel'}</button>
               </div>
@@ -444,6 +571,7 @@ function ExamGrading({ exam }) {
             <p className="nk-ws-muted text-[.72rem] mt-1 mb-0">
               {examDateLabel}{exam.group_name ? ` · ${exam.group_name}` : ` · ${isArabic ? 'كل الطلاب' : 'All students'}`}
               {` · ${isArabic ? 'النهائي' : 'Max'}: ${exam.max_score}`}
+              {secMode && ` · ${isArabic ? `${secDefs.length} أقسام` : `${secDefs.length} sections`}`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -541,39 +669,84 @@ function ExamGrading({ exam }) {
         <div className="grid gap-2">
           {visible.map((s, idx) => {
             const row = scoresByStudent[s.id]
-            const value = pending[s.id] ?? (row ? String(row.score) : '')
-            const displayScore = value === '' ? null : Number(value)
-            const gradeName = displayScore != null ? gradeOf(displayScore, exam.max_score, exam.grade_scale) : null
-            const gc = gradeName ? gradeColor(gradeName) : null
             const flashed = flashIds.has(s.id)
+            // وضع الأقسام: قيم فعالة = pending (لو بيكتب) وإلا القيم المحفوظة
+            const effArr = secMode
+              ? (pending[s.id] !== undefined && Array.isArray(pending[s.id])
+                  ? pending[s.id]
+                  : (row?.section_scores || secDefs.map(() => null)).map((x) => (x == null ? '' : String(x))))
+              : null
+            const t = secMode ? totalsFromSections(exam, effArr.map((v) => (v === '' ? null : v))) : null
+            const value = secMode ? null : (pending[s.id] ?? (row ? String(row.score) : ''))
+            const displayScore = secMode ? t.score : (value === '' ? null : Number(value))
+            const gradeName = secMode
+              ? (t.attemptedCount > 0 ? gradeByPct(t.pct, exam.grade_scale) : null)
+              : (displayScore != null ? gradeOf(displayScore, exam.max_score, exam.grade_scale) : null)
+            const gc = gradeName ? gradeColor(gradeName) : null
             return (
-              <div key={s.id} className="nk-row">
-                <span className="min-w-0">
+              <div key={s.id} className="nk-row !flex-wrap">
+                <span className="min-w-0 flex-1 basis-40">
                   <b className="truncate">{s.name}</b>
                   <small>
-                    {row
-                      ? `${row.score} / ${exam.max_score}`
-                      : (isArabic ? 'لم يمتحن' : 'Not graded')}
+                    {secMode
+                      ? (t.attemptedCount > 0
+                          ? `${t.score} / ${exam.max_score} · ${t.attemptedCount}/${secDefs.length} ${isArabic ? 'أقسام' : 'sections'}`
+                          : (isArabic ? 'لم يمتحن' : 'Not graded'))
+                      : (row
+                          ? `${row.score} / ${exam.max_score}`
+                          : (isArabic ? 'لم يمتحن' : 'Not graded'))}
                   </small>
                 </span>
-                <span className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 flex-wrap">
+                  {secMode && secDefs.map((sec, si) => (
+                    <span key={si} className="inline-flex items-center gap-1">
+                      <input
+                        ref={(el) => { inputRefs.current[`${s.id}-${si}`] = el }}
+                        type="number" min="0" max={sectionMaxOf(exam, si)} inputMode="decimal"
+                        className="glass-input rounded-lg px-2 py-1.5 text-[.8rem] w-16"
+                        value={effArr[si] ?? ''}
+                        onChange={(e) => changeSectionScore(s.id, si, e.target.value)}
+                        onBlur={(e) => { if (timersRef.current[s.id]) { clearTimeout(timersRef.current[s.id]); setPending((prev) => { const arr = prev[s.id]; if (Array.isArray(arr)) persist(s.id, arr); return prev }) } }}
+                        disabled={!open}
+                        aria-label={`${s.name} — ${sec.name || `قسم ${si + 1}`} (من ${sectionMaxOf(exam, si)})`}
+                        title={sec.name || `قسم ${si + 1}`}
+                      />
+                      <span className="text-[.6rem] text-fg-muted whitespace-nowrap">/{sectionMaxOf(exam, si)}</span>
+                    </span>
+                  ))}
+                  {!secMode && (
+                    <input
+                      ref={(el) => { inputRefs.current[s.id] = el }}
+                      type="number" min="0" max={exam.max_score} inputMode="decimal"
+                      enterKeyHint="next"
+                      className="glass-input rounded-xl px-3 py-2 text-sm w-24"
+                      value={value}
+                      onChange={(e) => changeScore(s.id, e.target.value)}
+                      onBlur={(e) => { if (timersRef.current[s.id]) { clearTimeout(timersRef.current[s.id]); persist(s.id, e.target.value) } }}
+                      onKeyDown={(e) => focusNext(e, idx)}
+                      disabled={!open}
+                      aria-label={`${s.name} — ${isArabic ? 'الدرجة من' : 'score out of'} ${exam.max_score}`}
+                    />
+                  )}
+                  {!secMode && <span className="text-[.66rem] text-fg-muted whitespace-nowrap">/ {exam.max_score}</span>}
+                  {secMode && t.attemptedCount > 0 && (
+                    <span className="nk-pill !text-[.62rem] nk-pill-neutral" title={isArabic ? 'النسبة محسوبة على الأقسام الممتحن فيها فقط' : 'Percentage over attempted sections only'}>
+                      {t.pct}%{t.attemptedCount < secDefs.length ? (isArabic ? ' من المتاح' : ' attempted') : ''}
+                    </span>
+                  )}
                   {gradeName && (
                     <span className="nk-pill !text-[.66rem]" style={{ background: gc.bg, border: `1px solid ${gc.border}`, color: gc.fg }}>{gradeName}</span>
                   )}
                   {flashed && <span className="text-[.64rem] font-extrabold" style={{ color: 'var(--ok-strong)' }}>✓ {isArabic ? 'اتحفظت' : 'Saved'}</span>}
-                  <input
-                    ref={(el) => { inputRefs.current[s.id] = el }}
-                    type="number" min="0" max={exam.max_score} inputMode="decimal"
-                    enterKeyHint="next"
-                    className="glass-input rounded-xl px-3 py-2 text-sm w-24"
-                    value={value}
-                    onChange={(e) => changeScore(s.id, e.target.value)}
-                    onBlur={(e) => { if (timersRef.current[s.id]) { clearTimeout(timersRef.current[s.id]); persist(s.id, e.target.value) } }}
-                    onKeyDown={(e) => focusNext(e, idx)}
-                    disabled={!open}
-                    aria-label={`${s.name} — ${isArabic ? 'الدرجة من' : 'score out of'} ${exam.max_score}`}
-                  />
-                  <span className="text-[.66rem] text-fg-muted whitespace-nowrap">/ {exam.max_score}</span>
+                  {row && open && (
+                    <button
+                      className="btn-ghost rounded-lg px-2 py-1.5 text-[.7rem] font-extrabold"
+                      style={{ color: 'var(--danger-strong)' }}
+                      onClick={() => ungradeStudent(s)}
+                      aria-label={`${isArabic ? 'إلغاء درجة' : 'Ungrade'} ${s.name}`}
+                      title={isArabic ? 'إلغاء الدرجة — الطالب يرجع «لم يمتحن» (يُسجل في التدقيق)' : 'Ungrade — back to not graded (audit-logged)'}
+                    >✕</button>
+                  )}
                 </span>
               </div>
             )
@@ -590,6 +763,9 @@ function ExamGrading({ exam }) {
           </div>
         )}
       </section>
+
+      {/* ── سجل التعديلات (056): تدقيق كامل — من/إمتى/القديم/الجديد ── */}
+      <AuditPanel exam={exam} open={auditOpen} setOpen={setAuditOpen} isArabic={isArabic} />
 
       {/* ── الامتحان خلص: CTA إرسال النتائج — اللحظة الطبيعية للموبايلة للطلاب ── */}
       {!open && stats.gradedCount > 0 && (
@@ -621,5 +797,80 @@ function ExamGrading({ exam }) {
         />
       )}
     </div>
+  )
+}
+
+// ── سجل التعديلات (056): عرض تدقيق append-only لكل تغيير في الامتحان ────────
+const AUDIT_LABELS_AR = {
+  student_score: 'رصد/تعديل درجة', ungrade: 'إلغاء درجة', status: 'حالة الامتحان',
+  max_score: 'الدرجة النهائية', sections: 'الأقسام', scale: 'سلم التقديرات', meta: 'بيانات',
+}
+const AUDIT_LABELS_EN = {
+  student_score: 'Score change', ungrade: 'Ungraded', status: 'Status',
+  max_score: 'Max score', sections: 'Sections', scale: 'Grade scale', meta: 'Details',
+}
+const fmtVal = (v) => {
+  if (v == null) return '—'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+function AuditPanel({ exam, open, setOpen, isArabic }) {
+  const ws = useWorkspace()
+  const nameById = useMemo(() => {
+    const m = {}
+    ws.allStudents.forEach((s) => { m[s.id] = s.name })
+    return m
+  }, [ws.allStudents])
+  // فتح اللوحة = جلب التدقيق الطازج (سجل التدقيق لا يدخل قناة realtime)
+  useEffect(() => { if (open) ws.refreshStandaloneExams() }, [open, ws])
+  const rows = useMemo(
+    () => (ws.standaloneExamAudit || []).filter((a) => a.exam_id === exam.id),
+    [ws.standaloneExamAudit, exam.id],
+  )
+  const fmtTs = (ts) => {
+    try { return new Intl.DateTimeFormat(isArabic ? 'ar-EG' : 'en', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(ts)) } catch { return ts }
+  }
+  return (
+    <section className="nk-content !py-3">
+      <button className="w-full flex items-center justify-between gap-2 bg-transparent border-0 p-0 cursor-pointer" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="text-[.85rem] font-extrabold">
+          🧾 {isArabic ? 'سجل التعديلات' : 'Change log'}
+          {rows.length > 0 && <span className="nk-pill nk-pill-neutral !text-[.6rem] ms-2">{rows.length}</span>}
+        </span>
+        <span className="text-[.7rem] text-fg-muted">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="grid gap-1.5 mt-3">
+          <p className="text-[.68rem] text-fg-muted m-0">
+            {isArabic
+              ? 'كل تغيير في الدرجات أو البيانات مسجل تلقائيًا: مين عمله وإمتى والقيمة قبل وبعد — لا يمكن حذفه.'
+              : 'Every score/detail change is automatically logged: who, when, before → after — append-only.'}
+          </p>
+          {rows.length === 0 && <p className="text-center py-4 text-sm text-fg-muted m-0">{isArabic ? 'لا تعديلات مسجلة بعد' : 'No changes logged yet'}</p>}
+          {rows.slice(0, 50).map((a) => {
+            const prev = a.previous_value || {}
+            const next = a.new_value || {}
+            const studentName = a.student_id ? (nameById[a.student_id] || '') : ''
+            const before = studentName ? fmtVal(prev.score ?? prev) : fmtVal(prev.title ?? prev.max_score ?? prev.status ?? prev)
+            const after = studentName ? fmtVal(next.score ?? next) : fmtVal(next.title ?? next.max_score ?? next.status ?? next)
+            return (
+              <div key={a.id} className="nk-row !py-2">
+                <span className="min-w-0">
+                  <b className="text-[.78rem] truncate">
+                    {(isArabic ? AUDIT_LABELS_AR : AUDIT_LABELS_EN)[a.change_type] || a.change_type}
+                    {studentName && ` — ${studentName}`}
+                  </b>
+                  <small className="block truncate">
+                    {studentName ? `${fmtVal(prev.score)} → ${fmtVal(next.score)}` : `${before} → ${after}`}
+                    {a.reason ? ` · ${a.reason}` : ''}
+                  </small>
+                </span>
+                <small className="text-fg-muted whitespace-nowrap">{fmtTs(a.created_at)}</small>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }

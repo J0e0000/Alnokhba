@@ -249,19 +249,28 @@ export default function PublicQRPage() {
       })
 
       // Standalone exams (الامتحانات المنفصلة): every row = the student took
-      // the exam. Grade name computed client-side from the exam's editable
-      // scale (same first-match-from-top rule as the teacher workspace).
+      // the exam. 056: server computes the PARTIAL percentage (over attempted
+      // sections) + grade — we use it directly; legacy scalar exams fall back
+      // to the client-side first-match-from-top rule.
       const standaloneResults = asArray(standaloneRes?.data).filter((r) => r && typeof r === 'object').map((r) => {
         const max = asNum(r.max_score)
         const score = asNum(r.score)
-        const grade = max > 0 ? gradeOf(score, max, Array.isArray(r.grade_scale) ? r.grade_scale : []) : ''
+        const sections = Array.isArray(r.sections) ? r.sections : []
+        const attemptedMax = asNum(r.attempted_max)
+        const serverPct = r.percentage != null ? asNum(r.percentage) : null
+        const pct = serverPct != null ? serverPct : (max > 0 ? Math.round((score / max) * 1000) / 10 : null)
+        const grade = r.grade || (max > 0 ? gradeOf(score, max, Array.isArray(r.grade_scale) ? r.grade_scale : []) : '')
+        const partial = sections.length > 0 && asNum(r.attempted_count) < sections.length
         return {
           id: r.exam_id,
           title: asText(r.title || 'امتحان'),
           score,
           max,
+          attemptedMax,
           date: r.exam_date || r.graded_at,
           grade,
+          pct,
+          partial,
         }
       })
 
@@ -543,6 +552,54 @@ export default function PublicQRPage() {
     window.open(`https://wa.me/${digits}?text=${text}`, '_blank')
   }
 
+  // ── الواجب التفاعلي (056): اختيار إجابة + تصحيح سيرفر-آثوريتيتف ──
+  const [openTaskId, setOpenTaskId] = useState(null)
+  const [taskAnswers, setTaskAnswers] = useState({}) // taskId → [choiceIdx|null]
+  const [taskBusy, setTaskBusy] = useState(false)
+  const [taskResult, setTaskResult] = useState({}) // taskId → submit RPC result
+
+  const setTaskAnswer = (taskId, qIdx, choiceIdx) => {
+    setTaskAnswers((prev) => {
+      const cur = Array.isArray(prev[taskId]) ? [...prev[taskId]] : []
+      cur[qIdx] = choiceIdx
+      return { ...prev, [taskId]: cur }
+    })
+  }
+
+  const handleSubmitTask = async (task) => {
+    if (!tokenRef.current || taskBusy) return
+    const questions = Array.isArray(task.questions) ? task.questions : []
+    const answers = questions.map((_, i) => (taskAnswers[task.id]?.[i] ?? null))
+    setTaskBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('submit_homework_task_answers', {
+        p_token: tokenRef.current,
+        p_task_id: task.id,
+        p_answers: answers,
+      })
+      if (error) {
+        console.warn('[PublicQRPage] submit_homework_task_answers failed:', error.message)
+        const msg = /task_closed/i.test(error.message) ? 'الواجب اتقفل — تواصل مع المستر.'
+          : /invalid_answers/i.test(error.message) ? 'فيه إجابة غير صحيحة الشكل — جرّب تاني.'
+          : 'تعذر إرسال الإجابات. تواصل مع المستر عبر زر تواصل.'
+        window.alert(msg)
+      } else {
+        setTaskResult((prev) => ({ ...prev, [task.id]: data }))
+        // local echo so the row shows the fresh score without waiting for refresh
+        setPortal((prev) => prev
+          ? { ...prev, homework: prev.homework.map((h) => h.id === task.id
+              ? { ...h, submission: { score: data.score, max_score: data.max_score, correct_count: data.correct_count, question_count: data.question_count, submitted_at: data.submitted_at } }
+              : h) }
+          : prev)
+      }
+    } catch (err) {
+      console.error('Submit homework error:', err)
+      window.alert('تعذر إرسال الإجابات (مشكلة اتصال). تحقق من الإنترنت وحاول مرة أخرى.')
+    } finally {
+      setTaskBusy(false)
+    }
+  }
+
   const handleEnableParentPush = async () => {
     if (parentPushBusy) return
     if (!tokenRef.current) {
@@ -753,25 +810,50 @@ export default function PublicQRPage() {
         ))}
       </SectionCard>
 
-      {/* Homework */}
+      {/* Homework — legacy checkbox tasks + interactive MCQ tasks (056) */}
       <SectionCard title="الواجبات">
         {homework.length === 0 && <EmptyLine text="لا توجد واجبات مسجلة" />}
         {homework.map((h) => (
-          <div key={h.id} style={hwRow}>
-            <div style={{ flex: 1 }}>
-              <p style={hwTitle}>{h.title}</p>
-              {h.due_date && <p style={hwDue}>تسليم: {formatDate(h.due_date)}</p>}
+          <div key={h.id} style={{ paddingBottom: 12, borderBottom: '1px solid rgba(148,163,184,0.25)' }}>
+            <div style={hwRow}>
+              <div style={{ flex: 1 }}>
+                <p style={hwTitle}>{h.title}</p>
+                {h.due_date && <p style={hwDue}>تسليم: {formatDate(h.due_date)}</p>}
+                {h.has_questions && h.submission && (
+                  <p style={{ fontSize: '12px', fontWeight: 800, color: NAVY, margin: '4px 0 0 0' }}>
+                    نتيجتك: {Number(h.submission.score)} / {Number(h.submission.max_score)} ({h.submission.correct_count}/{h.submission.question_count} صحيحة)
+                  </p>
+                )}
+              </div>
+              {h.has_questions ? (
+                <button
+                  style={hwDoneBtn}
+                  disabled={markingTaskId === h.id}
+                  onClick={() => setOpenTaskId(openTaskId === h.id ? null : h.id)}
+                >
+                  {openTaskId === h.id ? 'إغلاق' : (h.submission ? 'إعادة الحل' : 'ابدأ الحل')}
+                </button>
+              ) : h.done ? (
+                <span style={hwDoneBadge}>✓ تم</span>
+              ) : (
+                <button
+                  style={hwDoneBtn}
+                  disabled={markingTaskId === h.id}
+                  onClick={() => handleMarkHomeworkDone(h.id)}
+                >
+                  {markingTaskId === h.id ? '...' : 'تحديد كمكتمل'}
+                </button>
+              )}
             </div>
-            {h.done ? (
-              <span style={hwDoneBadge}>✓ تم</span>
-            ) : (
-              <button
-                style={hwDoneBtn}
-                disabled={markingTaskId === h.id}
-                onClick={() => handleMarkHomeworkDone(h.id)}
-              >
-                {markingTaskId === h.id ? '...' : 'تحديد كمكتمل'}
-              </button>
+            {h.has_questions && openTaskId === h.id && (
+              <HomeworkAnswerSheet
+                task={h}
+                answers={taskAnswers[h.id] || []}
+                onPick={(qi, ci) => setTaskAnswer(h.id, qi, ci)}
+                onSubmit={() => handleSubmitTask(h)}
+                busy={taskBusy}
+                result={taskResult[h.id]}
+              />
             )}
           </div>
         ))}
@@ -798,8 +880,10 @@ export default function PublicQRPage() {
               <p style={feedTitle}>{e.title}</p>
               <p style={feedMsg}>
                 {e.score} / {e.max}
+                {e.pct != null ? <span style={{ color: GOLD, fontWeight: 700 }}> — {e.pct}%{e.partial ? ' من المتاح' : ''}</span> : null}
                 {e.grade ? <span style={{ color: GOLD, fontWeight: 700 }}> — {e.grade}</span> : null}
               </p>
+              {e.partial && e.attemptedMax ? <p style={{ ...feedDate, margin: 0 }}>النسبة محسوبة على الأقسام اللي امتحن فيها ({e.attemptedMax} من {e.max})</p> : null}
               <p style={feedDate}>{formatDateTime(e.date)}</p>
             </div>
           ))}
@@ -1103,6 +1187,61 @@ function InfoLine({ label, value }) {
 
 function EmptyLine({ text }) {
   return <p style={emptyText}>{text}</p>
+}
+
+// ── ورقة إجابة الواجب التفاعلي (056): اختيار إجابة لكل سؤال ثم تسليم ──
+function HomeworkAnswerSheet({ task, answers, onPick, onSubmit, busy, result }) {
+  const questions = Array.isArray(task.questions) ? task.questions : []
+  const answered = questions.filter((_, i) => answers[i] != null).length
+  return (
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12, padding: '12px', background: 'rgba(251,156,27,0.06)', borderRadius: 12, border: '1px solid rgba(251,156,27,0.3)' }}>
+      {questions.map((q, qi) => {
+        const choices = Array.isArray(q.choices) ? q.choices : []
+        const correct = result?.results?.[qi]
+        return (
+          <div key={qi}>
+            <p style={{ fontSize: '13px', fontWeight: 800, color: NAVY, margin: '0 0 6px 0' }}>
+              {qi + 1}. {String(q.text || '')}
+              {result && (
+                <span style={{ color: correct ? '#22C55E' : '#EF4444', marginRight: 6 }}>{correct ? '✓' : '✗'}</span>
+              )}
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {choices.map((c, ci) => {
+                const picked = answers[qi] === ci
+                return (
+                  <label key={ci} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: busy ? 'wait' : 'pointer',
+                    padding: '7px 10px', borderRadius: 10, fontSize: '13px', color: NAVY,
+                    background: picked ? 'rgba(251,156,27,0.18)' : WHITE,
+                    border: picked ? '1.5px solid #FB9C1B' : '1px solid rgba(148,163,184,0.35)',
+                    fontWeight: picked ? 800 : 500,
+                  }}>
+                    <input type="radio" name={`q-${task.id}-${qi}`} checked={picked} onChange={() => onPick(qi, ci)} disabled={busy} style={{ accentColor: '#FB9C1B' }} />
+                    {String(c)}
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+      {result && (
+        <div style={{ padding: '10px 12px', borderRadius: 10, background: '#22C55E15', border: '1px solid #22C55E55', fontWeight: 800, fontSize: '13px', color: NAVY, textAlign: 'center' }}>
+          نتيجتك: {Number(result.score)} من {Number(result.max_score)} — {result.correct_count}/{result.question_count} إجابة صحيحة ✓
+        </div>
+      )}
+      <button onClick={onSubmit} disabled={busy || answered === 0} style={{
+        ...hwDoneBtn, width: '100%', padding: '10px', fontSize: '13px',
+        opacity: busy || answered === 0 ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer',
+      }}>
+        {busy ? 'جاري التصحيح...' : (result ? 'إعادة الإرسال' : `تسليم الإجابات (${answered}/${questions.length})`)}
+      </button>
+      {!result && answered === 0 && (
+        <p style={{ fontSize: '11px', color: GRAY_400, margin: 0, textAlign: 'center' }}>اختار إجابة سؤال واحد على الأقل قبل التسليم</p>
+      )}
+    </div>
+  )
 }
 
 // ═══════════════════════════════════════════════════════════════

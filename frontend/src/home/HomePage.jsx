@@ -122,6 +122,13 @@ export default function HomePage() {
 
   // الامتحانات المنفصلة — أحدث 4 امتحانات كبطاقات بنفس شكل حصص اليوم
   const standaloneExams = ws.standaloneExams || []
+  // الواجبات التفاعلية (056) — أحدث 3 واجبات مع عدّاد الحل
+  const homeworkTasks = ws.homeworkTasks || []
+  const hwCards = useMemo(() => homeworkTasks.slice(0, 3).map((task) => {
+    const pool = task.group_name ? (ws.students || []).filter((s) => s.group_name === task.group_name) : (ws.students || [])
+    const solved = (ws.homeworkSubmissions || []).filter((x) => x.task_id === task.id).length
+    return { task, solved, pool: pool.length }
+  }), [homeworkTasks, ws.students, ws.homeworkSubmissions])
   const standaloneScores = ws.standaloneExamScores || []
   const examCards = useMemo(() => standaloneExams.slice(0, 4).map((exam) => {
     const graded = standaloneScores.filter((r) => r.exam_id === exam.id).length
@@ -358,6 +365,56 @@ export default function HomePage() {
                     </span>
                     <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
                       {exam.status === 'open' ? (ar ? 'متابعة الرصد ←' : 'Grade →') : (ar ? 'عرض ←' : 'View →')}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ الواجبات التفاعلية — اختيار الإجابة من البوابة (056) ══ */}
+      {students.length > 0 && (
+        <div className="mt-7">
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-3">
+            <h2 className="text-[.98rem] font-extrabold m-0">{ar ? 'الواجبات التفاعلية' : 'Interactive homework'}</h2>
+            <button className="text-[.7rem] font-extrabold cursor-pointer bg-transparent border-0 p-0" style={{ color: 'var(--brand-gold)' }} onClick={() => ui.openTask({ taskId: 'new' })}>
+              ＋ {ar ? 'إنشاء واجب' : 'New homework'}
+            </button>
+          </div>
+          {hwCards.length === 0 ? (
+            <p className="text-[.74rem] text-fg-muted m-0">
+              {ar ? 'لا يوجد واجبات تفاعلية بعد — واجب بأسئلة اختيار إجابة يحله الطالب من بوابة QR والتصحيح تلقائي على السيرفر.' : 'No interactive homework yet — MCQ homework solved from the QR portal with server-side auto-grading.'}
+            </p>
+          ) : (
+            <div className="grid gap-2.5">
+              {hwCards.map(({ task, solved, pool }) => (
+                <button
+                  key={task.id}
+                  className="nk-session-card"
+                  onClick={() => ui.openTask({ taskId: task.id })}
+                  aria-label={`${ar ? 'فتح الواجب' : 'Open homework'} ${task.title}`}
+                >
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className="nk-session-icon" aria-hidden="true">✎</span>
+                    <span className="min-w-0">
+                      <b className="block text-[.88rem] truncate">{task.title}</b>
+                      <small className="block text-[.7rem] text-fg-muted mt-1 truncate">
+                        {task.group_name || (ar ? 'كل الطلاب' : 'All students')}{task.due_date ? ` · ${ar ? 'آخر موعد' : 'Due'}: ${task.due_date}` : ''} · {ar ? 'الإجمالي' : 'Total'}: {task.max_score}
+                      </small>
+                      <span className="flex items-center gap-2 mt-1.5">
+                        <span className="nk-bar nk-bar--ok w-24"><span style={{ width: `${pool ? Math.round((solved / pool) * 100) : 0}%` }} /></span>
+                        <span className="text-[.64rem] text-fg-muted">{solved}/{pool} {ar ? 'حلّوا' : 'solved'}</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`nk-pill ${task.status === 'published' ? 'nk-pill-live' : 'nk-pill-done'}`}>
+                      {task.status === 'published' ? (ar ? '● منشور' : '● Published') : (ar ? '✓ مغلق' : '✓ Closed')}
+                    </span>
+                    <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
+                      {ar ? 'عرض النتائج ←' : 'View →'}
                     </span>
                   </span>
                 </button>

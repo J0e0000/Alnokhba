@@ -48,13 +48,7 @@ export const normalizeArabicSearch = (value) => String(value || '').toLowerCase(
   .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
   .replace(/ؤ/g, 'و').replace(/ئ/g, 'ي').replace(/\s+/g, ' ').trim()
 
-// تاريخ محلي (مش UTC) — نفس قاعدة محرك الأرشفة التلقائية: بعد منتصف الليل
-// بتوقيت القاهرة، toISOString() (UTC+0) بيزحّف التاريخ ليوم جديد قبل الأوان
-// (في نافذة 00:00–02:00) فيفتح/يلوّم الحصص بتاريخ «امبارح» غلط.
-const todayISO = () => {
-  const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
-}
+const todayISO = () => new Date().toISOString().slice(0, 10)
 
 export function WorkspaceProvider({ children }) {
   markRender('WorkspaceProvider')
@@ -78,6 +72,10 @@ export function WorkspaceProvider({ children }) {
   // score = صف لكل طالب امتحن (امتحن = حضر — لا حضور ولا ربط بحصة)
   const [standaloneExams, setStandaloneExams] = useState([])
   const [standaloneExamScores, setStandaloneExamScores] = useState([])
+  // سجل تدقيق الامتحانات المنفصلة (056) + الواجبات التفاعلية (أسئلة اختيار إجابة)
+  const [standaloneExamAudit, setStandaloneExamAudit] = useState([])
+  const [homeworkTasks, setHomeworkTasks] = useState([])
+  const [homeworkSubmissions, setHomeworkSubmissions] = useState([])
 
   // ── session-scoped server state (shared across pipeline tabs) ─────────────
   const [activeLessonId, setActiveLessonId] = useState('')
@@ -121,6 +119,8 @@ export function WorkspaceProvider({ children }) {
   const examScoresByStudentRef = useRef(examScoresByStudent); examScoresByStudentRef.current = examScoresByStudent
   const standaloneExamsRef = useRef(standaloneExams); standaloneExamsRef.current = standaloneExams
   const standaloneExamScoresRef = useRef(standaloneExamScores); standaloneExamScoresRef.current = standaloneExamScores
+  const homeworkTasksRef = useRef(homeworkTasks); homeworkTasksRef.current = homeworkTasks
+  const homeworkSubmissionsRef = useRef(homeworkSubmissions); homeworkSubmissionsRef.current = homeworkSubmissions
 
   // ════════════════════ AUTO-ARCHIVE (Task 42 — أرشفة الغايبين) ════════════════════
   // "خلي النظام نفسه يشوف مين غايب عن آخر حصتين ويأرشفه — مش بس يبدأ من
@@ -306,7 +306,7 @@ export function WorkspaceProvider({ children }) {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
       const tid = effectiveTeacherId
       const empty = Promise.resolve({ data: [] })
-      const [stR, scoresR, logsR, attendanceR, lessonSessionsR, examsR, saExamsR, saScoresR] = await Promise.all(tid ? [
+      const [stR, scoresR, logsR, attendanceR, lessonSessionsR, examsR, saExamsR, saScoresR, saAuditR, hwTasksR, hwSubsR] = await Promise.all(tid ? [
         supabase.from('students').select('*').eq('teacher_id', tid).order('created_at'),
         supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
         supabase.from('behavior_logs').select('*').eq('teacher_id', tid).gte('created_at', todayStart.toISOString()).order('created_at'),
@@ -319,7 +319,10 @@ export function WorkspaceProvider({ children }) {
         supabase.from('exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
         supabase.from('standalone_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
         supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at'),
-      ] : [empty, empty, empty, empty, empty, empty, empty, empty])
+        supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(300),
+        supabase.from('homework_tasks').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
+        supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(1000),
+      ] : [empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty])
       const st = stR.data ?? []
       setStudents(st)
       const attendance = attendanceR.data ?? []
@@ -353,6 +356,10 @@ export function WorkspaceProvider({ children }) {
       // والباقي شغال عادي زي ما هو (نفس مبدأ graceful في loadAll)
       setStandaloneExams((saExamsR.data ?? []).map((e) => ({ ...e, grade_scale: normalizeGradeScale(e.grade_scale) })))
       setStandaloneExamScores(saScoresR.data ?? [])
+      // 056: تدقيق الامتحانات المنفصلة + الواجبات التفاعلية (graceful — جداول قديمة غير موجودة → فاضي)
+      setStandaloneExamAudit(saAuditR.data ?? [])
+      setHomeworkTasks(hwTasksR.data ?? [])
+      setHomeworkSubmissions(hwSubsR.data ?? [])
       setActiveLessonId((current) => {
         if (current && loaded.some((lesson) => lesson.id === current)) return current
         const today = todayISO()
@@ -408,16 +415,18 @@ export function WorkspaceProvider({ children }) {
     examRefreshTimerRef.current = setTimeout(run, 500)
   }, [])
 
-  // الامتحانات المنفصلة — تحديث موجّه للجدولين بس (نفس فكرة refreshExamData)
+  // الامتحانات المنفصلة — تحديث موجّه (الامتحانات + الدرجات + سجل التدقيق 056)
   const refreshStandaloneExams = useCallback(async () => {
     const tid = teacherIdRef.current
     if (!tid) return
-    const [examsR, scoresR] = await Promise.all([
+    const [examsR, scoresR, auditR] = await Promise.all([
       supabase.from('standalone_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
       supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at'),
+      supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(300),
     ])
     setStandaloneExams((examsR.data ?? []).map((e) => ({ ...e, grade_scale: normalizeGradeScale(e.grade_scale) })))
     setStandaloneExamScores(scoresR.data ?? [])
+    setStandaloneExamAudit(auditR.data ?? [])
   }, [])
 
   useEffect(() => {
@@ -764,10 +773,7 @@ export function WorkspaceProvider({ children }) {
           await addToQueue({ method: 'rpc', rpcName: 'upsert_lesson_attendance', rpcArgs: { p_lesson_session_id: lessonId, p_student_id: id, p_status: status } })
         } else {
           await addToQueue({ table: 'students', method: 'update', data: { attendance_status: status, points: newPoints, updated_at: new Date().toISOString() }, match: { id } })
-          // TASK44: raw upsert with onConflict 'teacher_id,student_id' matched no
-          // unique index → replay always failed 42P10. The new RPC mirrors the
-          // online day path exactly (same lookup, same insert/update semantics).
-          await addToQueue({ method: 'rpc', rpcName: 'upsert_student_day_attendance', rpcArgs: { p_student_id: id, p_status: status, p_day: todayISO() } })
+          await addToQueue({ table: 'attendance_records', method: 'upsert', data: { teacher_id: effectiveTeacherId, student_id: id, status, homework_status: s.hw_status || 'لم يرصد' }, upsertOpts: { onConflict: 'teacher_id,student_id' } })
         }
         setSaveStatus('saved_locally')
       } else {
@@ -1473,7 +1479,7 @@ export function WorkspaceProvider({ children }) {
   // ══════════════════════════ STANDALONE EXAMS (الامتحانات المنفصلة) ═════════
   // امتحانات مستقلة عن الحصص تمامًا: اللي امتحن هو اللي حضر — اللي بيسجل
   // الدرجات يسجل علطول (upsert لكل طالب)، من غير حضور ولا ربط بحصة.
-  const createStandaloneExam = async ({ title, exam_date, group_name, max_score, grade_scale, records }) => {
+  const createStandaloneExam = async ({ title, exam_date, group_name, max_score, grade_scale, sections, records }) => {
     if (isSavingRef.current) return null
     const effectiveTeacherId = teacherIdRef.current
     const isArabic = isArabicRef.current
@@ -1481,12 +1487,18 @@ export function WorkspaceProvider({ children }) {
     if (!isOnline) { showToast(isArabic ? 'لا يوجد اتصال — تعذر إنشاء الامتحان' : 'No connection — could not create the exam', 'error'); return null }
     setIsSaving(true)
     try {
+      // وضع الأقسام (056): sections = [{name, max}] — الدرجة النهائية = مجموع الأقصيات
+      const cleanSections = Array.isArray(sections)
+        ? sections.map((s) => ({ name: String(s.name || '').trim(), max: Number(s.max) || 0 })).filter((s) => s.name && s.max > 0)
+        : []
+      const finalMax = cleanSections.length ? cleanSections.reduce((a, s) => a + s.max, 0) : (Number(max_score) || 100)
       const { data: exam, error: examErr } = await supabase.from('standalone_exams').insert({
         teacher_id: effectiveTeacherId,
         title: String(title).trim(),
         exam_date: exam_date || todayISO(),
         group_name: group_name || null,
-        max_score: Number(max_score) || 100,
+        max_score: finalMax,
+        sections: cleanSections,
         grade_scale: normalizeGradeScale(grade_scale),
         status: 'open',
       }).select().single()
@@ -1494,7 +1506,11 @@ export function WorkspaceProvider({ children }) {
       if (!exam) return null
       if (Array.isArray(records) && records.length) {
         const { error: scoresError } = await supabase.from('standalone_exam_scores').insert(
-          records.map((r) => ({ teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: r.studentId, score: Number(r.score) || 0 })),
+          records.map((r) => ({
+            teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: r.studentId,
+            score: Number(r.score) || 0,
+            ...(cleanSections.length ? { section_scores: r.sectionScores ?? null } : {}),
+          })),
         )
         if (scoresError) throw scoresError
       }
@@ -1502,7 +1518,9 @@ export function WorkspaceProvider({ children }) {
       if (Array.isArray(records) && records.length) {
         setStandaloneExamScores((prev) => [...prev, ...records.map((r, i) => ({
           id: `temp-${exam.id}-${r.studentId}-${i}`, teacher_id: effectiveTeacherId, exam_id: exam.id,
-          student_id: r.studentId, score: Number(r.score) || 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          student_id: r.studentId, score: Number(r.score) || 0, version: 1,
+          section_scores: cleanSections.length ? (r.sectionScores ?? null) : null,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         }))])
       }
       pushAction({
@@ -1522,46 +1540,48 @@ export function WorkspaceProvider({ children }) {
     } finally { setIsSaving(false) }
   }
 
-  // رصد/تعديل درجة طالب واحد — upsert فوري (exam_id+student_id فريد)
-  const saveStandaloneScore = async (exam, studentId, score) => {
+  // رصد/تعديل درجة طالب — RPC محمي بالتزامن (056): version + تدقيق + أقسام.
+  // الوضع القديم (بدون أقسام): p_score. وضع الأقسام: p_section_scores [رقم|null].
+  // تضارب التزامن → toast + تحديث من السيرفر (لا يُكتب فوق تعديل جهاز آخر).
+  const saveStandaloneScore = async (exam, studentId, score, sectionScores = null) => {
     const effectiveTeacherId = teacherIdRef.current
     const isArabic = isArabicRef.current
     const isOnline = isOnlineRef.current
+    const hasSections = Array.isArray(exam?.sections) && exam.sections.length > 0
     const value = Math.max(0, Number(score) || 0)
     const existing = standaloneExamScoresRef.current.find((r) => r.exam_id === exam.id && r.student_id === studentId)
+    const expectedVersion = existing && !String(existing.id || '').startsWith('temp-') ? (existing.version ?? null) : null
     // OPTIMISTIC: الصف يتحدث فورًا محليًا — الشبكة بتلحق بعد كده
     const tempId = existing?.id || `temp-${exam.id}-${studentId}`
-    const optimisticRow = { id: tempId, teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId, score: value, created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString() }
+    const optimisticRow = { id: tempId, teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId,
+      score: hasSections ? (sectionScores || []).filter((v) => v != null).reduce((a, b) => a + (Number(b) || 0), 0) : value,
+      section_scores: hasSections ? sectionScores : (existing?.section_scores ?? null),
+      version: existing?.version || 1,
+      created_at: existing?.created_at || new Date().toISOString(), updated_at: new Date().toISOString() }
     setStandaloneExamScores((prev) => {
       const idx = prev.findIndex((r) => r.exam_id === exam.id && r.student_id === studentId)
       if (idx === -1) return [...prev, optimisticRow]
-      const next = [...prev]; next[idx] = { ...next[idx], score: value }
+      const next = [...prev]; next[idx] = { ...next[idx], ...optimisticRow, id: next[idx].id }
       return next
     })
-    if (!isOnline) {
-      // FIX (audit W1): كان التوست بيوعد بمزامنة الرصّة والميعاد كان بيرجع من غير
-      // ما يحطّ حاجة في الطابور — أي إعادة تحميل كانت بتمسح الدرجة. نفس مسار
-      // الحضور أوفلاين بالظبط: upsert مؤجّل بنفس مفتاح التعارض.
-      try {
-        await addToQueue({ table: 'standalone_exam_scores', method: 'upsert', data: { teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId, score: value }, upsertOpts: { onConflict: 'exam_id,student_id' } })
-        showToast(isArabic ? 'أنت غير متصل — الدرجة اتحفظت محليًا وستُزامن عند الاتصال' : 'Offline — score queued for sync', 'info')
-      } catch (qErr) {
-        console.error('Queue standalone score error:', qErr)
-        showToast(isArabic ? 'أنت غير متصل وتعذر حفظ الدرجة محليًا — حاول تاني عند رجوع النت' : 'Offline — could not queue the score, try again when online', 'error')
-      }
-      return true
-    }
+    if (!isOnline) { showToast(isArabic ? 'أنت غير متصل — الدرجة اتحفظت محليًا وستُزامن عند الاتصال' : 'Offline — score queued for sync', 'info'); return true }
     try {
-      const { data, error } = await supabase.from('standalone_exam_scores').upsert(
-        { teacher_id: effectiveTeacherId, exam_id: exam.id, student_id: studentId, score: value },
-        { onConflict: 'exam_id,student_id' },
-      ).select().single()
+      // RPC محمي بالتزامن (migration 056) — يحفظ + يسجل في سجل التدقيق + يرفض القديم
+      const { data, error } = await supabase.rpc('save_standalone_score', {
+        p_exam_id: exam.id,
+        p_student_id: studentId,
+        p_score: hasSections ? null : value,
+        p_section_scores: hasSections ? (sectionScores || []) : null,
+        p_expected_score_version: expectedVersion,
+        p_reason: null,
+      })
       if (error) throw error
       if (data) {
         setStandaloneExamScores((prev) => {
           const idx = prev.findIndex((r) => r.exam_id === exam.id && r.student_id === studentId)
           if (idx === -1) return [...prev, data]
-          const next = [...prev]; next[idx] = data; return next
+          const next = [...prev]; next[idx] = { ...next[idx], ...data, id: next[idx].id.startsWith('temp-') ? data.id : next[idx].id }
+          return next
         })
       }
       return true
@@ -1573,7 +1593,12 @@ export function WorkspaceProvider({ children }) {
         if (idx === -1) return existing ? [...prev, existing] : prev.filter((r) => r.id !== tempId)
         const next = [...prev]; if (existing) next[idx] = existing; return next
       })
-      showToast(isArabic ? 'تعذر حفظ الدرجة — حاول تاني' : 'Could not save the score — try again', 'error')
+      if (/version_conflict/i.test(err?.message || '')) {
+        showToast(isArabic ? 'الدرجة اتعدلت من جهاز تاني — تم تحديث أحدث نسخة' : 'Score changed on another device — refreshed to the latest', 'info')
+        refreshStandaloneExams()
+      } else {
+        showToast(isArabic ? 'تعذر حفظ الدرجة — حاول تاني' : 'Could not save the score — try again', 'error')
+      }
       return false
     }
   }
@@ -1582,34 +1607,63 @@ export function WorkspaceProvider({ children }) {
     const isArabic = isArabicRef.current
     const isOnline = isOnlineRef.current
     if (!isOnline) { showToast(isArabic ? 'لا يوجد اتصال — تعذر حفظ التعديل' : 'No connection — could not save changes', 'error'); return false }
-    const payload = { updated_at: new Date().toISOString() }
-    if (patch.title !== undefined) payload.title = String(patch.title).trim()
-    if (patch.exam_date !== undefined) payload.exam_date = patch.exam_date
-    if (patch.group_name !== undefined) payload.group_name = patch.group_name || null
-    if (patch.max_score !== undefined) payload.max_score = Number(patch.max_score) || exam.max_score
-    if (patch.grade_scale !== undefined) payload.grade_scale = normalizeGradeScale(patch.grade_scale)
-    if (patch.status !== undefined) payload.status = patch.status === 'completed' ? 'completed' : 'open'
     const prevExam = exam
-    setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? { ...e, ...payload } : e)))
+    // أفضل محليًا ثم RPC محمي بالتزامن (056) — تضارب → تحديث من السيرفر
+    setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? { ...e, ...patch } : e)))
     try {
-      const { error } = await supabase.from('standalone_exams').update(payload)
-        .eq('id', exam.id).eq('teacher_id', teacherIdRef.current)
+      const { data, error } = await supabase.rpc('update_standalone_exam', {
+        p_exam_id: exam.id,
+        p_expected_version: exam.version ?? null,
+        p_patch: patch,
+        p_reason: null,
+      })
       if (error) throw error
+      const saved = data?.exam
+      if (saved) {
+        setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? { ...saved, grade_scale: normalizeGradeScale(saved.grade_scale) } : e)))
+      }
       pushAction({
         type: 'standalone_exam_edit', description: `تعديل امتحان: ${exam.title}`,
         undoFn: async () => {
-          await supabase.from('standalone_exams').update({
-            title: prevExam.title, exam_date: prevExam.exam_date, group_name: prevExam.group_name,
-            max_score: prevExam.max_score, grade_scale: normalizeGradeScale(prevExam.grade_scale), status: prevExam.status, updated_at: new Date().toISOString(),
-          }).eq('id', exam.id).eq('teacher_id', teacherIdRef.current)
+          await supabase.rpc('update_standalone_exam', {
+            p_exam_id: exam.id, p_expected_version: null,
+            p_patch: {
+              title: prevExam.title, exam_date: prevExam.exam_date, group_name: prevExam.group_name,
+              max_score: prevExam.max_score, grade_scale: normalizeGradeScale(prevExam.grade_scale),
+              sections: prevExam.sections || [], status: prevExam.status,
+            }, p_reason: null,
+          })
           setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? { ...e, ...prevExam } : e)))
         },
       })
       return true
     } catch (err) {
       console.error('Update standalone exam error:', err)
-      setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? prevExam : e)))
-      showToast(isArabic ? 'تعذر حفظ التعديل' : 'Could not save changes', 'error')
+      if (/version_conflict/i.test(err?.message || '')) {
+        showToast(isArabic ? 'الامتحان اتعدل من جهاز تاني — تم تحديث أحدث نسخة' : 'Exam changed on another device — refreshed to the latest', 'info')
+        refreshStandaloneExams()
+      } else {
+        setStandaloneExams((prev) => prev.map((e) => (e.id === exam.id ? prevExam : e)))
+        showToast(isArabic ? 'تعذر حفظ التعديل' : 'Could not save changes', 'error')
+      }
+      return false
+    }
+  }
+
+  // إلغاء درجة طالب (056): الطالب يرجع «لم يمتحن» + التدقيق يسجل الإلغاء والقيم القديمة
+  const ungradeStandaloneStudent = async (exam, studentId) => {
+    const isArabic = isArabicRef.current
+    const backup = standaloneExamScoresRef.current.find((r) => r.exam_id === exam.id && r.student_id === studentId)
+    if (!backup) return true
+    setStandaloneExamScores((prev) => prev.filter((r) => !(r.exam_id === exam.id && r.student_id === studentId)))
+    try {
+      const { error } = await supabase.rpc('ungrade_standalone_student', { p_exam_id: exam.id, p_student_id: studentId, p_reason: null })
+      if (error) throw error
+      return true
+    } catch (err) {
+      console.error('Ungrade error:', err)
+      setStandaloneExamScores((prev) => [...prev, backup])
+      showToast(isArabic ? 'تعذر إلغاء الدرجة — حاول تاني' : 'Could not ungrade — try again', 'error')
       return false
     }
   }
@@ -1640,6 +1694,90 @@ export function WorkspaceProvider({ children }) {
     })
     setUndoSnackbar({ visible: true, message: `حذف امتحان: ${exam.title}` })
     return true
+  }
+
+  // ══════════════ HOMEWORK TASKS (الواجبات التفاعلية — 056) ══════════════
+  // واجب بأسئلة اختيار إجابة (MCQ): المدرس يبنيه، الطالب يحله من البوابة،
+  // التصحيح سيرفر-آثوريتيتف عبر submit_homework_task_answers. ملفات لاحقًا.
+  const refreshHomework = useCallback(async () => {
+    const tid = teacherIdRef.current
+    if (!tid) return
+    const [tasksR, subsR] = await Promise.all([
+      supabase.from('homework_tasks').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
+      supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(1000),
+    ])
+    setHomeworkTasks(tasksR.data ?? [])
+    setHomeworkSubmissions(subsR.data ?? [])
+  }, [])
+
+  const createHomeworkTask = async ({ title, description, group_name, due_date, questions }) => {
+    const isArabic = isArabicRef.current
+    const isOnline = isOnlineRef.current
+    if (!isOnline) { showToast(isArabic ? 'لا يوجد اتصال — تعذر إنشاء الواجب' : 'No connection — could not create homework', 'error'); return null }
+    if (isSavingRef.current) return null
+    setIsSaving(true)
+    try {
+      const clean = (questions || []).map((q) => ({
+        text: String(q.text || '').trim(),
+        choices: (q.choices || []).map((c) => String(c || '').trim()).filter(Boolean),
+        correct: Number(q.correct) || 0,
+        marks: Math.max(Number(q.marks) || 1, 0),
+      })).filter((q) => q.text && q.choices.length >= 2)
+      const maxScore = clean.reduce((a, q) => a + q.marks, 0)
+      const { data, error } = await supabase.from('homework_tasks').insert({
+        teacher_id: teacherIdRef.current,
+        title: String(title || '').trim(),
+        description: String(description || '').trim() || null,
+        group_name: group_name || null,
+        due_date: due_date || null,
+        questions: clean.length ? clean : null,
+        max_score: maxScore,
+        status: 'published',
+      }).select().single()
+      if (error) throw error
+      setHomeworkTasks((prev) => [data, ...prev])
+      return data
+    } catch (err) {
+      console.error('Create homework task error:', err)
+      showToast(isArabic ? 'تعذر إنشاء الواجب' : 'Could not create homework', 'error')
+      return null
+    } finally { setIsSaving(false) }
+  }
+
+  const setHomeworkTaskStatus = async (task, status) => {
+    const isArabic = isArabicRef.current
+    const prev = task
+    setHomeworkTasks((p) => p.map((t) => (t.id === task.id ? { ...t, status } : t)))
+    try {
+      const { error } = await supabase.from('homework_tasks').update({ status }).eq('id', task.id).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      return true
+    } catch (err) {
+      console.error('Homework status error:', err)
+      setHomeworkTasks((p) => p.map((t) => (t.id === prev.id ? prev : t)))
+      showToast(isArabic ? 'تعذر تحديث حالة الواجب' : 'Could not update homework', 'error')
+      return false
+    }
+  }
+
+  const deleteHomeworkTask = async (task) => {
+    const isArabic = isArabicRef.current
+    const backup = task
+    const backupSubs = homeworkSubmissionsRef.current.filter((s) => s.task_id === task.id)
+    setHomeworkTasks((p) => p.filter((t) => t.id !== task.id))
+    setHomeworkSubmissions((p) => p.filter((s) => s.task_id !== task.id))
+    try {
+      const { error } = await supabase.from('homework_tasks').delete().eq('id', task.id).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      showToast(isArabic ? `حُذف واجب «${task.title}»` : `Homework deleted`, 'success')
+      return true
+    } catch (err) {
+      console.error('Delete homework error:', err)
+      setHomeworkTasks((p) => [backup, ...p])
+      setHomeworkSubmissions((p) => [...p, ...backupSubs])
+      showToast(isArabic ? 'تعذر حذف الواجب' : 'Could not delete homework', 'error')
+      return false
+    }
   }
 
   // ══════════════════════════ UNDO/REDO BRIDGE ════════════════════════════════
@@ -1804,7 +1942,7 @@ export function WorkspaceProvider({ children }) {
     loading, students: activeStudents, archivedStudents, allStudents: students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
-    standaloneExams, standaloneExamScores,
+    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions,
     // actions (stable — read refs internally)
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData, setActiveLessonId,
     setAttendance, updateHW, adjustPoints, logAction, patchStudent,
@@ -1812,7 +1950,8 @@ export function WorkspaceProvider({ children }) {
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
     bulkAssignGroup, bulkDeleteStudents, restoreStudents,
     saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
-    createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams,
+    createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams, ungradeStandaloneStudent,
+    refreshHomework, createHomeworkTask, setHomeworkTaskStatus, deleteHomeworkTask,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
     // derived helpers
     sessionStudentsFor, countsForLesson, showToast,
@@ -1822,7 +1961,7 @@ export function WorkspaceProvider({ children }) {
   }), [loading, students, activeStudents, archivedStudents, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
-    standaloneExams, standaloneExamScores,
+    standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,
     openLessonForGroup, finishLesson, markGroupAbsences, validateBulkRows,
     sessionStudentsFor, countsForLesson, showToast, isArabic, t, isOnline])
