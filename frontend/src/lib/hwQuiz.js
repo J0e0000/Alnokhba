@@ -187,6 +187,37 @@ export function parseQuestionsText(text) {
   return { questions: cleaned, warnings }
 }
 
+// ── مفتاح الإجابات الجماعي (Task 44e) ────────────────────────────────────────
+// المدرس يلصق «أ ب ج د أ» أو «1-أ 2-ج 3-ب» أو «صح غلط صح» — كل توكن = إجابة
+// سؤال بالترتيب. «0» = سبي على السؤال ده من غير تغيير.
+const TF_TRUE_RE = /^(صح|true|✔|✅|✓)$/i
+const TF_FALSE_RE = /^(غلط|خطا|خطأ|false|✗|❌|x)$/i
+
+export function parseAnswerKey(text) {
+  let src = normalizeDigits(String(text ?? ''))
+  // لو المفتاح فيه حروف → أرقام الأسئلة («1-» «2.» «3)») بقاوا ضوضاء — شيلها
+  if (/[\u0621-\u064Aa-zA-Z]/.test(src)) {
+    src = src.replace(/(^|[\s,،\-–_/:.|])(\d{1,2})\s*[-–_.::：)]\s*/g, '$1')
+  }
+  const tokens = src
+    .split(/[\s,،\-–_/:.•|()+]+/)
+    .filter(Boolean)
+  const keys = tokens.map((t) => {
+    const low = t.toLowerCase().replace(/[إأآا]/g, 'ا')
+    if (low === '0') return { raw: t, skip: true }
+    if (TF_TRUE_RE.test(low)) return { raw: t, index: 0, tf: true }
+    if (TF_FALSE_RE.test(low)) return { raw: t, index: 1, tf: true }
+    const bare = low.replace(/^ال/, '')
+    for (let i = 0; i < LETTER_ALIASES.length; i++) {
+      const norm = LETTER_ALIASES[i].map((c) => String(c).replace(/[إأآا]/g, 'ا'))
+      if (norm.includes(low) || norm.includes(bare)) return { raw: t, index: i }
+    }
+    if (/^[1-6]$/.test(t)) return { raw: t, index: Number(t) - 1 }
+    return { raw: t, index: null }
+  })
+  return { keys }
+}
+
 // ── تحويل رد الدالة الذكية (ai-parse-homework) لمخطط الأسئلة ────────────────
 // الدالة بترجّع {question_text, kind, options[], correct_options[], explanation}
 export function mapAiQuestions(list) {

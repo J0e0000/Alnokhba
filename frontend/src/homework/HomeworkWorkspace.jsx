@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion, newTrueFalseQuestion, READY_LETTERS } from '../lib/hwQuiz'
+import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion } from '../lib/hwQuiz'
+import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HOMEWORK WORKSPACE — الواجبات التفاعلية (056 → 058 / Task 44d)
@@ -72,16 +73,6 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
 
   const groupsList = ws.groups || []
   const totalMarks = questions.reduce((a, q) => a + (Number(q.marks) || 1), 0)
-
-  const setQ = (i, patch) => setQuestions((prev) => prev.map((q, j) => (j === i ? { ...q, ...patch } : q)))
-  const addQuestion = () => setQuestions((prev) => [...prev, newQuestion()])
-  const removeQuestion = (i) => setQuestions((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : prev))
-
-  // قوالب جاهزة (طلب المستر): الواجب في الكتاب — المدرس يحدد الإجابة بس
-  const applyTemplate = (i, kind) => {
-    if (kind === 'tf') setQ(i, { choices: ['صح', 'غلط'], correct: 0 })
-    else setQ(i, { choices: [...READY_LETTERS.slice(0, 4)], correct: 0 })
-  }
 
   // محلّل النص الملصوق (محلي — بدون أي AI)
   const applyPasted = () => {
@@ -244,79 +235,21 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
             </div>
           )}
 
-          {/* بناء الأسئلة */}
+          {/* بناء الأسئلة — المحرّر الذكي المشترك (44e): توليد سريع + Enter flow + مفتاح إجابات */}
           <div className="grid gap-3">
-            {questions.map((q, i) => (
-              <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>{isArabic ? `السؤال ${i + 1}` : `Question ${i + 1}`}</span>
-                  {questions.length > 1 && (
-                    <button className="btn-ghost rounded-lg px-2 py-1 text-[.68rem] font-extrabold" onClick={() => removeQuestion(i)} aria-label={isArabic ? 'حذف السؤال' : 'Remove question'}>✕</button>
-                  )}
-                </div>
-                <input
-                  className="glass-input rounded-lg px-3 py-2 text-sm w-full mb-2"
-                  placeholder={isArabic ? 'نص السؤال (اختياري — لو الواجب في الكتاب سيبه فاضي)' : 'Question text (optional)'}
-                  value={q.text}
-                  onChange={(e) => setQ(i, { text: e.target.value })}
-                  aria-label={isArabic ? 'نص السؤال' : 'Question text'}
-                />
-                {/* القوالب الجاهزة */}
-                <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                  <span className="text-[.64rem] font-extrabold text-fg-muted">{isArabic ? 'قالب جاهز:' : 'Template:'}</span>
-                  <button type="button" className="btn-ghost rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold" onClick={() => applyTemplate(i, 'abcd')}>أ ب ج د</button>
-                  <button type="button" className="btn-ghost rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold" onClick={() => applyTemplate(i, 'tf')}>صح / غلط</button>
-                </div>
-                <div className="grid gap-1.5">
-                  {q.choices.map((c, ci) => (
-                    <label key={ci} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`correct-${i}`}
-                        checked={Number(q.correct) === ci}
-                        onChange={() => setQ(i, { correct: ci })}
-                        className="w-3.5 h-3.5 accent-[var(--ok-strong)]"
-                        aria-label={isArabic ? 'الإجابة الصحيحة' : 'Correct answer'}
-                      />
-                      <input
-                        className="glass-input rounded-lg px-2.5 py-1.5 text-sm flex-1 min-w-0"
-                        placeholder={isArabic ? `اختيار ${ci + 1}` : `Choice ${ci + 1}`}
-                        value={c}
-                        onChange={(e) => { const choices = [...q.choices]; choices[ci] = e.target.value; setQ(i, { choices }) }}
-                      />
-                      {q.choices.length > 2 && (
-                        <button className="btn-ghost rounded-lg px-2 py-1 text-[.66rem] font-extrabold" onClick={() => { const choices = q.choices.filter((_, j) => j !== ci); setQ(i, { choices, correct: q.correct >= choices.length ? 0 : q.correct }) }} aria-label={isArabic ? 'حذف الاختيار' : 'Remove choice'}>✕</button>
-                      )}
-                    </label>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between gap-2 mt-2">
-                  <div className="flex gap-1.5">
-                    {q.choices.length < 6 && (
-                      <button className="btn-ghost rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold" onClick={() => setQ(i, { choices: [...q.choices, ''] })}>＋ {isArabic ? 'اختيار' : 'Choice'}</button>
-                    )}
-                  </div>
-                  <label className="flex items-center gap-1.5 text-[.68rem] text-fg-muted">
-                    {isArabic ? 'الدرجة' : 'Marks'}
-                    <input type="number" min="1" inputMode="decimal" className="glass-input rounded-lg px-2 py-1 text-[.75rem] w-14" value={q.marks} onChange={(e) => setQ(i, { marks: e.target.value })} />
-                  </label>
-                </div>
-                <small className="block text-[.62rem] text-fg-muted mt-1.5">
-                  {isArabic ? '✔ الدائرة = الإجابة الصحيحة. النص والاختيارات يتعدلوا في أي وقت قبل أول تسليم.' : '✔ Radio = correct answer. Editable until the first submission.'}
-                </small>
-              </div>
-            ))}
             <div className="flex items-center justify-between gap-2">
-              <div className="flex gap-1.5">
-                <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={addQuestion}>
-                  ＋ {isArabic ? 'سؤال اختيارات' : 'Add MCQ'}
-                </button>
-                <button className="btn-ghost rounded-xl px-4 py-2 text-[.74rem] font-extrabold" onClick={() => setQuestions((prev) => [...prev, newTrueFalseQuestion()])}>
-                  ＋ {isArabic ? 'سؤال صح/غلط' : 'Add true/false'}
-                </button>
-              </div>
+              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>
+                {isArabic ? `الأسئلة (${questions.length})` : `Questions (${questions.length})`}
+              </span>
               <span className="nk-pill nk-pill-gold">{isArabic ? 'الإجمالي' : 'Total'}: {totalMarks} {isArabic ? 'درجة' : 'marks'}</span>
             </div>
+            <QuizQuestionsEditor
+              questions={questions}
+              setQuestions={setQuestions}
+              isArabic={isArabic}
+              editorId="hw"
+              optionalText
+            />
           </div>
 
           {error && <div className="nk-notice" style={{ background: 'var(--danger-bg)', borderColor: 'var(--danger-border)', color: 'var(--danger-strong)' }}>{error}</div>}
