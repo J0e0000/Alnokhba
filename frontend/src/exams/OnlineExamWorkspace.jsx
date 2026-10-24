@@ -222,7 +222,7 @@ function OnlineExamBuilder({ onCreated, onCancel }) {
           {/* بنك الأسئلة */}
           <div className="rounded-xl p-3" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
             <button className="flex items-center justify-between w-full bg-transparent border-0 cursor-pointer p-0" onClick={() => setBankOpen((v) => !v)}>
-              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>
+              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--navy-ink)' }}>
                 🏦 {isArabic ? 'بنك الأسئلة' : 'Question bank'} {bank.length ? `(${bank.length})` : ''}
               </span>
               <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>{bankOpen ? '▲' : '▼'}</span>
@@ -259,7 +259,7 @@ function OnlineExamBuilder({ onCreated, onCancel }) {
           {/* بناء الأسئلة — المحرّر الذكي المشترك (44e): توليد سريع + Enter flow + مفتاح إجابات */}
           <div className="grid gap-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>
+              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--navy-ink)' }}>
                 {isArabic ? `الأسئلة (${questions.length})` : `Questions (${questions.length})`}
               </span>
               <span className="nk-pill nk-pill-gold">{isArabic ? 'الإجمالي' : 'Total'}: {totalMarks} {isArabic ? 'درجة' : 'marks'}</span>

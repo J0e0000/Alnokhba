@@ -49,7 +49,14 @@ export default function PublicQRPage() {
   const [linkCopied, setLinkCopied] = useState(false)
   // TASK44d (طلب المستر): أول ما حد يفتح بورتال الطالب يلاقي «تفعيل الإشعارات»
   // علطول فوق — مش في آخر الكارت. الإخفاء يدوي بس لكل جلسة.
-  const [pushBannerDismissed, setPushBannerDismissed] = useState(false)
+  // TASK44e: الإخفاء بقى بيتقرأ فعليًا من sessionStorage (كان write-only)،
+  // وكمان فيه مودال فوري عند الدخول يطلب التفعيل علطول، واللي سمحوا قبل كده
+  // بس من غير اشتراك محفوظ على الجهاز ده بيتسجل تلقائيًا من غير أي سؤال.
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(() => {
+    try { return sessionStorage.getItem('nokhba_push_banner_dismissed') === '1' } catch { return false }
+  })
+  const [pushModalOpen, setPushModalOpen] = useState(false)
+  const pushAutoRegisterTried = useRef(false)
 
   const tokenRef = useRef('')
   // FIX (refresh race): a background poll that started BEFORE the parent tapped a
@@ -699,6 +706,7 @@ export default function PublicQRPage() {
       const result = await registerStudentPush(tokenRef.current)
       if (result.ok) {
         setParentPushEnabled(true)
+        try { localStorage.setItem(`nokhba_push_ok_${tokenRef.current}`, '1') } catch { /* private mode */ }
         setParentPushMessage('تم تفعيل إشعارات هذا الطالب على هذا الجهاز. ستصل التنبيهات حتى عند إغلاق الموقع.')
       } else {
         const messages = {
@@ -721,6 +729,42 @@ export default function PublicQRPage() {
         ? 'تم السماح بالإشعارات، لكن لم يتم حفظ الاشتراك. أعد تحميل الصفحة وحاول مرة أخرى.'
         : 'حدث خطأ أثناء تفعيل الإشعارات. أعد تحميل الصفحة وحاول مرة أخرى.')
     } finally { setParentPushBusy(false) }
+  }
+
+  // ─── TASK44e: «يطلب تفعيل الإشعارات علطول» ──────────────────────────
+  // أول ما البوابة تجهز: مودال فوري يطلب التفعيل (مرة كل جلسة — الإخفاء
+  // بيتحفظ في sessionStorage)، واللي سمحوا قبل كده من غير اشتراك محفوظ
+  // على الجهاز ده بيتسجللهم صامت من غير أي سؤال تاني.
+  useEffect(() => {
+    if (state !== 'ready') return
+    if (typeof Notification === 'undefined' || !window.isSecureContext) return
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+    let marker = false
+    try { marker = localStorage.getItem(`nokhba_push_ok_${tokenRef.current}`) === '1' } catch { /* private mode */ }
+    if (Notification.permission === 'default') {
+      if (!marker && !pushBannerDismissed && !pushAutoRegisterTried.current) {
+        pushAutoRegisterTried.current = true
+        setPushModalOpen(true)
+      }
+      return
+    }
+    if (Notification.permission === 'granted' && !marker && !pushAutoRegisterTried.current) {
+      // تسجيل صامت — الإذن متسمح بالفعل فمفيش بوب أب من المتصفح أصلاً
+      pushAutoRegisterTried.current = true
+      handleEnableParentPush()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
+
+  const handleEnableFromModal = async () => {
+    await handleEnableParentPush()
+    setPushModalOpen(false)
+  }
+
+  const handleDismissPushModal = () => {
+    setPushModalOpen(false)
+    setPushBannerDismissed(true)
+    try { sessionStorage.setItem('nokhba_push_banner_dismissed', '1') } catch { /* private mode */ }
   }
 
   // ─── Loading ───
@@ -820,6 +864,48 @@ export default function PublicQRPage() {
 
   return (
     <Shell wide teacherName={teacherName} branding={branding}>
+      {/* TASK44e — مودال «فعّل الإشعارات» الفوري عند الدخول (مرة كل جلسة) */}
+      {pushModalOpen && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ background: 'rgba(2,6,16,.62)', backdropFilter: 'blur(3px)', zIndex: 95 }}
+          onClick={handleDismissPushModal}
+          role="dialog"
+          aria-modal="true"
+          aria-label="تفعيل الإشعارات"
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-5 text-center"
+            style={{ background: '#101a33', border: '1px solid rgba(251,156,27,.45)', boxShadow: '0 24px 60px rgba(0,0,0,.5)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 grid place-items-center w-14 h-14 rounded-full" style={{ background: 'rgba(251,156,27,.15)', border: '1px solid rgba(251,156,27,.4)', fontSize: '1.6rem' }}>🔔</div>
+            <h3 style={{ color: '#ffffff', fontWeight: 900, fontSize: '1.02rem', margin: '0 0 6px' }}>فعّل إشعارات النتايج</h3>
+            <p style={{ color: '#c9d4e8', fontSize: '.78rem', lineHeight: 1.8, margin: '0 0 14px' }}>
+              نتايج الواجبات والامتحانات وتغييرات الحصص توصلك فورًا — حتى والموقع مقفول. التفعيل مرة واحدة على الجهاز ده بس.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                className="rounded-xl px-4 py-3 font-extrabold text-[.82rem] cursor-pointer border-0"
+                style={{ background: '#fb9c1b', color: '#14204a' }}
+                onClick={handleEnableFromModal}
+                disabled={parentPushBusy}
+              >
+                {parentPushBusy ? 'جاري التفعيل...' : '🔔 تفعيل الإشعارات'}
+              </button>
+              <button
+                className="rounded-xl px-4 py-2.5 font-extrabold text-[.74rem] cursor-pointer"
+                style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.18)', color: '#c9d4e8' }}
+                onClick={handleDismissPushModal}
+              >
+                مش دلوقتي
+              </button>
+            </div>
+            {parentPushMessage && <p style={{ color: '#f3d7a8', fontSize: '.68rem', margin: '10px 0 0', lineHeight: 1.7 }}>{parentPushMessage}</p>}
+          </div>
+        </div>
+      )}
+
       {/* TASK44d — تفعيل الإشعارات فورًا (أول كارت في البوابة) */}
       {!parentPushEnabled && !pushBannerDismissed && (
         <div style={pushBanner}>

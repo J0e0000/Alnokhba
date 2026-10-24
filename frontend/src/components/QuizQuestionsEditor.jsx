@@ -181,14 +181,12 @@ export default function QuizQuestionsEditor({ questions, setQuestions, isArabic,
         </div>
 
         {toolMsg && (
-          <div className="nk-notice mt-2" style={toolMsg.ok
-            ? { background: 'var(--success-bg, rgba(34,150,94,.08))', borderColor: 'rgba(34,150,94,.4)', color: 'var(--ok-strong, #16913A)' }
-            : { background: 'var(--warning-bg, rgba(251,156,27,.08))', borderColor: 'rgba(251,156,27,.4)', color: 'var(--brand-navy)' }}>
+          <div className="nk-notice mt-2" role="status">
             <span className="text-[.7rem] font-bold">{toolMsg.text}</span>
           </div>
         )}
         {dups.length > 0 && (
-          <div className="nk-notice mt-2" style={{ background: 'var(--warning-bg, rgba(251,156,27,.08))', borderColor: 'rgba(251,156,27,.4)', color: 'var(--brand-navy)' }}>
+          <div className="nk-notice mt-2">
             {dups.slice(0, 3).map(([a, b], i) => (
               <div key={i} className="text-[.7rem] font-bold">• {isArabic ? `السؤال ${b} مكرر مع السؤال ${a} — لو مقصود سيبه، لو غلط امسحه` : `Q${b} duplicates Q${a}`}</div>
             ))}
@@ -205,7 +203,7 @@ export default function QuizQuestionsEditor({ questions, setQuestions, isArabic,
       {questions.map((q, i) => (
         <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-container)', border: '1px solid var(--surface-border)' }}>
           <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>{isArabic ? `السؤال ${i + 1}` : `Question ${i + 1}`}</span>
+            <span className="text-[.72rem] font-extrabold" style={{ color: 'var(--navy-ink)' }}>{isArabic ? `السؤال ${i + 1}` : `Question ${i + 1}`}</span>
             {questions.length > 1 && (
               <button className="btn-ghost rounded-lg px-2 py-1 text-[.68rem] font-extrabold" onClick={() => setQuestions(questions.filter((_, j) => j !== i))} aria-label={isArabic ? 'حذف السؤال' : 'Remove question'}>✕</button>
             )}

@@ -30,6 +30,22 @@ export function newTrueFalseQuestion() {
   return { text: '', choices: [...TRUE_FALSE_CHOICES], correct: 0, marks: 1 }
 }
 
+// ── قوالب البدء السريع (Task 44e — تبويب الواجبات) ──────────────────────────
+// «واجب 10 اختيارات» بضغطة واحدة: N سؤال جاهز باسم القالب، والنص اختياري.
+export function presetQuestions({ type = 'mcq', count = 10 } = {}) {
+  const n = Math.max(1, Math.min(Number(count) || 0, 60))
+  const make = type === 'tf' ? newTrueFalseQuestion : newQuestion
+  return Array.from({ length: n }, make)
+}
+
+export const HOMEWORK_PRESETS = [
+  { key: 'quick5',  label: 'مراجعة سريعة (5)',   type: 'mcq', count: 5 },
+  { key: 'mcq10',   label: 'واجب 10 اختيارات',   type: 'mcq', count: 10 },
+  { key: 'mcq15',   label: 'واجب 15 اختيارات',   type: 'mcq', count: 15 },
+  { key: 'mcq20',   label: 'اختبار قصير (20)',   type: 'mcq', count: 20 },
+  { key: 'tf10',    label: 'واجب صح وغلط (10)',  type: 'tf',  count: 10 },
+]
+
 // ── محاولة فهم نص الأسئلة (لصق أو ملف نصي) ──────────────────────────────────
 // best effort بالطلب — المدرس بيراجع ويصلّح قبل الحفظ.
 // الصيغ المدعومة:

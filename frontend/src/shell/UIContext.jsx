@@ -180,6 +180,13 @@ export function UIProvider({ teacherId, children }) {
     persistNav('home', null)
   }, [persistNav])
 
+  // عودة لمركز الواجبات (تبويب «الواجبات» 44e) — بدل الرجوع للرئيسية
+  const goHomeworkHub = useCallback(() => {
+    setTaskParams(null)
+    setAreaState('homework')
+    persistNav('homework', null)
+  }, [persistNav])
+
   // الامتحان الأونلاين — فتح/قفل بنفس عقد الواجب
   const openOnlineExam = useCallback((params) => {
     setOeParams(params)
@@ -290,14 +297,14 @@ export function UIProvider({ teacherId, children }) {
   const value = useMemo(() => ({
     area, setArea, sessionParams, openSession, closeSession, askConfirm,
     examParams, openExam, closeExam,
-    taskParams, openTask, closeTask,
+    taskParams, openTask, closeTask, goHomeworkHub,
     oeParams, openOnlineExam, closeOnlineExam,
     queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage,
     historyStudentId, openStudentHistory, clearHistoryStudent,
     historyOpen, setHistoryOpen,
     insightsIntent, openInsights, clearInsightsIntent,
     tourActive, setTourActive,
-  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, examParams, openExam, closeExam, taskParams, openTask, closeTask, oeParams, openOnlineExam, closeOnlineExam, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
+  }), [area, setArea, sessionParams, openSession, closeSession, askConfirm, examParams, openExam, closeExam, taskParams, openTask, closeTask, goHomeworkHub, oeParams, openOnlineExam, closeOnlineExam, queue, startQueue, advanceQueue, closeQueue, reopenQueue, discardQueue, updateQueueItemMessage, historyStudentId, openStudentHistory, clearHistoryStudent, historyOpen, insightsIntent, openInsights, clearInsightsIntent, tourActive])
 
   return (
     <UIContext.Provider value={value}>

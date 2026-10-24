@@ -85,6 +85,7 @@
   --fg: #1a2338;
   --fg-muted: #47536e;
   --fg-subtle: #5d6b87;
+  --navy-ink: #142d62;            /* brand-navy as TEXT on themed surfaces (44e contrast fix) */
   --shadow: 0 14px 34px rgba(28, 41, 69, 0.10);
   --shadow-sm: 0 4px 14px rgba(28, 41, 69, 0.07);
 
@@ -130,6 +131,7 @@ html.dark {
   --fg: #e9eef8;
   --fg-muted: #aab6cd;
   --fg-subtle: #93a1bb;
+  --navy-ink: #d9e3f8;            /* navy-on-navy was unreadable in dark — light ink instead */
   --shadow: 0 16px 38px rgba(2, 6, 16, 0.5);
   --shadow-sm: 0 6px 16px rgba(2, 6, 16, 0.4);
 

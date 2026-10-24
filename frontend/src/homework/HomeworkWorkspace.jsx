@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion } from '../lib/hwQuiz'
+import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion, presetQuestions } from '../lib/hwQuiz'
 import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -35,13 +35,13 @@ export default function HomeworkWorkspace({ params }) {
   )
 
   if (isNew) {
-    return <HomeworkBuilder onCreated={(created) => { if (created?.id) ui.openTask({ taskId: created.id }) }} onCancel={ui.closeTask} />
+    return <HomeworkBuilder onCreated={(created) => { if (created?.id) ui.openTask({ taskId: created.id }) }} onCancel={ui.goHomeworkHub} preset={params?.preset} />
   }
   if (!task) {
     return (
       <div className="nk-content text-center py-12">
         <p className="font-extrabold mb-3">{isArabic ? 'الواجب غير موجود أو تم حذفه' : 'Homework not found'}</p>
-        <button className="btn-navy action-button !min-h-[3rem]" onClick={ui.closeTask}>{isArabic ? 'العودة للرئيسية' : 'Back home'}</button>
+        <button className="btn-navy action-button !min-h-[3rem]" onClick={ui.goHomeworkHub}>{isArabic ? 'العودة للواجبات' : 'Back to homework'}</button>
       </div>
     )
   }
@@ -50,7 +50,7 @@ export default function HomeworkWorkspace({ params }) {
 
 // ── البناء: عنوان/وصف/مجموعة/تاريخ/فيديو + بناء أسئلة الاختيار ───────────────
 // editTask → وضع التعديل (مسموح بس لما مفيش أي طالب حلّ بعد — 058)
-function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
+function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated, preset }) {
   const ws = useWorkspace()
   const { isArabic } = ws
   const [title, setTitle] = useState(editTask?.title || '')
@@ -61,7 +61,7 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
   const [questions, setQuestions] = useState(
     editTask?.questions?.length
       ? editTask.questions.map((q) => ({ text: q.text || '', choices: (q.choices || []).map(String), correct: Number(q.correct) || 0, marks: Number(q.marks) || 1 }))
-      : [newQuestion()],
+      : (preset ? presetQuestions(preset) : [newQuestion()]),
   )
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
@@ -228,7 +228,7 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
                 </div>
               )}
               {warnings.length > 0 && (
-                <div className="nk-notice mt-2" style={{ background: 'var(--warning-bg, rgba(251,156,27,.08))', borderColor: 'rgba(251,156,27,.4)', color: 'var(--brand-navy)' }}>
+                <div className="nk-notice mt-2">
                   {warnings.slice(0, 4).map((w, i) => <div key={i} className="text-[.7rem] font-bold">• {w}</div>)}
                 </div>
               )}
@@ -238,7 +238,7 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated }) {
           {/* بناء الأسئلة — المحرّر الذكي المشترك (44e): توليد سريع + Enter flow + مفتاح إجابات */}
           <div className="grid gap-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--brand-navy)' }}>
+              <span className="text-[.78rem] font-extrabold" style={{ color: 'var(--navy-ink)' }}>
                 {isArabic ? `الأسئلة (${questions.length})` : `Questions (${questions.length})`}
               </span>
               <span className="nk-pill nk-pill-gold">{isArabic ? 'الإجمالي' : 'Total'}: {totalMarks} {isArabic ? 'درجة' : 'marks'}</span>
@@ -322,7 +322,7 @@ function HomeworkResults({ task }) {
       isArabic ? `حذف واجب «${task.title}» وكل التسليمات نهائيًا؟` : `Delete "${task.title}" and all submissions permanently?`,
       { title: isArabic ? 'حذف الواجب' : 'Delete homework', confirmLabel: isArabic ? 'حذف' : 'Delete', danger: true },
     )
-    if (ok) { const done = await ws.deleteHomeworkTask(task); if (done) ui.closeTask() }
+    if (ok) { const done = await ws.deleteHomeworkTask(task); if (done) ui.goHomeworkHub() }
   }
 
   if (editing) {
@@ -334,7 +334,6 @@ function HomeworkResults({ task }) {
       />
     )
   }
-
   const canEdit = stats.solvedCount === 0
 
   return (
@@ -343,7 +342,7 @@ function HomeworkResults({ task }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             {!ui.isMobile && (
-              <button className="nk-pill nk-pill-gold mb-2 cursor-pointer border-0" onClick={ui.closeTask}>
+              <button className="nk-pill nk-pill-gold mb-2 cursor-pointer border-0" onClick={ui.goHomeworkHub}>
                 → {isArabic ? 'الرئيسية' : 'Home'}
               </button>
             )}

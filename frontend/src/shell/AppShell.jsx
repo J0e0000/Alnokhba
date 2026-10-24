@@ -32,6 +32,7 @@ const StudentsArea = lazy(() => import('../areas/StudentsArea'))
 const HistoryArea = lazy(() => import('../areas/HistoryArea'))
 const ReportsArea = lazy(() => import('../areas/ReportsArea'))
 const SettingsArea = lazy(() => import('../areas/SettingsArea'))
+const HomeworkArea = lazy(() => import('../areas/HomeworkArea'))
 
 const AREA_FALLBACK_AR = 'جاري التحميل...'
 const AREA_FALLBACK_EN = 'Loading...'
@@ -50,6 +51,7 @@ const EN_DATE = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeri
 const NAV = [
   { key: 'home', label: 'نظرة عامة', labelEn: 'Overview', icon: '▦' },
   { key: 'students', label: 'الطلاب', labelEn: 'Students', icon: '♧' },
+  { key: 'homework', label: 'الواجبات', labelEn: 'Homework', icon: '✎' },
   { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
   { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
 ]
@@ -61,6 +63,7 @@ const TOUR_STEPS_AR = [
   { target: '[data-tour="today-sessions"]', title: 'حصص اليوم تبدأ من هنا', body: 'كل حصة مجدولة اليوم تظهر كبطاقة. اضغط «فتح الحصة» لتبدأ مساحة العمل: حضور، تفاعل، واجب، امتحان، وتقرير — كلها في شاشة واحدة بدون تنقل.' },
   { target: '[data-tour="stats"]', title: 'نظرة سريعة على يومك', body: 'ثلاث أرقام فقط: عدد حصص اليوم، عدد الطلاب، والإجراءات المعلقة التي تحتاج انتباهك.' },
   { target: '[data-tour="nav-students"]', title: 'الطلاب وإدارتهم', body: 'من هنا تدير الطلاب: إضافة طالب أو عدة طلاب دفعة واحدة، فلترة بالمرحلة أو المجموعة، وإجراءات جماعية (تعيين مجموعة، رسائل، QR) عند تحديد أكثر من طالب.' },
+  { target: '[data-tour="nav-homework"]', title: 'الواجبات التفاعلية', body: 'تبويب كامل للواجبات: قوالب جاهزة (واجب 10 اختيارات، صح وغلط...) تفتح البناء بعدد أسئلة فورًا، Enter بينقلك بين الاختيارات، ومفتاح إجابات تلصقه مرة واحدة — والتصحيح تلقائي والدرجة تتسجل في الحصة الجاية.' },
   { target: '[data-tour="nav-reports"]', title: 'التقارير الجماعية', body: 'تقارير الحصص المنتهية لكل المجموعة، روابط البوابة (QR)، والقوالب — مع اختيار المستلمين في كل إرسال.' },
   { target: '[data-tour="account"]', title: 'حسابك وإعداداتك', body: 'الإعدادات والمساعدة والخروج موجودة هنا ومن صفحة الإعدادات — عشان تفضل شاشة العمل نظيفة أثناء الحصص.' },
 ]
@@ -68,6 +71,7 @@ const TOUR_STEPS_EN = [
   { target: '[data-tour="today-sessions"]', title: "Today's sessions start here", body: 'Every scheduled session is a card. Tap "Open session" to launch the workspace: attendance, interaction, homework, exams and the report — all in one screen.' },
   { target: '[data-tour="stats"]', title: 'Your day at a glance', body: 'Just three numbers: sessions today, students today, and pending actions needing your attention.' },
   { target: '[data-tour="nav-students"]', title: 'Students', body: 'Manage students here: single or bulk add, stage/group filters, and bulk actions (assign group, messages, QR) when you select multiple students.' },
+  { target: '[data-tour="nav-homework"]', title: 'Interactive homework', body: 'A full homework tab: ready templates (10 MCQs, true/false...) generate questions instantly, Enter jumps between choices, and you can paste a whole answer key at once — grading is automatic and grades flow into the next session.' },
   { target: '[data-tour="nav-reports"]', title: 'Batch reports', body: 'Reports for completed sessions, portal (QR) links, and templates — with recipient selection on every send.' },
   { target: '[data-tour="account"]', title: 'Account & settings', body: 'Settings, help and sign-out live here and in the Settings page — keeping the working screen clean during sessions.' },
 ]
@@ -115,7 +119,9 @@ export default function AppShell({ onOpenAdmin }) {
   const brandName = ws.settings ? null : null
   void brandName
 
-  const activeNav = ui.area === 'session' ? 'home' : ui.area
+  const activeNav = ui.area === 'session' ? 'home'
+    : (ui.area === 'task' || ui.area === 'onlineExam') ? 'homework'
+    : ui.area
 
   // LOGOUT SAFETY (UX restructure): logout lives ONLY in the account menu
   // (under the user's name) and in Settings — never in the bottom navigation
@@ -146,8 +152,8 @@ export default function AppShell({ onOpenAdmin }) {
           key={item.key}
           className={`nav-btn ${activeNav === item.key ? 'active' : ''}`}
           aria-current={activeNav === item.key ? 'page' : undefined}
+          data-tour={item.key === 'students' ? 'nav-students' : item.key === 'homework' ? 'nav-homework' : item.key === 'reports' ? 'nav-reports' : undefined}
           onClick={() => ui.setArea(item.key)}
-          data-tour={item.key === 'students' ? 'nav-students' : item.key === 'reports' ? 'nav-reports' : undefined}
         >
           <span aria-hidden="true" style={{ fontSize: '1rem' }}>{item.icon}</span>
           <span>{isArabic ? item.label : item.labelEn}</span>
@@ -280,6 +286,7 @@ export default function AppShell({ onOpenAdmin }) {
           <Suspense fallback={<div className="py-10 text-center text-sm text-fg-muted" role="status">{isArabic ? AREA_FALLBACK_AR : AREA_FALLBACK_EN}</div>}>
             {ui.area === 'students' && <StudentsArea />}
             {ui.area === 'history' && <HistoryArea />}
+            {ui.area === 'homework' && <HomeworkArea />}
             {ui.area === 'reports' && <ReportsArea />}
             {ui.area === 'settings' && <SettingsArea />}
             {/* legacy 'insights'/'analytics' deep links land in Settings —
@@ -299,7 +306,7 @@ export default function AppShell({ onOpenAdmin }) {
             key={item.key}
             className={activeNav === item.key ? 'active' : ''}
             onClick={() => ui.setArea(item.key)}
-            data-tour={item.key === 'students' ? 'nav-students' : item.key === 'reports' ? 'nav-reports' : undefined}
+            data-tour={item.key === 'students' ? 'nav-students' : item.key === 'homework' ? 'nav-homework' : item.key === 'reports' ? 'nav-reports' : undefined}
           >
             <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>{item.icon}</span>
             <span>{isArabic ? item.label : item.labelEn}</span>
