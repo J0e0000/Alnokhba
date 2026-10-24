@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -9,8 +9,10 @@ import EmailConfigModal from '../components/EmailConfigModal'
 import AdminBackupsPanel from '../components/AdminBackupsPanel'
 import AdminAuditLogsPanel from '../components/AdminAuditLogsPanel'
 import AdminSupportAccessModal from '../components/AdminSupportAccessModal'
+import MessageQueueModal from '../components/MessageQueueModal'
 import { downloadCSV, localDateStr } from '../lib/csv'
 import { describeEdgeFunctionError } from '../lib/edgeFunctionErrors'
+import { buildRenewalQueueItem } from '../lib/renewalReceipt'
 
 const STATUS_LABEL = { trial: 'تجربة مجانية', active: 'مشترك فعّال', expired: 'منتهي', cancelled: 'ملغي' }
 const ACTION_LABEL = { extend: 'تفعيل/تمديد', cancel: 'إلغاء اشتراك', verify: 'تأكيد حساب', password_change: 'تغيير كلمة مرور', backup_failed: '⚠️ فشل نسخة احتياطية' }
@@ -49,6 +51,34 @@ export default function AdminDashboard({ onBack }) {
   const [retryingEmailId, setRetryingEmailId] = useState(null)
   // إعدادات إرسال الإيميل (Task 44j) — من لوحة الأدمن نفسها بلا Dashboard
   const [emailConfigOpen, setEmailConfigOpen] = useState(false)
+  // ── قائمة وصول واتساب (44l) — نفس UX قائمة الإرسال المعتمدة، محلية للوحة:
+  // العناصر = وصول تجديد مبراندج لكل عضو، والإرسال handoff بضغطة لكل رقم.
+  const [receiptQueue, setReceiptQueue] = useState(null) // { items, index, status }
+
+  const sendReceipts = useCallback((items) => {
+    if (!items?.length) { showToast('مفيش أعضاء لهم رقم مسجل — حدّث أرقامهم من ملفاتهم الأول', 'error', 6000); return }
+    setReceiptQueue({ items, index: 0, status: items.map(() => 'pending') })
+  }, [showToast])
+
+  const advanceReceipt = useCallback((opts) => {
+    setReceiptQueue((prev) => {
+      if (!prev) return prev
+      const status = [...prev.status]
+      status[prev.index] = opts?.skipped ? 'skipped' : 'sent'
+      return { ...prev, status, index: prev.index + 1 }
+    })
+  }, [])
+
+  const closeReceiptQueue = useCallback(() => setReceiptQueue(null), [])
+
+  const editReceiptMessage = useCallback((index, text) => {
+    setReceiptQueue((prev) => {
+      if (!prev) return prev
+      const items = [...prev.items]
+      items[index] = { ...items[index], message: text }
+      return { ...prev, items }
+    })
+  }, [])
 
   // ── جديد: بحث وفلترة الفرق وعرض التفاصيل ووصول الدعم ──
   const [teacherSearch, setTeacherSearch] = useState('')
@@ -98,7 +128,7 @@ export default function AdminDashboard({ onBack }) {
   const loadRenewals = async () => {
     const { data, error } = await supabase
       .from('subscription_renewals')
-      .select('*, teacher:profiles!subscription_renewals_teacher_id_fkey(full_name, email), admin:profiles!subscription_renewals_admin_id_fkey(full_name)')
+      .select('*, teacher:profiles!subscription_renewals_teacher_id_fkey(full_name, email, phone), admin:profiles!subscription_renewals_admin_id_fkey(full_name)')
       .order('created_at', { ascending: false })
       .limit(100)
     if (error) { setRenewals([]); setRenewalsLoaded(false); return }
@@ -265,6 +295,22 @@ export default function AdminDashboard({ onBack }) {
     } finally {
       setRetryingEmailId(null)
     }
+  }
+
+  // ── وصول واتساب (44l): فتح قائمة الإرسال لصف تجديد واحد من السجل ──
+  const sendRowReceipt = (r) => {
+    const item = buildRenewalQueueItem({
+      id: r.id,
+      name: r.teacher?.full_name || '',
+      phone: r.teacher?.phone || '',
+      planName: r.plan_name,
+      renewedAt: r.created_at,
+      previousExpiresAt: r.previous_expires_at,
+      newExpiresAt: r.new_expires_at,
+      daysAdded: r.days_added,
+    })
+    if (!item.phone) { showToast('العضو مفيش له رقم مسجل على المنصة — حدّث رقمه من ملفه الشخصي الأول', 'error', 6000); return }
+    sendReceipts([item])
   }
 
   const sendBroadcast = async (e) => {
@@ -571,7 +617,7 @@ export default function AdminDashboard({ onBack }) {
           </div>
         ))}
 
-        {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} onDataChanged={() => { load(); loadTeamOverview(); if (renewalsLoaded) loadRenewals() }} />}
+        {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} sendReceipts={sendReceipts} onDataChanged={() => { load(); loadTeamOverview(); if (renewalsLoaded) loadRenewals() }} />}
 
         {/* ── سجل التجديدات — سجل دائم تراكمي (migration_048): لا يُستبدل ولا يُحذف ── */}
         {tab === 'renewals' && (
@@ -592,8 +638,9 @@ export default function AdminDashboard({ onBack }) {
               <div className="mb-3 bg-[var(--warn-bg)] border border-[var(--warn-border)] rounded-xl p-3 text-xs leading-relaxed">
                 <p className="font-bold text-[var(--warn-strong)]">⚠️ فشل إرسال {failedRenewals.length} إيميل تجديد</p>
                 <p className="text-fg-muted mt-1">
-                  السبب الأكثر شيوعًا: مفتاح الإرسال غير مضبوط. اضغط «⚙️ إعدادات البريد» والصق مفتاح Resend مرة واحدة،
-                  جرّب الإيميل التجريبي، ثم استخدم «إعادة إرسال الإيميل» بجانب كل صف — التجديد نفسه محفوظ ولا يحتاج إعادة.
+                  الإيميل مش ضروري — أبعت «وصل تجديد واتساب» مبراندج لكل عضو بزر «✆ وصل واتساب» جنب كل صف
+                  (بيوصل على الرقم المسجل بتاريخ التجديد والمدة والانتهاء). ولو لسه عايز الإيميل: اضغط
+                  «⚙️ إعدادات البريد» والصق مفتاح Resend، ثم استخدم «إعادة إرسال الإيميل» — التجديد نفسه محفوظ ولا يحتاج إعادة.
                 </p>
               </div>
             )}
@@ -637,6 +684,13 @@ export default function AdminDashboard({ onBack }) {
                       <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${r.email_status === 'sent' ? 'text-[var(--ok-strong)] bg-[var(--ok-bg)]' : r.email_status === 'failed' ? 'text-[var(--warn-strong)] bg-[var(--warn-bg)]' : 'text-fg-muted bg-surface-container'}`}>
                         {EMAIL_STATUS_LABEL[r.email_status] || r.email_status}
                       </span>
+                      <button
+                        onClick={() => sendRowReceipt(r)}
+                        className="bg-[#25D366]/15 text-[#128C4A] border border-[#25D366]/40 text-[11px] font-bold px-2.5 py-1.5 rounded-lg hover:bg-[#25D366]/25 min-h-[2.2rem]"
+                        title="وصل تجديد مبراندج على واتساب — الرقم المسجل للعضو"
+                      >
+                        ✆ وصل واتساب
+                      </button>
                       {(r.email_status === 'failed') && (
                         <button
                           onClick={() => retryRenewalEmail(r.id)}
@@ -726,6 +780,19 @@ export default function AdminDashboard({ onBack }) {
         showToast={showToast}
         onSaved={() => { if (renewalsLoaded) loadRenewals() }}
       />
+
+      {/* 44l: قائمة وصول واتساب — نفس مودال الإرسال المعتمد handoff لكل عضو */}
+      {receiptQueue && (
+        <MessageQueueModal
+          open
+          onClose={closeReceiptQueue}
+          queue={receiptQueue.items}
+          index={receiptQueue.index}
+          status={receiptQueue.status}
+          onAdvance={advanceReceipt}
+          onEditMessage={editReceiptMessage}
+        />
+      )}
     </div>
   )
 }

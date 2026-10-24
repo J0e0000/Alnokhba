@@ -488,12 +488,12 @@ async function handleAdminAction(req: Request): Promise<Response> {
 
     const { data: targets, error: targetsError } = await admin
       .from("profiles")
-      .select("id, full_name, email, subscription_status, subscription_expires_at")
+      .select("id, full_name, email, phone, subscription_status, subscription_expires_at")
       .in("id", memberIds);
     if (targetsError) return json({ error: targetsError.message }, 400);
 
     const emailConfig = await getEmailConfig(admin);
-    const renewed: Array<{ id: string; name: string; new_expires_at: string }> = [];
+    const renewed: Array<{ id: string; name: string; phone: string; previous_expires_at: string | null; days_added: number | null; new_expires_at: string }> = [];
     const failures: Array<{ id: string; name: string; error: string }> = [];
     const emailQueue: Array<{ renewalId: string; to: string; name: string; previousExpiresAt: string | null; newExpiresAt: string }> = [];
 
@@ -545,7 +545,17 @@ async function handleAdminAction(req: Request): Promise<Response> {
         continue;
       }
 
-      renewed.push({ id: target.id, name: target.full_name || target.email || target.id, new_expires_at: newExpires.toISOString() });
+      // 44l: phone + previous expiry + days_added travel back to the client so
+      // the admin UI can build the branded WhatsApp receipt (وصل تجديد)
+      // without a second query — email is no longer the only channel.
+      renewed.push({
+        id: target.id,
+        name: target.full_name || target.email || target.id,
+        phone: target.phone || "",
+        previous_expires_at: previousExpiresAt,
+        days_added: daysAdded,
+        new_expires_at: newExpires.toISOString(),
+      });
       if (sendEmail && isRenewal && target.email) {
         emailQueue.push({ renewalId: renewal.id, to: target.email, name: target.full_name || "", previousExpiresAt, newExpiresAt: newExpires.toISOString() });
       }

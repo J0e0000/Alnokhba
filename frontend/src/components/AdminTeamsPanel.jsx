@@ -12,7 +12,7 @@ const ACCOUNT_TYPE_LABEL = { assistant: 'مساعد', teacher: 'مدرّس', adm
  * فرديين + تعطيل/تفعيل + حذف لا يمس المستخدمين + عرض حساب العضو.
  * العضوية تنظيمية فقط — لا تمنح أي صلاحيات إضافية (الدور مستقل تمامًا).
  */
-export default function AdminTeamsPanel({ teachers = [], showToast, onViewAccount, onDataChanged }) {
+export default function AdminTeamsPanel({ teachers = [], showToast, onViewAccount, onDataChanged, sendReceipts }) {
   const [teams, setTeams] = useState([])
   const [members, setMembers] = useState([])
   const [selectedTeamId, setSelectedTeamId] = useState('')
@@ -332,6 +332,7 @@ export default function AdminTeamsPanel({ teachers = [], showToast, onViewAccoun
         members={selectedMembers}
         onClose={() => setRenewTarget(null)}
         showToast={showToast}
+        sendReceipts={sendReceipts}
         onRenewed={() => {
           // الاشتراكات اتغيرت — حدّث الفرق + بلّغ اللوحة تعيد تحميل المدرّسين/السجل
           load()

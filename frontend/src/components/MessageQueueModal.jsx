@@ -21,6 +21,11 @@ const BATCH_PAUSE_MS = 2500
  * Each item is recorded as sent/skipped so the progress line reflects
  * reality and a resumed batch never makes the teacher guess who already
  * received the message.
+ *
+ * 44l: the queue is no longer students-only — admin renewal receipts reuse
+ * it verbatim. Items WITHOUT item.student render item.name under the
+ * neutral label «المستلم» instead of «الطالب» (same send UX, same wa.me
+ * handoff, same per-item edit affordance).
  */
 export default function MessageQueueModal({ open, onClose, queue, index, status, onAdvance, onEditMessage }) {
   const [failed, setFailed] = useState(false)
@@ -140,6 +145,10 @@ export default function MessageQueueModal({ open, onClose, queue, index, status,
 
   const greenButtonClass = 'flex-1 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe5b] text-[#06231a] border border-[#25D366] font-black py-2 rounded-lg text-sm transition select-none'
 
+  // 44l: receipts for admin renewals pass name (no student object) — keep the
+  // teacher wording for student items and a neutral one for everything else.
+  const recipientName = item.student?.name || item.name || ''
+  const recipientLabel = item.student ? 'الطالب' : 'المستلم'
   return (
     <Modal open={open} onClose={onClose} title={`إرسال (${index + 1}/${queue.length})`} dismissible={false}>
       {resumed && (
@@ -147,13 +156,13 @@ export default function MessageQueueModal({ open, onClose, queue, index, status,
           استكملنا القائمة من حيث توقفت ✓
         </p>
       )}
-      <p className="text-sm mb-2"><strong>الطالب:</strong> {item.student.name}</p>
+      <p className="text-sm mb-2"><strong>{recipientLabel}:</strong> {recipientName}</p>
       {(sentCount > 0 || skippedCount > 0) && (
         <p className="text-[.68rem] mb-1 text-fg-subtle">
           تم إرسال <b>{sentCount}</b>{skippedCount > 0 && (<> · تم تخطي <b>{skippedCount}</b></>)} · المتبقي <b>{remainingCount}</b>
         </p>
       )}
-      <p className="text-[11px] mb-2 text-fg-subtle">كل ضغطة تفتح واتساب برسالة الطالب مباشرة — اضغط الزرّ الأخضر.</p>
+      <p className="text-[11px] mb-2 text-fg-subtle">{item.student ? 'كل ضغطة تفتح واتساب برسالة الطالب مباشرة — اضغط الزرّ الأخضر.' : 'كل ضغطة تفتح واتساب برسالة العضو مباشرة — اضغط الزرّ الأخضر.'}</p>
       {isBatchBoundary && <p className="text-[11px] mb-2 text-amber-300">بعد كل 100 رسالة سيأخذ الإرسال وقفة قصيرة لحماية WhatsApp والمتصفح.</p>}
       {remainingPause > 0 && <p className="text-xs font-bold text-amber-300 mb-3">استراحة تلقائية: {Math.ceil(remainingPause / 1000)} ثوانٍ...</p>}
       {canEdit && !editing && (
@@ -188,7 +197,7 @@ export default function MessageQueueModal({ open, onClose, queue, index, status,
           </button>
         </div>
       )}
-      {failed && <p className="text-rose-400 text-xs font-bold mb-3">تعذّر تجهيز رسالة واتساب لهذا الطالب — تأكد من رقم الهاتف ثم اضغط تخطي.</p>}
+      {failed && <p className="text-rose-400 text-xs font-bold mb-3">{item.student ? 'تعذّر تجهيز رسالة واتساب لهذا الطالب — تأكد من رقم الهاتف ثم اضغط تخطي.' : 'تعذّر تجهيز رسالة واتساب لهذا العضو — تأكد من رقم الهاتف ثم اضغط تخطي.'}</p>}
       <div className="flex gap-2">
         {waHref ? (
           <a

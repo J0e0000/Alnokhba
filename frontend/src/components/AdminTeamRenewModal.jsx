@@ -2,24 +2,29 @@ import { useEffect, useMemo, useState } from 'react'
 import Modal from './Modal'
 import { supabase } from '../lib/supabaseClient'
 import { describeEdgeFunctionError } from '../lib/edgeFunctionErrors'
+import { buildRenewalQueueItems } from '../lib/renewalReceipt'
+import { normalizeEgyptianPhone } from '../lib/helpers'
 
 const STATUS_LABEL = { trial: 'تجربة', active: 'فعّال', expired: 'منتهي', cancelled: 'ملغي' }
 
 /**
- * 🔄 تجديد اشتراك فريق كامل دفعة واحدة (Task 44j).
+ * 🔄 تجديد اشتراك فريق كامل دفعة واحدة (Task 44j، وصول واتساب في 44l).
  * وضعان: تاريخ انتهاء موحّد لكل الأعضاء («اشتراكه هيخلص يوم ١/١٠ يبقى كل
  * التيم نفس الكلام»)، أو تمديد بالأيام يُحسب لكل عضو من أقصى(الآن، انتهاؤه
  * الحالي) — نفس قاعدة التجديد الفردي. الحفظ أولًا على السيرفر → صف سجل دائم
- * لكل عضو في subscription_renewals → إيميل جماعي فشله لا يلمس الاشتراكات.
+ * لكل عضو في subscription_renewals.
+ * 44l: الإيميل بقى اختياري — القناة الأساسية وصل تجديد مبراندج (النخبة)
+ * يتبعت واتساب على الرقم المسجل لكل عضو عبر نفس قائمة الإرسال المعتمدة.
  */
-export default function AdminTeamRenewModal({ open, team, members, onClose, showToast, onRenewed }) {
+export default function AdminTeamRenewModal({ open, team, members, onClose, showToast, onRenewed, sendReceipts }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState('date')
   const [deadlineDate, setDeadlineDate] = useState('')
   const [extendDays, setExtendDays] = useState(30)
   const [planName, setPlanName] = useState('')
-  const [sendEmail, setSendEmail] = useState(true)
+  const [sendEmail, setSendEmail] = useState(false)
+  const [sendWhatsApp, setSendWhatsApp] = useState(true)
   const [rows, setRows] = useState([]) // [{ id, full_name, email, subscription_status, subscription_expires_at }]
   const [result, setResult] = useState(null)
 
@@ -43,7 +48,8 @@ export default function AdminTeamRenewModal({ open, team, members, onClose, show
     setDeadlineDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
     setExtendDays(30)
     setPlanName('')
-    setSendEmail(true)
+    setSendEmail(false)
+    setSendWhatsApp(true)
     loadMembers()
   } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open, team?.id])
 
@@ -77,6 +83,13 @@ export default function AdminTeamRenewModal({ open, team, members, onClose, show
       setResult(data)
       showToast?.(data?.summary || `اتجدد اشتراك ${data?.renewed?.length ?? 0} عضو`, data?.failures?.length ? 'error' : 'success', 7000)
       onRenewed?.(data)
+      // 44l: وصل واتساب فورًا بعد التجديد إذا كان مفعّلًا — القائمة نفسها
+      // بتعمل handoff لكل عضو بضغطة، فمفيش إرسال بدون موافقة صريحة.
+      if (sendWhatsApp) {
+        const items = buildRenewalQueueItems(data?.renewed, { teamName: team?.name })
+        if (items.length) sendReceipts?.(items)
+        else if ((data?.renewed || []).length) showToast?.('مفيش أعضاء لهم رقم مسجل — حدّث أرقامهم من ملفاتهم أولًا', 'error', 7000)
+      }
       await loadMembers()
     } catch (err) {
       showToast?.(err.message || 'تعذر تجديد اشتراك الفريق', 'error', 8000)
@@ -86,6 +99,26 @@ export default function AdminTeamRenewModal({ open, team, members, onClose, show
   }
 
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }) : '—')
+
+  // 44l: receipt materials stay available after the renewal so the admin can
+  // (re)open the WhatsApp queue or copy the receipts without re-renewing.
+  const receiptItems = useMemo(
+    () => buildRenewalQueueItems(result?.renewed, { teamName: team?.name }),
+    [result, team],
+  )
+  const receiptNoPhone = useMemo(
+    () => (result?.renewed || []).filter((m) => !normalizeEgyptianPhone(m.phone)),
+    [result],
+  )
+  const copyReceipts = async () => {
+    const text = receiptItems.map((it) => `${it.name}\n──────────\n${it.message}`).join('\n\n━━━━━━━━━━━━━━━\n\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast?.(`تم نسخ وصول ${receiptItems.length} عضو ✓`, 'success')
+    } catch {
+      showToast?.('تعذر النسخ — جرّب إرسال الوصول مباشرة', 'error')
+    }
+  }
 
   return (
     <Modal open={open} onClose={saving ? undefined : onClose} title={`🔄 تجديد اشتراك الفريق — ${team?.name || ''}`} wide>
@@ -110,6 +143,34 @@ export default function AdminTeamRenewModal({ open, team, members, onClose, show
                 {result.email?.failed?.map((f, i) => (
                   <p key={i} className="text-[var(--warn-strong)]">✉️ {f.name}: {f.error}</p>
                 ))}
+              </div>
+            )}
+
+            {/* 44l: وصل تجديد واتساب — يبقى متاحًا بعد التجديد لإعادة فتح القائمة
+                أو نسخ الوصول بدون إعادة التجديد نفسه. */}
+            {result?.renewed?.length > 0 && receiptItems.length > 0 && (
+              <div className="border rounded-xl p-3 text-xs space-y-2" style={{ borderColor: 'rgba(37,211,102,.35)', background: 'rgba(37,211,102,.07)' }}>
+                <p className="font-bold text-fg">🧾 وصول واتساب — وصل تجديد مبراندج لكل عضو ({receiptItems.length})</p>
+                {receiptNoPhone.length > 0 && (
+                  <p className="text-[var(--warn-strong)]">⚠️ بدون رقم مسجل ({receiptNoPhone.length}): {receiptNoPhone.map((m) => m.name).join('، ')} — حدّث أرقامهم من ملفاتهم ثم أرسل من سجل التجديدات.</p>
+                )}
+                <pre className="whitespace-pre-line bg-surface-container rounded-lg p-2.5 leading-6 text-[11px] m-0 text-fg-subtle max-h-44 overflow-y-auto">{receiptItems[0].message}{receiptItems.length > 1 && `\n… وباقي ${receiptItems.length - 1} عضو بنفس الشكل`}</pre>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => sendReceipts?.(receiptItems)}
+                    className="flex items-center gap-1.5 bg-[#25D366] hover:bg-[#1ebe5b] text-[#06231a] font-black px-3 py-2 rounded-lg text-xs transition"
+                  >
+                    ✆ إرسال الوصول عبر واتساب ({receiptItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyReceipts}
+                    className="bg-surface-container-high text-fg font-bold px-3 py-2 rounded-lg text-xs hover:bg-surface-container-highest"
+                  >
+                    ⧉ نسخ كل الوصول
+                  </button>
+                </div>
               </div>
             )}
 
@@ -184,16 +245,23 @@ export default function AdminTeamRenewModal({ open, team, members, onClose, show
                   className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-gold" />
               </label>
               <label className="flex items-end gap-2 text-sm font-bold text-fg pb-1">
-                <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)}
-                  className="w-4 h-4 accent-[var(--brand-gold,#D4AF37)]" disabled={saving} />
-                إرسال إيميل تجديد لكل الأعضاء
-                <span className="text-[10px] font-normal text-fg-muted">(يحتاج ⚙️ إعدادات البريد مضبوطة)</span>
+                <input type="checkbox" checked={sendWhatsApp} onChange={(e) => setSendWhatsApp(e.target.checked)}
+                  className="w-4 h-4 accent-[#25D366]" disabled={saving} />
+                🧾 وصل واتساب بعد التجديد
+                <span className="text-[10px] font-normal text-fg-muted">(على الرقم المسجل لكل عضو)</span>
               </label>
             </div>
+            <label className="flex items-center gap-2 text-sm font-bold text-fg">
+              <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)}
+                className="w-4 h-4 accent-[var(--brand-gold,#D4AF37)]" disabled={saving} />
+              إرسال إيميل أيضًا (اختياري)
+              <span className="text-[10px] font-normal text-fg-muted">(يحتاج ⚙️ إعدادات البريد — الوصل عالواتساب مش محتاج حاجة)</span>
+            </label>
 
             <p className="text-[11px] text-fg-muted bg-surface-container border border-outline rounded-lg px-3 py-2">
-              كل عضو هياخد صف تجديد خاص به في «سجل التجديدات» (تاريخه السابق → الجديد)، وفشل إيميل أي عضو
-              <span className="font-bold"> لا يلغي تجديده</span> — يظهر زر إعادة إرسال بجانبه كالعادة.
+              كل عضو هياخد صف تجديد خاص به في «سجل التجديدات» (تاريخه السابق → الجديد)، ووصل التجديد على واتساب
+              <span className="font-bold"> بيتجهز تلقائيًا</span> بعد الحفظ بتاريخ التجديد والمدة والانتهاء وبراندنج النخبة —
+              ولو اتلغت تجديد عضو ما زال بإمكانك إرسال وصله من السجل بزر «✆ وصل واتساب».
             </p>
 
             <div className="flex gap-2">
