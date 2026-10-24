@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext'
 import { SkeletonList } from '../components/Skeleton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import AdminTeamsPanel from '../components/AdminTeamsPanel'
+import EmailConfigModal from '../components/EmailConfigModal'
 import AdminBackupsPanel from '../components/AdminBackupsPanel'
 import AdminAuditLogsPanel from '../components/AdminAuditLogsPanel'
 import AdminSupportAccessModal from '../components/AdminSupportAccessModal'
@@ -46,6 +47,8 @@ export default function AdminDashboard({ onBack }) {
   const [renewalsLoaded, setRenewalsLoaded] = useState(false)
   const [savingExpiryId, setSavingExpiryId] = useState(null)
   const [retryingEmailId, setRetryingEmailId] = useState(null)
+  // إعدادات إرسال الإيميل (Task 44j) — من لوحة الأدمن نفسها بلا Dashboard
+  const [emailConfigOpen, setEmailConfigOpen] = useState(false)
 
   // ── جديد: بحث وفلترة الفرق وعرض التفاصيل ووصول الدعم ──
   const [teacherSearch, setTeacherSearch] = useState('')
@@ -356,6 +359,8 @@ export default function AdminDashboard({ onBack }) {
     showToast(`تم تصدير بيانات ${filteredTeachers.length} مستخدم ✓`, 'success')
   }
 
+  const failedRenewals = useMemo(() => renewals.filter((r) => r.email_status === 'failed'), [renewals])
+
   const supportStarted = async () => {
     // الجلسة اتبدأت — حدّث السياق (هيحوّلنا للوحة المستخدم مع شريط وصول الدعم)
     await refreshProfile()
@@ -566,11 +571,33 @@ export default function AdminDashboard({ onBack }) {
           </div>
         ))}
 
-        {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} />}
+        {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} onDataChanged={() => { load(); loadTeamOverview(); if (renewalsLoaded) loadRenewals() }} />}
 
         {/* ── سجل التجديدات — سجل دائم تراكمي (migration_048): لا يُستبدل ولا يُحذف ── */}
         {tab === 'renewals' && (
-          !renewalsLoaded ? (
+          <>
+            {renewalsLoaded && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-fg-muted">السجل تراكمي دائم — آخر {renewals.length} تجديد (الأحدث أولًا).</p>
+                <button
+                  onClick={() => setEmailConfigOpen(true)}
+                  className="bg-surface-container-high text-fg text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-surface-container-highest"
+                  title="مفتاح Resend + المُرسل + إيميل تجريبي — بلا Dashboard"
+                >
+                  ⚙️ إعدادات البريد
+                </button>
+              </div>
+            )}
+            {renewalsLoaded && failedRenewals.length > 0 && (
+              <div className="mb-3 bg-[var(--warn-bg)] border border-[var(--warn-border)] rounded-xl p-3 text-xs leading-relaxed">
+                <p className="font-bold text-[var(--warn-strong)]">⚠️ فشل إرسال {failedRenewals.length} إيميل تجديد</p>
+                <p className="text-fg-muted mt-1">
+                  السبب الأكثر شيوعًا: مفتاح الإرسال غير مضبوط. اضغط «⚙️ إعدادات البريد» والصق مفتاح Resend مرة واحدة،
+                  جرّب الإيميل التجريبي، ثم استخدم «إعادة إرسال الإيميل» بجانب كل صف — التجديد نفسه محفوظ ولا يحتاج إعادة.
+                </p>
+              </div>
+            )}
+            {!renewalsLoaded ? (
             <div className="space-y-3">
               <SkeletonList rows={3} />
               <p className="text-[.68rem] text-fg-muted text-center">
@@ -583,7 +610,6 @@ export default function AdminDashboard({ onBack }) {
             </p>
           ) : (
             <div className="space-y-2.5">
-              <p className="text-xs text-fg-muted">آخر {renewals.length} تجديد (الأحدث أولًا) — السجل تراكمي دائم.</p>
               {renewals.map((r) => (
                 <div key={r.id} className="bg-surface border border-outline rounded-xl p-3.5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -631,7 +657,8 @@ export default function AdminDashboard({ onBack }) {
                 </div>
               ))}
             </div>
-          )
+          )}
+          </>
         )}
 
         {tab === 'backups' && <AdminBackupsPanel showToast={showToast} />}
@@ -691,6 +718,13 @@ export default function AdminDashboard({ onBack }) {
         onClose={() => setSupportTarget(null)}
         onStarted={supportStarted}
         showToast={showToast}
+      />
+
+      <EmailConfigModal
+        open={emailConfigOpen}
+        onClose={() => setEmailConfigOpen(false)}
+        showToast={showToast}
+        onSaved={() => { if (renewalsLoaded) loadRenewals() }}
       />
     </div>
   )

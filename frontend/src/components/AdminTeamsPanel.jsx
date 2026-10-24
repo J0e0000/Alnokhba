@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import ConfirmDialog from './ConfirmDialog'
+import AdminTeamRenewModal from './AdminTeamRenewModal'
 
 const TEAM_COLORS = ['#D4AF37', '#7C3AED', '#0EA5E9', '#10B981', '#F43F5E', '#F59E0B', '#6366F1', '#0F172A']
 const ACCOUNT_TYPE_LABEL = { assistant: 'مساعد', teacher: 'مدرّس', admin: 'أدمن' }
@@ -11,7 +12,7 @@ const ACCOUNT_TYPE_LABEL = { assistant: 'مساعد', teacher: 'مدرّس', adm
  * فرديين + تعطيل/تفعيل + حذف لا يمس المستخدمين + عرض حساب العضو.
  * العضوية تنظيمية فقط — لا تمنح أي صلاحيات إضافية (الدور مستقل تمامًا).
  */
-export default function AdminTeamsPanel({ showToast, onViewAccount }) {
+export default function AdminTeamsPanel({ teachers = [], showToast, onViewAccount, onDataChanged }) {
   const [teams, setTeams] = useState([])
   const [members, setMembers] = useState([])
   const [selectedTeamId, setSelectedTeamId] = useState('')
@@ -21,6 +22,14 @@ export default function AdminTeamsPanel({ showToast, onViewAccount }) {
   const [searchResults, setSearchResults] = useState([])
   const [searching, setSearching] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [renewTarget, setRenewTarget] = useState(null)
+
+  // انتهاء اشتراك كل عضو (من الـ teachers المحمّلين في لوحة الأدمن نفسها)
+  const expiryByProfile = useMemo(() => {
+    const map = {}
+    for (const t of teachers) map[t.id] = t.subscription_expires_at || null
+    return map
+  }, [teachers])
   const [form, setForm] = useState({ name: '', description: '', color: TEAM_COLORS[0], logo_url: '' })
   const [editMode, setEditMode] = useState(false)
 
@@ -219,6 +228,7 @@ export default function AdminTeamsPanel({ showToast, onViewAccount }) {
                     <p className="text-xs text-fg-muted mt-1">{selectedMembers.length} عضو · أُنشئ {new Date(selectedTeam.created_at).toLocaleDateString('ar-EG', { dateStyle: 'medium' })}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setRenewTarget(selectedTeam)} disabled={saving || !selectedMembers.length} className="bg-brand-gold text-brand-navy font-black px-3 py-1.5 rounded-lg text-xs disabled:opacity-50" title="تجديد اشتراك كل أعضاء الفريق دفعة واحدة">🔄 تجديد الفريق بالكامل</button>
                     <button onClick={startEdit} disabled={saving} className="bg-brand-gold/15 border border-brand-gold/40 text-brand-gold-hover font-bold px-3 py-1.5 rounded-lg text-xs">✏️ تعديل</button>
                     {selectedTeam.status === 'active' ? (
                       <button onClick={() => setStatus('disabled')} disabled={saving} className="bg-surface-container-high text-fg font-bold px-3 py-1.5 rounded-lg text-xs">⏸ تعطيل الفريق</button>
@@ -261,13 +271,14 @@ export default function AdminTeamsPanel({ showToast, onViewAccount }) {
                         <th className="text-right px-3 py-2 font-bold">الاسم</th>
                         <th className="text-right px-3 py-2 font-bold">الدور</th>
                         <th className="text-right px-3 py-2 font-bold">الحالة</th>
+                        <th className="text-right px-3 py-2 font-bold">ينتهي</th>
                         <th className="text-right px-3 py-2 font-bold">آخر نشاط</th>
                         <th className="text-right px-3 py-2 font-bold">إجراءات</th>
                       </tr>
                     </thead>
                     <tbody>
                       {selectedMembers.length === 0 && (
-                        <tr><td colSpan={5} className="text-center text-fg-muted text-xs py-6">لا يوجد أعضاء — استخدم البحث بالأعلى للإضافة.</td></tr>
+                        <tr><td colSpan={6} className="text-center text-fg-muted text-xs py-6">لا يوجد أعضاء — استخدم البحث بالأعلى للإضافة.</td></tr>
                       )}
                       {selectedMembers.map((m) => (
                         <tr key={m.profile_id} className="border-b border-outline hover:bg-surface-container">
@@ -280,6 +291,9 @@ export default function AdminTeamsPanel({ showToast, onViewAccount }) {
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${m.is_verified ? 'bg-[var(--ok-bg)] text-[var(--ok-strong)]' : 'bg-[var(--warn-bg)] text-[var(--warn-strong)]'}`}>
                               {m.is_verified ? 'مفعّل' : 'بانتظار التفعيل'}
                             </span>
+                          </td>
+                          <td className="px-3 py-2 text-fg-muted text-xs whitespace-nowrap">
+                            {expiryByProfile[m.profile_id] ? new Date(expiryByProfile[m.profile_id]).toLocaleDateString('ar-EG') : '—'}
                           </td>
                           <td className="px-3 py-2 text-fg-muted text-xs whitespace-nowrap">{m.last_activity ? new Date(m.last_activity).toLocaleDateString('ar-EG') : 'مفيش نشاط'}</td>
                           <td className="px-3 py-2">
@@ -310,6 +324,19 @@ export default function AdminTeamsPanel({ showToast, onViewAccount }) {
         message={`هتحذف فريق «${deleteTarget?.name || ''}» وعضوياته (${deleteTarget?.member_count ?? 0}). الحسابات نفسها لن تُحذف ولن تتأثر بأي شكل.`}
         onConfirm={doDeleteTeam}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <AdminTeamRenewModal
+        open={!!renewTarget}
+        team={renewTarget}
+        members={selectedMembers}
+        onClose={() => setRenewTarget(null)}
+        showToast={showToast}
+        onRenewed={() => {
+          // الاشتراكات اتغيرت — حدّث الفرق + بلّغ اللوحة تعيد تحميل المدرّسين/السجل
+          load()
+          onDataChanged?.()
+        }}
       />
     </div>
   )

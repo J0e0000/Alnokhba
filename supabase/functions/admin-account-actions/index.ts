@@ -14,28 +14,49 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 // ── Renewal email (Resend HTTP API) ─────────────────────────────────────────
-// REQUIRES (Supabase Dashboard → Edge Functions → admin-account-actions →
-// Secrets, or `supabase secrets set`):
-//   RESEND_API_KEY      — from resend.com/api-keys
-//   RENEWAL_EMAIL_FROM  — optional, e.g. "Alnokhba <noreply@yourdomain.com>"
-//                         (default "Alnokhba <onboarding@resend.dev>" works
-//                         only while your Resend account is in test mode)
+// Email config resolution order (Task 44j): env var RESEND_API_KEY first
+// (platform-level), then the DB table admin_email_config written by the admin
+// from the dashboard (لوحة الأدمن → سجل التجديدات → ⚙️ إعدادات البريد) via the
+// set_email_config action below. Optional RENEWAL_EMAIL_FROM: env, then DB,
+// then "onboarding@resend.dev" (Resend test-mode sender).
 // CONTRACT: the renewal is saved FIRST; email failure NEVER rolls the
 // renewal back — it is recorded on the renewal row (email_status/email_error)
 // and returned so the admin sees "renewed but email failed" + can retry.
+type EmailConfig = { apiKey: string | null; from: string };
+
+async function getEmailConfig(admin: ReturnType<typeof createClient>): Promise<EmailConfig> {
+  let dbKey: string | null = null;
+  let dbFrom: string | null = null;
+  try {
+    const { data } = await admin.from("admin_email_config").select("key,value");
+    for (const row of data ?? []) {
+      if (row.key === "resend_api_key") dbKey = row.value;
+      else if (row.key === "renewal_email_from") dbFrom = row.value;
+    }
+  } catch (err) {
+    // Table not migrated yet — env-only mode still works.
+    console.error("[admin-account-actions] admin_email_config read failed:", String(err));
+  }
+  return {
+    apiKey: Deno.env.get("RESEND_API_KEY") || dbKey,
+    from: Deno.env.get("RENEWAL_EMAIL_FROM") || dbFrom || "Alnokhba <onboarding@resend.dev>",
+  };
+}
+
+const maskKey = (k: string) => (k.length <= 10 ? "re_…" : `${k.slice(0, 6)}…${k.slice(-4)}`);
+
 async function sendRenewalEmail(
   admin: ReturnType<typeof createClient>,
-  opts: { renewalId: string; to: string; name: string; previousExpiresAt: string | null; newExpiresAt: string; planName: string | null; renewedAt: Date },
+  opts: { renewalId: string; to: string; name: string; previousExpiresAt: string | null; newExpiresAt: string; planName: string | null; renewedAt: Date; apiKey: string | null; from: string },
 ): Promise<{ sent: boolean; error: string | null }> {
-  const apiKey = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("RENEWAL_EMAIL_FROM") || "Alnokhba <onboarding@resend.dev>";
+  const { apiKey, from } = opts;
 
   const fail = async (error: string) => {
     await admin.from("subscription_renewals").update({ email_status: "failed", email_error: error }).eq("id", opts.renewalId);
     return { sent: false, error };
   };
 
-  if (!apiKey) return await fail("RESEND_API_KEY غير مضبوط في إعدادات الدالة — أضف المفتاح ثم اضغط «إعادة إرسال الإيميل»");
+  if (!apiKey) return await fail("لا يوجد مفتاح إرسال بعد — من لوحة الأدمن → سجل التجديدات → ⚙️ إعدادات البريد: الصق مفتاح Resend واحفظ ثم اضغط هنا مجددًا");
   if (!opts.to) return await fail("لا يوجد بريد إلكتروني محفوظ لهذا الحساب");
 
   const fmt = (iso: string | null) =>
@@ -165,7 +186,12 @@ async function handleAdminAction(req: Request): Promise<Response> {
     return json({ error: "Too many admin operations — try again in a few minutes" }, 429);
   }
 
-  let body: { action?: string; targetUserId?: string; password?: string; newExpiresAt?: string; planName?: string; renewalId?: string; reason?: string };
+  let body: {
+    action?: string; targetUserId?: string; password?: string; newExpiresAt?: string;
+    planName?: string; renewalId?: string; reason?: string;
+    teamId?: string; days?: number; sendEmail?: boolean;
+    resendApiKey?: string; from?: string; to?: string;
+  };
   try { body = await req.json(); } catch { return json({ error: "Invalid JSON" }, 400); }
 
   if (body.action === "confirm_account") {
@@ -294,6 +320,7 @@ async function handleAdminAction(req: Request): Promise<Response> {
     let email = { attempted: false, sent: false, error: null as string | null };
     if (isRenewal && target.email) {
       email.attempted = true;
+      const cfg = await getEmailConfig(admin);
       email = await sendRenewalEmail(admin, {
         renewalId: renewal.id,
         to: target.email,
@@ -302,6 +329,8 @@ async function handleAdminAction(req: Request): Promise<Response> {
         newExpiresAt: parsed.toISOString(),
         planName,
         renewedAt: new Date(),
+        apiKey: cfg.apiKey,
+        from: cfg.from,
       });
     }
 
@@ -334,8 +363,236 @@ async function handleAdminAction(req: Request): Promise<Response> {
       newExpiresAt: renewal.new_expires_at,
       planName: renewal.plan_name || null,
       renewedAt: new Date(renewal.created_at || Date.now()),
+      ...(await getEmailConfig(admin)),
     });
     return json({ ok: true, email });
+  }
+
+  // ── إعدادات البريد (Task 44j): الأدمن يلصق مفتاح Resend من لوحة الأدمن نفسها ──
+  // بدل ما يحتاج Supabase Dashboard/secrets يدويًا. المفتاح لا يُعاد كاملًا
+  // أبدًا للعميل — نسخة مقنّعة فقط.Env var يفضل له الأولوية لو موجود.
+  if (body.action === "get_email_config") {
+    const cfg = await getEmailConfig(admin);
+    const source = Deno.env.get("RESEND_API_KEY") ? "env" : cfg.apiKey ? "db" : "none";
+    return json({ ok: true, configured: !!cfg.apiKey, masked_key: cfg.apiKey ? maskKey(cfg.apiKey) : null, from: cfg.from, source });
+  }
+
+  if (body.action === "set_email_config") {
+    const apiKey = body.resendApiKey != null ? String(body.resendApiKey).trim() : "";
+    const from = body.from != null ? String(body.from).trim() : "";
+    // مفتاح Resend يبدأ بـ re_ (بصيغة re_<id>-<secret>). نرفض أي شكل آخر مبكرًا
+    // عشان خطأ لصق واضح بدل فشل إرسال غامض لاحقًا.
+    if (apiKey && !/^re_[A-Za-z0-9_\-]{10,200}$/.test(apiKey)) {
+      return json({ error: "شكل المفتاح غير صحيح — مفتاح Resend يبدأ بـ re_ (من resend.com/api-keys)" }, 400);
+    }
+    if (from.length > 200) return json({ error: "قيمة المُرسل طويلة جدًا (الحد 200 حرف)" }, 400);
+
+    const rows: Array<{ key: string; value: string; updated_by: string }> = [];
+    if (apiKey) rows.push({ key: "resend_api_key", value: apiKey, updated_by: user.id });
+    if (from) rows.push({ key: "renewal_email_from", value: from, updated_by: user.id });
+
+    if (rows.length) {
+      const { error } = await admin.from("admin_email_config").upsert(rows, { onConflict: "key" });
+      const undefinedTable = error && (error.code === "42P01" || /does not exist|schema cache|admin_email_config/i.test(error.message || ""));
+      if (error) return json({ error: undefinedTable ? "جدول الإعدادات غير منشّر بعد — شغّل migration_060 أولًا" : error.message }, 400);
+    }
+    const keysToClear: string[] = [];
+    if (body.resendApiKey != null && !apiKey) keysToClear.push("resend_api_key");
+    if (body.from != null && !from) keysToClear.push("renewal_email_from");
+    if (keysToClear.length) {
+      await admin.from("admin_email_config").delete().in("key", keysToClear);
+    }
+
+    await audit(admin, {
+      action: "set_email_config",
+      actorId: user.id,
+      details: `تحديث إعدادات البريد — المفتاح: ${apiKey ? "حُدّث (" + maskKey(apiKey) + ")" : keysToClear.includes("resend_api_key") ? "اتمسح" : "بدون تغيير"} · المُرسل: ${from ? "حُدّث" : keysToClear.includes("renewal_email_from") ? "اتمسح" : "بدون تغيير"}`,
+      metadata: { key_masked: apiKey ? maskKey(apiKey) : null, from_set: !!from },
+    });
+    const cfg = await getEmailConfig(admin);
+    return json({ ok: true, configured: !!cfg.apiKey, masked_key: cfg.apiKey ? maskKey(cfg.apiKey) : null, from: cfg.from });
+  }
+
+  // ── إيميل تجريبي: التأكد من الإعدادات قبل أول تجديد حقيقي ──
+  if (body.action === "send_test_email") {
+    const to = String(body.to || "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) return json({ error: "اكتب بريدًا صحيحًا للاختبار" }, 400);
+    const cfg = await getEmailConfig(admin);
+    if (!cfg.apiKey) return json({ ok: true, email: { sent: false, error: "لا يوجد مفتاح محفوظ بعد — الصق المفتاح واحفظ أولًا" } });
+
+    const html = `<!doctype html><html dir="rtl" lang="ar"><body style="margin:0;padding:24px;background:#F8FAFC;font-family:'Cairo','Segoe UI',Tahoma,Arial,sans-serif;">
+    <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid rgba(14,41,84,.15);border-radius:16px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#0E2954,#142D62);padding:24px;text-align:center;">
+        <div style="font-size:26px;font-weight:800;color:#F5C542;">النخبة</div>
+      </div>
+      <div style="padding:24px;color:#1E293B;">
+        <h1 style="font-size:18px;margin:0 0 10px;color:#0E2954;">إعدادات البريد تعمل ✓</h1>
+        <p style="font-size:14px;line-height:1.9;margin:0;">دي رسالة اختبار اتبعتت من لوحة الأدمن بعد ضبط مفتاح الإرسال — من دلوقتي إيميلات التجديد هتوص للمدرّسين تلقائيًا.</p>
+        <p style="font-size:12px;color:#64748B;margin:16px 0 0;">${new Date().toLocaleString("ar-EG")}</p>
+      </div>
+    </div>
+  </body></html>`;
+
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: cfg.from, to: [to], subject: "اختبار إعدادات البريد — النخبة", html }),
+      });
+      if (!res.ok) {
+        let detail = `Resend HTTP ${res.status}`;
+        try {
+          const b = await res.json();
+          if (b?.message) detail = `${detail}: ${b.message}`;
+        } catch { /* keep status-only detail */ }
+        return json({ ok: true, email: { sent: false, error: detail } });
+      }
+      return json({ ok: true, email: { sent: true, error: null } });
+    } catch (err) {
+      return json({ ok: true, email: { sent: false, error: String((err as Error)?.message || err) } });
+    }
+  }
+
+  // ── تجديد اشتراك فريق كامل دفعة واحدة (Task 44j) ──
+  // وضعان: تاريخ انتهاء موحّد للجميع، أو تمديد بالأيام يُحسب لكل عضو من
+  // أقصى(الآن، تاريخ انتهائه الحالي) — نفس قاعدة التجديد الفردي بالضبط.
+  // الحفظ أولًا لكل عضو → صف سجل دائم لكل عضو → إيميل جماعي فشله لا يلمس الاشتراكات.
+  if (body.action === "renew_team_subscription") {
+    const teamId = String(body.teamId || "").trim();
+    if (!teamId) return json({ error: "teamId is required" }, 400);
+    const planName = body.planName ? String(body.planName).slice(0, 120) : null;
+    const sendEmail = body.sendEmail !== false;
+
+    let fixedDate: Date | null = null;
+    let days: number | null = null;
+    if (body.newExpiresAt) {
+      const parsed = new Date(String(body.newExpiresAt).trim());
+      if (isNaN(parsed.getTime())) return json({ error: "newExpiresAt must be a valid date" }, 400);
+      fixedDate = parsed;
+    } else if (body.days != null && Number.isFinite(Number(body.days))) {
+      days = Math.round(Number(body.days));
+      if (days <= 0 || days > 3650) return json({ error: "عدد الأيام لازم يكون بين 1 و 3650" }, 400);
+    } else {
+      return json({ error: "حدد تاريخ انتهاء موحّد أو عدد أيام التمديد" }, 400);
+    }
+
+    const { data: team, error: teamError } = await admin.from("admin_teams").select("id, name").eq("id", teamId).maybeSingle();
+    if (teamError) return json({ error: teamError.message }, 400);
+    if (!team) return json({ error: "الفريق غير موجود" }, 404);
+
+    const { data: memberRows, error: membersError } = await admin.from("admin_team_members").select("profile_id").eq("team_id", teamId);
+    if (membersError) return json({ error: membersError.message }, 400);
+    const memberIds = (memberRows ?? []).map((m) => m.profile_id);
+    if (memberIds.length === 0) return json({ error: "الفريق لا يحتوي أعضاء — أضف أعضاء أولًا" }, 400);
+    if (memberIds.length > 100) return json({ error: `الفريق به ${memberIds.length} عضو — الحد الأقصى للتجديد الجماعي 100 عضو في المرة` }, 400);
+
+    const { data: targets, error: targetsError } = await admin
+      .from("profiles")
+      .select("id, full_name, email, subscription_status, subscription_expires_at")
+      .in("id", memberIds);
+    if (targetsError) return json({ error: targetsError.message }, 400);
+
+    const emailConfig = await getEmailConfig(admin);
+    const renewed: Array<{ id: string; name: string; new_expires_at: string }> = [];
+    const failures: Array<{ id: string; name: string; error: string }> = [];
+    const emailQueue: Array<{ renewalId: string; to: string; name: string; previousExpiresAt: string | null; newExpiresAt: string }> = [];
+
+    for (const target of targets ?? []) {
+      let newExpires: Date;
+      if (fixedDate) {
+        newExpires = fixedDate;
+      } else {
+        const base = target.subscription_expires_at && new Date(target.subscription_expires_at).getTime() > Date.now()
+          ? new Date(target.subscription_expires_at)
+          : new Date();
+        base.setDate(base.getDate() + (days as number));
+        newExpires = base;
+      }
+      const isRenewal = newExpires.getTime() > Date.now();
+      const newStatus = isRenewal ? "active" : "expired";
+      const previousExpiresAt = target.subscription_expires_at || null;
+
+      const { error: updateError } = await admin
+        .from("profiles")
+        .update({ subscription_status: newStatus, subscription_expires_at: newExpires.toISOString() })
+        .eq("id", target.id);
+      if (updateError) {
+        failures.push({ id: target.id, name: target.full_name || target.email || target.id, error: updateError.message });
+        continue;
+      }
+
+      const daysAdded = previousExpiresAt
+        ? Math.round((newExpires.getTime() - new Date(previousExpiresAt).getTime()) / 86400000)
+        : days;
+      const { data: renewal, error: renewalError } = await admin
+        .from("subscription_renewals")
+        .insert({
+          teacher_id: target.id,
+          admin_id: user.id,
+          previous_expires_at: previousExpiresAt,
+          previous_status: target.subscription_status || null,
+          new_expires_at: newExpires.toISOString(),
+          new_status: newStatus,
+          plan_name: planName,
+          days_added: daysAdded,
+          email_status: "not_sent",
+        })
+        .select()
+        .single();
+      if (renewalError) {
+        // نفس قاعدة التجديد الفردي: الاشتراك اتحفظ — نبلّغ honestly بدون ادعاء نجاح كامل.
+        failures.push({ id: target.id, name: target.full_name || target.email || target.id, error: `اتحفظ الاشتراك لكن فشل سجل التجديد: ${renewalError.message}` });
+        continue;
+      }
+
+      renewed.push({ id: target.id, name: target.full_name || target.email || target.id, new_expires_at: newExpires.toISOString() });
+      if (sendEmail && isRenewal && target.email) {
+        emailQueue.push({ renewalId: renewal.id, to: target.email, name: target.full_name || "", previousExpiresAt, newExpiresAt: newExpires.toISOString() });
+      }
+    }
+
+    // إيميلات جماعية — دفعات متوازية صغيرة؛ فشل إيميل عضو لا يوقف الباقي
+    // (يتسجل على صف التجديد الخاص به ويظهر زر إعادة الإرسال).
+    const emailResults = { attempted: 0, sent: 0, failed: [] as Array<{ name: string; error: string }> };
+    const CHUNK = 5;
+    for (let i = 0; i < emailQueue.length; i += CHUNK) {
+      const chunk = emailQueue.slice(i, i + CHUNK);
+      const settled = await Promise.allSettled(
+        chunk.map((e) =>
+          sendRenewalEmail(admin, {
+            renewalId: e.renewalId, to: e.to, name: e.name,
+            previousExpiresAt: e.previousExpiresAt, newExpiresAt: e.newExpiresAt,
+            planName, renewedAt: new Date(), apiKey: emailConfig.apiKey, from: emailConfig.from,
+          }),
+        ),
+      );
+      settled.forEach((res, idx) => {
+        const item = chunk[idx];
+        emailResults.attempted++;
+        if (res.status === "fulfilled" && res.value.sent) emailResults.sent++;
+        else {
+          const errStr = res.status === "rejected" ? String((res.reason as Error)?.message || res.reason) : res.value.error || "سبب غير معروف";
+          emailResults.failed.push({ name: item.name || item.to, error: errStr });
+        }
+      });
+    }
+
+    const untilLabel = fixedDate ? fixedDate.toLocaleDateString("ar-EG") : `تمديد ${(days as number)} يوم`;
+    const summary = `تجديد اشتراك الفريق «${team.name}» بالكامل — ${renewed.length}/${(targets ?? []).length} عضو (${untilLabel})${planName ? ` — ${planName}` : ""}`;
+    await admin.from("admin_activity_log").insert({ admin_id: user.id, target_teacher_id: null, action: "extend", details: summary });
+    await audit(admin, {
+      action: "renew_team_subscription",
+      actorId: user.id,
+      details: summary,
+      metadata: {
+        team_id: teamId, team_name: team.name, member_count: (targets ?? []).length,
+        renewed: renewed.length, failed_count: failures.length,
+        fixed_date: fixedDate ? fixedDate.toISOString() : null, days: days,
+        plan_name: planName, emails_sent: emailResults.sent, emails_failed: emailResults.failed.length,
+      },
+    });
+
+    return json({ ok: true, team: { id: team.id, name: team.name }, total: (targets ?? []).length, renewed, failures, email: emailResults, summary });
   }
 
   return json({ error: "Unsupported action" }, 400);
