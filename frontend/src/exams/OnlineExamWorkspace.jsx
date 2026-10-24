@@ -3,6 +3,7 @@ import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { supabase } from '../lib/supabaseClient'
 import { newQuestion } from '../lib/hwQuiz'
+import { sendExamNotifications } from '../lib/notifyStudents'
 import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -369,6 +370,31 @@ function OnlineExamMonitor({ exam }) {
     if (ok) ws.resetOnlineExamAttempt(attempt)
   }
 
+  // ── Task 44g: «لما أعمل الامتحان أبعته لكل الطلاب كلينك» ── زر واحد بيبعت
+  // إشعار «امتحان أونلاين نزل» لكل الطلاب المستهدفين — اللينك بيفتح البوابة:
+  // محاولة شغالة → استكمال فوري، ولّا الكارت يتبرز بضغطة ابدأ من الطالب.
+  const [sendingLink, setSendingLink] = useState(false)
+  const sendLinkToStudents = async () => {
+    if (sendingLink) return
+    const targets = pool.filter((s) => !s.archived)
+    const ok = await ui.askConfirm(
+      isArabic
+        ? `تبعت لينك الامتحان لـ ${targets.length} طالب${exam.group_name ? ` (مجموعة ${exam.group_name})` : ''}؟ هيوصلهم إشعار فيه لينك يفتح الامتحان على طول${open ? '' : '\n⚠️ الامتحان مقفول حاليًا — ابعته تاني بعد ما تفتحه أو نبههم إنه هيتفتح.'}`
+        : `Send the exam link to ${targets.length} students? They get a notification that opens the exam directly.`,
+      { title: isArabic ? 'إرسال لينك الامتحان' : 'Send exam link', confirmLabel: isArabic ? 'ابعت 📨' : 'Send' },
+    )
+    if (!ok) return
+    setSendingLink(true)
+    const res = await sendExamNotifications({ teacherId: ws.effectiveTeacherId, exam, students: pool })
+    setSendingLink(false)
+    ws.showToast?.(
+      res.sent > 0
+        ? `📨 اللينك وصل لـ ${res.sent} طالب${res.dupes ? ` (تخطّينا ${res.dupes} وصلتهم للتو)` : ''}`
+        : (isArabic ? 'مفيش طلاب لهم بوابة — الإشعار ماتبعتش' : 'No students with portal access'),
+      res.sent > 0 ? 'success' : 'error',
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <section className="nk-ws-head">
@@ -397,6 +423,14 @@ function OnlineExamMonitor({ exam }) {
               {open ? `● ${isArabic ? 'مفتوح' : 'Open'}` : (exam.status === 'scheduled' ? `⏱ ${isArabic ? 'مجدول' : 'Scheduled'}` : `✓ ${isArabic ? 'مغلق' : 'Closed'}`)}
             </span>
             <span className="flex gap-1.5">
+              <button
+                className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                onClick={sendLinkToStudents}
+                disabled={sendingLink}
+                title={isArabic ? 'إرسال لينك الامتحان لكل الطلاب كإشعار' : 'Send exam link to all students as a notification'}
+              >
+                {sendingLink ? '...' : '📨 ابعت اللينك'}
+              </button>
               <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => ws.refreshOnlineExams()} aria-label={isArabic ? 'تحديث' : 'Refresh'}>↻</button>
               <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={toggleStatus}>
                 {open ? (isArabic ? '🔒 إغلاق' : '🔒 Close') : (isArabic ? '🔓 فتح' : '🔓 Open')}

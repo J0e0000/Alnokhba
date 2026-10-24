@@ -45,7 +45,18 @@ export default function PublicHomeworkPage() {
   const retryCountRef = useRef(0)
   const loadSeqRef = useRef(0)
 
-  const token = window.location.pathname.replace(/^\/hw\//, '').split(/[?#]/)[0]
+  // Task 44g: /hw/:token/:taskId? — الجزء التاني (اختياري) هو واجب معيّن
+  // جاي من لينك إشعار «في واجب نزل». قبل كده التوكن كان بيتلقط بالكامل مع
+  // الـ /taskId فكان بيفشل — دلوقتي: أول segment = توكن، التاني = واجب يفتح.
+  const pathRest = window.location.pathname.replace(/^\/hw\//, '').split(/[?#]/)[0]
+  const token = pathRest.split('/')[0] || ''
+  const urlTaskId = pathRest.split('/')[1] || null
+
+  // Task 44g: استكمال بعد الريفرش — الإجابات والواجب المفتوح بيتحفظوا محليًا
+  // (التسليم الفعلي سيرفر-آثوريتيتف، فمفيش أي احتمال غش: اللي متخزن محليًا
+  // مجرد UI state، والتصحيح دايمًا من submit_homework_task_answers).
+  const hwStoreKey = `nokhba_hw_${token}`
+  const hwRestoredRef = useRef(false)
 
   const load = useCallback(async (isRetry = false) => {
     if (!token) { setState('not_found'); return }
@@ -78,9 +89,41 @@ export default function PublicHomeworkPage() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Task 44g: استرجاع حالة الريفرش (مرة واحدة أول ما البيانات تجهز) ─────
   const student = payload?.student || {}
-  const tasks = (payload?.homework_tasks || []).filter((t) => t && t.has_questions)
-  const simpleTasks = (payload?.homework_tasks || []).filter((t) => t && !t.has_questions)
+  const tasksRaw = (payload?.homework_tasks || [])
+
+  useEffect(() => {
+    if (state !== 'ready' || hwRestoredRef.current) return
+    hwRestoredRef.current = true
+    const tasks = tasksRaw
+    let saved = null
+    try { saved = JSON.parse(localStorage.getItem(hwStoreKey) || 'null') } catch { saved = null }
+    const savedAnswers = (saved && typeof saved.answers === 'object' && saved.answers) || {}
+    // إجابات واجبات سلّمها الطالب (اتحفظت سيرفرًا) أو اتحذت → تتسقط
+    const cleanAnswers = {}
+    for (const [tid, arr] of Object.entries(savedAnswers)) {
+      const t = tasks.find((x) => x && x.id === tid)
+      if (t && !t.submission && Array.isArray(arr)) cleanAnswers[tid] = arr
+    }
+    if (Object.keys(cleanAnswers).length) setAnswers(cleanAnswers)
+    // الواجب المفتوح: أولوية للينك المباشر (إشعار) وبعدهن المحفوظ المحلي
+    const candidate = urlTaskId || saved?.open || null
+    if (candidate) {
+      const t = tasks.find((x) => x && x.id === candidate)
+      if (t && t.has_questions && !t.submission) setOpenTaskId(candidate)
+    }
+  }, [state, tasksRaw, hwStoreKey, urlTaskId])
+
+  // ── Task 44g: حفظ الحالة مع كل تغيير (بعد الاسترجاع بس) ─────────────────
+  useEffect(() => {
+    if (state !== 'ready' || !hwRestoredRef.current) return
+    try {
+      localStorage.setItem(hwStoreKey, JSON.stringify({ open: openTaskId, answers, ts: Date.now() }))
+    } catch { /* خصوصي/ممتلئ — نتجاهل بأمان */ }
+  }, [openTaskId, answers, state, hwStoreKey])
+  const tasks = tasksRaw.filter((t) => t && t.has_questions)
+  const simpleTasks = tasksRaw.filter((t) => t && !t.has_questions)
   const branding = payload?.branding || {}
   const centerName = branding.display_name || branding.center_name || 'النخبة'
 
@@ -127,6 +170,8 @@ export default function PublicHomeworkPage() {
       // ok أو already_submitted: النتيجة نفسها — التسليم مرة واحدة بس (058)
       setResults((prev) => ({ ...prev, [task.id]: data }))
       refreshTaskFromList(task.id, data)
+      // Task 44g: نضّف الإجابات المحلية للواجب ده — النتيجة بقت على السيرفر
+      setAnswers((prev) => { const next = { ...prev }; delete next[task.id]; return next })
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (err) {
       console.error('[PublicHomeworkPage] submit threw:', err)
@@ -245,7 +290,9 @@ export default function PublicHomeworkPage() {
     <Shell centerName={centerName}>
       <div style={headerCard}>
         <div style={hwBadge}>📚 صفحة الواجبات</div>
-        <h1 style={title}>واجبات {student.name || 'الطالب'}</h1>
+        {/* Task 44g إصلاح تباين: العنوان كان NAVY على خلفية NAVY (شبه مخفي في الصورة) —
+            الهيدر الملاكي دايمًا غامق فلازم اللون أبيض ثابت في الوضعين */}
+        <h1 style={titleLight}>واجبات {student.name || 'الطالب'}</h1>
         {student.group_name && <p style={meta}>مجموعة: {student.group_name}</p>}
         <p style={meta}>اختار الواجب اللي عايز تسلّمه — الإجابة مرة واحدة بس لكل واجب</p>
       </div>
@@ -421,6 +468,9 @@ const hwBadge = {
   background: 'rgba(251,156,27,.18)', color: '#FDBA74', fontSize: 12, fontWeight: 800,
 }
 const title = { margin: '0 0 4px', fontSize: 20, fontWeight: 900, color: NAVY }
+// Task 44g: نسخة فاتحة للعناوين جوّه headerCard (navy gradient) — كانت NAVY
+// على NAVY فبانت شبه مختفية. #fff ثابت لأن الخلفية navy في كل الأوضاع.
+const titleLight = { ...title, color: '#FFFFFF', textShadow: '0 1px 2px rgba(2,6,23,.35)' }
 const meta = { margin: 0, fontSize: 13, opacity: 0.9 }
 const desc = { margin: '10px 0 0', fontSize: 14, lineHeight: 1.7, opacity: 0.95 }
 const loadingText = { textAlign: 'center', color: '#64748B', fontWeight: 700 }

@@ -583,17 +583,40 @@ export default function PublicQRPage() {
   // offsetMs = server_now − client_now لحظة البدء → العدّاد دايمًا على ساعة السيرفر.
   const [oeActive, setOeActive] = useState(null)
   const [oeBusy, setOeBusy] = useState(false)
+  // Task 44g: لينك إشعار «امتحان نزل» (?exam=ID) → نبرز كارت الامتحان في القائمة
+  const [oeHighlightId, setOeHighlightId] = useState(null)
   const oeSaveTimerRef = useRef(null)
   const oeActiveRef = useRef(null)
   oeActiveRef.current = oeActive
 
-  const startOnlineExam = async (exam) => {
+  // Task 44g: «ما يعيدش الامتحان من الأول بعد ريفرش» — ماركر محلي صغير بالتوكن
+  // فيه examId بس. الإجابات والوقت الحقيقي بيرجعوا من السيرفر لحظة الاستكمال
+  // (start_online_exam بيرجّع answers + deadline_at المحفوظين) — فمفيش غش:
+  // التصحيح سيرفر-آثوريتيتف من آخر حفظ تلقائي.
+  const readOeMarker = () => {
+    try {
+      const raw = localStorage.getItem(`nokhba_oe_${tokenRef.current}`)
+      const m = raw ? JSON.parse(raw) : null
+      return m && m.examId ? m : null
+    } catch { return null }
+  }
+  const writeOeMarker = (examId, title) => {
+    try {
+      if (examId) localStorage.setItem(`nokhba_oe_${tokenRef.current}`, JSON.stringify({ examId, title: title || '', at: Date.now() }))
+      else localStorage.removeItem(`nokhba_oe_${tokenRef.current}`)
+    } catch { /* خصوصي — نتجاهل */ }
+  }
+
+  const startOnlineExam = async (exam, opts = {}) => {
     if (!tokenRef.current || oeBusy) return
     setOeBusy(true)
+    setOeHighlightId(null)
     try {
       const { data, error } = await supabase.rpc('start_online_exam', { p_token: tokenRef.current, p_exam_id: exam.id })
       if (error) {
         console.warn('[PublicQRPage] start_online_exam failed:', error.message)
+        // Task 44g: الاستكمال التلقائي بعد ريفرش بيتصرّف بهدوء — من غير alert
+        if (opts.silent) { writeOeMarker(null); return }
         const msg = /exam_not_open/i.test(error.message) ? 'الامتحان مقفول أو مش فات وقته.'
           : /not_for_your_group/i.test(error.message) ? 'الامتحان ده لمجموعة تانية.'
           : 'تعذر بدء الامتحان — تواصل مع المستر.'
@@ -602,6 +625,7 @@ export default function PublicQRPage() {
       }
       if (data?.done) {
         // محاولة منتهية → النتيجة فقط (بدون إعادة)
+        writeOeMarker(null)
         setOeActive({
           examId: exam.id, title: exam.title, result: data, questions: [], answers: [],
           deadlineAt: null, offsetMs: 0,
@@ -627,6 +651,8 @@ export default function PublicQRPage() {
         questions, answers, deadlineAt: new Date(data.deadline_at).getTime(), offsetMs,
         durationMinutes: data.duration_minutes, result: null,
       })
+      // Task 44g: ماركر الاستكمال — الريفرش بعد كده يرجّعك لنفس السؤال والإجابات
+      writeOeMarker(exam.id, exam.title)
     } finally { setOeBusy(false) }
   }
 
@@ -639,20 +665,42 @@ export default function PublicQRPage() {
     })
   }, [])
 
-  // حفظ تلقائي كل 10 ثواني أثناء الامتحان — والسيرفر بيرفض بعد الوقت بهدوء
+  // حفظ تلقائي — Task 44g: 3 طبقات بدل الفاصل الوحيد:
+  //   1) كل 10 ثواني أثناء الحل (زي الأول)
+  //   2) 2.5 ثانية بعد آخر إجابة (الريفرش مباشرةً بعد ما حليت مايفقدك حاجة)
+  //   3) لحظة ما التاب يتخفي/الصفحة تتقفل (mobile background)
+  // والسيرفر بيرفض بعد الوقت بهدوء.
+  const saveOeAnswers = useCallback(async () => {
+    const cur = oeActiveRef.current
+    if (!cur?.attemptId || cur.result || !tokenRef.current) return
+    try {
+      await supabase.rpc('autosave_online_exam_answers', {
+        p_token: tokenRef.current, p_exam_id: cur.examId, p_answers: cur.answers,
+      })
+    } catch { /* silent — الشبكة ترجع يكمل */ }
+  }, [])
+
   useEffect(() => {
     if (!oeActive || !oeActive.attemptId || oeActive.result) return
-    oeSaveTimerRef.current = setInterval(async () => {
-      const cur = oeActiveRef.current
-      if (!cur?.attemptId || cur.result || !tokenRef.current) return
-      try {
-        await supabase.rpc('autosave_online_exam_answers', {
-          p_token: tokenRef.current, p_exam_id: cur.examId, p_answers: cur.answers,
-        })
-      } catch { /* silent — الشبكة ترجع يكمل */ }
-    }, 10000)
+    oeSaveTimerRef.current = setInterval(() => { saveOeAnswers() }, 10000)
     return () => clearInterval(oeSaveTimerRef.current)
-  }, [oeActive?.attemptId, oeActive?.result])
+  }, [oeActive?.attemptId, oeActive?.result, saveOeAnswers])
+
+  useEffect(() => {
+    if (!oeActive?.attemptId || oeActive?.result) return
+    const t = setTimeout(() => { saveOeAnswers() }, 2500)
+    return () => clearTimeout(t)
+  }, [oeActive?.answers, oeActive?.attemptId, oeActive?.result, saveOeAnswers])
+
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === 'hidden') saveOeAnswers() }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', onHide)
+    }
+  }, [saveOeAnswers])
 
   const submitOnlineExam = useCallback(async () => {
     const cur = oeActiveRef.current
@@ -669,6 +717,8 @@ export default function PublicQRPage() {
         return
       }
       setOeActive((p) => ({ ...p, result: data, submitting: false }))
+      // Task 44g: خلص الامتحان → ماركر الاستكمال مش لازق
+      writeOeMarker(null)
       // echo محلي في القائمة
       setPortal((prev) => prev?.onlineExams ? {
         ...prev,
@@ -693,6 +743,45 @@ export default function PublicQRPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oeRemainingMs])
 
+  // ── Task 44g: استكمال تلقائي بعد الريفرش + لينك الإشعار ?exam=ID ─────────
+  // (أ) ماركر محلي من محاولة شغالة → نستكمل على طول: نفس الأسئلة، الإجابات
+  //     المحفوظة على السيرفر، والوقت السيرفر-آثوريتيتف بيكمل من حيث وقف.
+  // (ب) ?exam=ID جاي من إشعار «امتحان نزل»:
+  //     - محاولة شغالة → استكمال فوري.
+  //     - لسه ما بدأش ومتاح → ننزل لكارت الامتحان ونبرزه (الطالب يضغط ابدأ
+  //       بنفسه — ما بنشغّلش العداد بدون إذن).
+  const oeAutoTriedRef = useRef(false)
+  useEffect(() => {
+    if (oeAutoTriedRef.current) return
+    const exams = portal?.onlineExams?.exams
+    if (!Array.isArray(exams)) return // لسه بتحمّل أو RPC غير متاح
+    oeAutoTriedRef.current = true
+    const byId = (id) => exams.find((e) => e && e.id === id)
+    let urlExamId = null
+    try { urlExamId = new URLSearchParams(window.location.search).get('exam') } catch { urlExamId = null }
+    const marker = readOeMarker()
+    const targetId = (marker?.examId && byId(marker.examId) && marker.examId) || (urlExamId && byId(urlExamId) ? urlExamId : null)
+    const exam = targetId ? byId(targetId) : null
+    // ماركر لمحاولة خلصت/امتحان اتحذف → ننضّفه
+    if (marker && (!exam || exam.my?.status !== 'in_progress')) writeOeMarker(null)
+    if (!exam) return
+    if (exam.my?.status === 'in_progress') {
+      startOnlineExam(exam, { silent: true })
+    } else if (!exam.my && urlExamId === exam.id && exam.available) {
+      setOeHighlightId(exam.id)
+      setTimeout(() => {
+        try { document.getElementById(`oe-card-${exam.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch { /* ignore */ }
+      }, 450)
+    }
+    if (urlExamId) {
+      try {
+        const u = new URL(window.location.href)
+        u.searchParams.delete('exam')
+        window.history.replaceState({}, '', u)
+      } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portal?.onlineExams])
 
   const handleEnableParentPush = async () => {
     if (parentPushBusy) return
@@ -1012,8 +1101,13 @@ export default function PublicQRPage() {
             const my = e.my
             const done = my && my.status !== 'in_progress'
             const active = my && my.status === 'in_progress'
+            const highlighted = e.id === oeHighlightId
             return (
-              <div key={e.id} style={feedItem}>
+              <div
+                key={e.id}
+                id={`oe-card-${e.id}`}
+                style={highlighted ? { ...feedItem, background: 'rgba(251,156,27,0.12)', boxShadow: '0 0 0 2px rgba(251,156,27,0.65)', borderRadius: 12, padding: 10 } : feedItem}
+              >
                 <p style={feedTitle}>{e.title}</p>
                 <p style={feedDate}>
                   {e.question_count} سؤال · {e.duration_minutes} دقيقة · الإجمالي {Number(e.max_score)}
@@ -1036,6 +1130,11 @@ export default function PublicQRPage() {
                 )}
                 {!done && !e.available && (
                   <p style={feedDate}>الامتحان مقفول حاليًا</p>
+                )}
+                {highlighted && !done && (
+                  <p style={{ fontSize: '11.5px', fontWeight: 800, color: GOLD, margin: '6px 0 0 0' }}>
+                    👆 الامتحان اللي المستر بعتلك لينكه — دوس «ابدأ» لما تكون جاهز
+                  </p>
                 )}
               </div>
             )

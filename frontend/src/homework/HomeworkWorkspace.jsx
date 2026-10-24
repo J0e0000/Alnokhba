@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion, presetQuestions } from '../lib/hwQuiz'
+import { sendHomeworkNotifications } from '../lib/notifyStudents'
 import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,6 +71,9 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated, preset }) {
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState([])
   const [busy, setBusy] = useState(false)
+  // Task 44g: إشعار «في واجب نزل» فور النشر — افتراضيًا شغّال (المدرس يقدر يوقفه)
+  const [notify, setNotify] = useState(true)
+  const [notifying, setNotifying] = useState(false)
 
   const groupsList = ws.groups || []
   const totalMarks = questions.reduce((a, q) => a + (Number(q.marks) || 1), 0)
@@ -147,7 +151,23 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated, preset }) {
     }
     const saved = editTask ? await ws.updateHomeworkTask(editTask, payload) : await ws.createHomeworkTask(payload)
     setBusy(false)
-    if (saved) (editTask ? onUpdated : onCreated)(saved)
+    if (!saved) return
+    if (editTask) { onUpdated(saved); return }
+    // Task 44g: «يوصل للطلاب اللي عندهم الواجب ده ان في واجب نزل» — إشعار
+    // فوري بلينك يفتح الواجب نفسه (/hw/token/taskId) لطلاب المجموعة أو الكل.
+    if (notify) {
+      setNotifying(true)
+      const pool = (groupName ? (ws.students || []).filter((s) => s.group_name === groupName) : (ws.students || []))
+      const res = await sendHomeworkNotifications({ teacherId: ws.effectiveTeacherId, task: saved, students: pool })
+      setNotifying(false)
+      ws.showToast?.(
+        res.sent > 0
+          ? `📨 اتبعت إشعار «في واجب نزل» لـ ${res.sent} طالب${res.dupes ? ` (تخطّينا ${res.dupes} وصلتهم للتو)` : ''}`
+          : 'الواجب نزل — بس مفيش طلاب لهم بوابة تتبعتلهم إشعار',
+        res.sent > 0 ? 'success' : 'info',
+      )
+    }
+    onCreated(saved)
   }
 
   return (
@@ -254,9 +274,17 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated, preset }) {
 
           {error && <div className="nk-notice" style={{ background: 'var(--danger-bg)', borderColor: 'var(--danger-border)', color: 'var(--danger-strong)' }}>{error}</div>}
 
+          {/* Task 44g: إشعار النشر — يوصل الطلاب لينك الواجب على طول */}
+          {!editTask && (
+            <label className="flex items-center gap-2 text-[.74rem] font-extrabold cursor-pointer">
+              <input type="checkbox" className="w-3.5 h-3.5 accent-[var(--brand-navy)]" checked={notify} onChange={(e) => setNotify(e.target.checked)} />
+              📨 {isArabic ? 'إشعار الطلاب فور النشر — يوصلهم لينك يفتح الواجب مباشرة' : 'Notify students on publish — sends a direct homework link'}
+            </label>
+          )}
+
           <div className="flex gap-2">
-            <button className="btn-navy action-button !min-h-[3rem]" disabled={busy} onClick={proceed}>
-              {busy ? '...' : (editTask ? (isArabic ? 'حفظ التعديل ←' : 'Save changes →') : (isArabic ? 'نشر الواجب ←' : 'Publish homework →'))}
+            <button className="btn-navy action-button !min-h-[3rem]" disabled={busy || notifying} onClick={proceed}>
+              {busy || notifying ? '...' : (editTask ? (isArabic ? 'حفظ التعديل ←' : 'Save changes →') : (isArabic ? (notify ? 'نشر الواجب + إشعار الطلاب ←' : 'نشر الواجب ←') : 'Publish homework →'))}
             </button>
             <button className="btn-ghost action-button !min-h-[3rem]" onClick={onCancel}>{isArabic ? 'إلغاء' : 'Cancel'}</button>
           </div>
@@ -273,6 +301,8 @@ function HomeworkResults({ task }) {
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState(false)
+  // Task 44g: إعادة إرسال إشعار «في واجب نزل» (من غير دبل-بث — المكتبة بتفلتر)
+  const [sendingNotif, setSendingNotif] = useState(false)
 
   const pool = useMemo(
     () => (task.group_name ? ws.students.filter((s) => s.group_name === task.group_name) : ws.students),
@@ -325,6 +355,28 @@ function HomeworkResults({ task }) {
     if (ok) { const done = await ws.deleteHomeworkTask(task); if (done) ui.goHomeworkHub() }
   }
 
+  // Task 44g: زر إشعار الطلاب — يوصل «في واجب نزل» بلينك يفتح الواجب نفسه
+  const notifyStudents = async () => {
+    if (sendingNotif) return
+    const targets = pool.filter((s) => !s.archived)
+    const ok = await ui.askConfirm(
+      isArabic
+        ? `تبعت إشعار «في واجب نزل» بلينك الواجب لـ ${targets.length} طالب${task.group_name ? ` (مجموعة ${task.group_name})` : ''}؟${published ? '' : '\n⚠️ الواجب مقفول حاليًا — الإشعار هيوصل بس ما هيقدروش يسلموا لحد ما تفتحه.'}`
+        : `Send homework notification to ${targets.length} students?${published ? '' : '\nNote: homework is closed — they receive it but cannot submit until reopened.'}`,
+      { title: isArabic ? 'إشعار الطلاب' : 'Notify students', confirmLabel: isArabic ? 'ابعت 📨' : 'Send' },
+    )
+    if (!ok) return
+    setSendingNotif(true)
+    const res = await sendHomeworkNotifications({ teacherId: ws.effectiveTeacherId, task, students: pool })
+    setSendingNotif(false)
+    ws.showToast?.(
+      res.sent > 0
+        ? `📨 اتبعت لـ ${res.sent} طالب${res.dupes ? ` (تخطّينا ${res.dupes} وصلتهم للتو)` : ''}`
+        : (isArabic ? 'مفيش طلاب لهم بوابة — إشعار ماتبعتش' : 'No students with portal access'),
+      res.sent > 0 ? 'success' : 'error',
+    )
+  }
+
   if (editing) {
     return (
       <HomeworkBuilder
@@ -368,6 +420,14 @@ function HomeworkResults({ task }) {
                   ✏️ {isArabic ? 'تعديل' : 'Edit'}
                 </button>
               )}
+              <button
+                className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                onClick={notifyStudents}
+                disabled={sendingNotif}
+                title={isArabic ? 'إشعار الطلاب بلينك الواجب' : 'Notify students with the homework link'}
+              >
+                {sendingNotif ? '...' : '📨 إشعار'}
+              </button>
               <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={toggleStatus}>
                 {published ? (isArabic ? '🔒 إغلاق' : '🔒 Close') : (isArabic ? '🔓 فتح' : '🔓 Open')}
               </button>
