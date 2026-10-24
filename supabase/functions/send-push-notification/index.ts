@@ -125,6 +125,8 @@ Deno.serve(async (req) => {
       title: job.title || 'النخبة',
       body: job.body || 'لديك تنبيه جديد',
       url: perSubscriptionUrl ? clickUrlFor(job, subscription) : (job.url || '/'),
+      // Task 44i: id تنبيه المدرس المصدر — ضغطة على إشعار النظام تعلّمه مقروء
+      event_id: (job as { source_event_id?: string | null }).source_event_id || null,
     })
 
     let sent = 0

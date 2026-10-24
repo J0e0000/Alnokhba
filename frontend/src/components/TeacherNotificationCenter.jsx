@@ -65,7 +65,7 @@ function SwipeRow({ onRemove, children }) {
 }
 
 export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsights }) {
-  const { effectiveTeacherId } = useAuth()
+  const { effectiveTeacherId, profile } = useAuth()
   const { isArabic } = useLanguage()
   const { showToast } = useToast()
   const [events, setEvents] = useState([])
@@ -74,22 +74,54 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [pushPermission, setPushPermission] = useState(() => typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
   const [pushReady, setPushReady] = useState(false)
+  // ── Task 44i: «ميظهرليش غير الرسايل اللي اتبعتت بعد ما سجلت مش قبل» ──
+  // since = لحظة فتح الموقع في هذا التاب (sessionStorage يكمّل عبر الـ reload،
+  // وتاب جديد = جلسة جديدة). الرسايل الأقدم تختفي من القايمة الافتراضية
+  // وتظهر بزر «عرض الكل». وكمان حد تسجيل العضوية: أعضاء الورك سبيس
+  // مش المفروض يشوفوا تاريخ صاحب الحساب اللي قبل تسجيلهم.
+  const [since] = useState(() => {
+    try {
+      const k = 'alnokhba_notif_since'
+      let v = sessionStorage.getItem(k)
+      if (!v) { v = new Date().toISOString(); sessionStorage.setItem(k, v) }
+      return v
+    } catch { return null }
+  })
+  const [showAll, setShowAll] = useState(false)
+  const [hiddenUnread, setHiddenUnread] = useState(0)
 
   const loadEvents = useCallback(async () => {
     if (!effectiveTeacherId) return
     try {
-      const { data } = await supabase
+      let qy = supabase
         .from('teacher_notification_events')
         .select('*')
         .eq('teacher_id', effectiveTeacherId)
-        .order('created_at', { ascending: false })
-        .limit(30)
+      // حد تسجيل العضوية — أعضاء الورك سبيس لا يرون تاريخ ما قبل تسجيلهم
+      if (profile?.created_at) qy = qy.gte('created_at', profile.created_at)
+      // حد الجلسة: افتراضيًا الرسايل الواصلة بعد فتح الموقع فقط
+      if (!showAll && since) qy = qy.gte('created_at', since)
+      const { data } = await qy.order('created_at', { ascending: false }).limit(30)
       setEvents(data || [])
       setUnreadCount((data || []).filter((e) => !e.is_read).length)
+      // عدّاد القديم غير المقروء — يظهر كسطر إرشادي فوق القايمة
+      if (!showAll && since) {
+        let cq = supabase
+          .from('teacher_notification_events')
+          .select('id', { count: 'exact', head: true })
+          .eq('teacher_id', effectiveTeacherId)
+          .eq('is_read', false)
+        if (profile?.created_at) cq = cq.gte('created_at', profile.created_at)
+        cq = cq.lt('created_at', since)
+        const { count } = await cq
+        setHiddenUnread(count || 0)
+      } else {
+        setHiddenUnread(0)
+      }
     } catch {
       // table may not exist yet — silently ignore
     }
-  }, [effectiveTeacherId])
+  }, [effectiveTeacherId, profile?.created_at, since, showAll])
 
   useEffect(() => { loadEvents() }, [loadEvents])
 
@@ -151,52 +183,101 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   //      one left its duplicates unread ("same notification keeps showing").
   // Now: update is verified (error → toast, local state untouched), and ALL
   // unread copies with the same title+body are read together with the row.
-  const markRead = async (event) => {
-    const id = event.id
-    const { error, count } = await supabase
-      .from('teacher_notification_events')
-      .update({ is_read: true })
-      .eq('id', id)
-      .eq('is_read', false)
-      .select('id', { count: 'exact' })
-    if (error) {
-      console.warn('mark-read failed:', error.message)
-      showToast(isArabic ? 'تعذر حفظ حالة القراءة — حاول تاني.' : 'Could not save the read state — try again.', 'error')
-      return
+  // ── Task 44i: «لما أدوس عليها خلاص تبقى read» — تحديد مقروء محصّن ──
+  // التحديث المباشر كان بيفشل بصمت لما can_access_workspace() يرفض الحساب
+  // (اشتراك مش active): الـ RLS بيرجّع 0 rows من غير error، وحالة القراءة
+  // بترجع زي ما هي بعد أي reload (0/10908 صف مقروء في الإنتاج!). الحل:
+  // RPC محصّن (migration 059) بيتحقق من العضوية مباشرة + عدّاد صفوف
+  // بيرفض النجاح الفاضي + fallback للتحديث المباشر لقواعد أقدم.
+  const markRead = async (eventOrId) => {
+    const id = typeof eventOrId === 'string' ? eventOrId : eventOrId?.id
+    if (!id) return
+    const event = typeof eventOrId === 'string'
+      ? (events.find((e) => e.id === id) || { id, title: '', body: '' })
+      : eventOrId
+
+    let ok = false
+    try {
+      const { data, error } = await supabase.rpc('mark_teacher_events_read', {
+        p_event_id: id,
+        p_title: null,
+        p_body: null,
+      })
+      if (error) console.warn('rpc mark-read failed:', error.message)
+      else if (typeof data === 'number') ok = data > 0 || event.is_read === true
+    } catch (err) { console.warn('rpc mark-read threw:', err) }
+
+    if (!ok) {
+      const { error, count } = await supabase
+        .from('teacher_notification_events')
+        .update({ is_read: true })
+        .eq('id', id)
+        .eq('is_read', false)
+        .select('id', { count: 'exact' })
+      if (error) {
+        console.warn('mark-read failed:', error.message)
+        showToast(isArabic ? 'تعذر حفظ حالة القراءة — حاول تاني.' : 'Could not save the read state — try again.', 'error')
+        return
+      }
+      ok = (count || 0) > 0 || event.is_read === true
     }
-    const sameContent = (e) => e.title === event.title && (e.body || '') === (event.body || '')
+
     // ALWAYS sweep identical unread copies (title+body): the portal→teacher
     // bridge inserts a row per student notification, so the same logical
     // notification often exists as several unread copies — reading one must
     // read them all or the rest keep re-appearing after reload.
-    await supabase
-      .from('teacher_notification_events')
-      .update({ is_read: true })
-      .eq('title', event.title)
-      .eq('body', event.body || '')
-      .eq('is_read', false)
-      .then(({ error: sweepError }) => { if (sweepError) console.warn('mark-read sweep failed:', sweepError.message) })
-      .catch(() => {})
+    try {
+      await supabase
+        .from('teacher_notification_events')
+        .update({ is_read: true })
+        .eq('title', event.title || '')
+        .eq('body', event.body || '')
+        .eq('is_read', false)
+    } catch { /* sweep is best-effort — non-fatal */ }
+
+    const sameContent = (e) => e.title === event.title && (e.body || '') === (event.body || '')
     const next = events.map((e) => (e.id === id || sameContent(e) ? { ...e, is_read: true } : e))
     setEvents(next)
     // Recompute from the swept list so duplicates don't leave a ghost badge.
     setUnreadCount(next.filter((e) => !e.is_read).length)
   }
 
+  // ضغطة على إشعار النظام نفسه (web push) → نعلّم التنبيه مقروء فورًا:
+  // الـ SW بيبعت event_id بتاع التنبيه أول ما المستر يدوس على الإشعار.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return
+    const onMsg = (e) => {
+      const d = e.data
+      if (d && d.type === 'nokhba-mark-read' && d.eventId) markRead(d.eventId)
+    }
+    navigator.serviceWorker.addEventListener('message', onMsg)
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg)
+  })
+
   const markAllRead = async () => {
     if (!effectiveTeacherId) return
-    const { error } = await supabase
-      .from('teacher_notification_events')
-      .update({ is_read: true })
-      .eq('teacher_id', effectiveTeacherId)
-      .eq('is_read', false)
+    let error = null
+    try {
+      const rpc = await supabase.rpc('mark_teacher_events_read', { p_event_id: null, p_title: null, p_body: null })
+      error = rpc.error || null
+    } catch (err) { error = err }
     if (error) {
-      console.warn('mark-all-read failed:', error.message)
+      // Fallback: direct update (older DB without the RPC)
+      const res = await supabase
+        .from('teacher_notification_events')
+        .update({ is_read: true })
+        .eq('teacher_id', effectiveTeacherId)
+        .eq('is_read', false)
+      error = res.error || null
+    }
+    if (error) {
+      console.warn('mark-all-read failed:', error.message || error)
       showToast(isArabic ? 'تعذر حفظ حالة القراءة — حاول تاني.' : 'Could not save the read state — try again.', 'error')
       return
     }
     setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })))
     setUnreadCount(0)
+    setHiddenUnread(0)
   }
 
   // Swipe-to-remove (teacher request): optimistic local removal first so the
@@ -281,6 +362,9 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               <h3 className="text-sm font-bold text-fg">{isArabic ? '🔔 التنبيهات' : '🔔 Notifications'}</h3>
               <div className="flex flex-wrap items-center gap-2">
                 {pushPermission !== 'unsupported' && !pushReady && <button onClick={enableBrowserNotifications} className="action-button !min-h-10 min-w-0 rounded-xl border border-brand-gold/30 px-3 py-1.5 text-xs font-bold text-brand-gold-hover">🔔 {isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button>}
+                <button onClick={() => setShowAll((v) => !v)} className="text-brand-gold-hover text-xs font-bold" title={isArabic ? 'الرسايل الواصلة بعد ما فتحت الموقع بس هي اللي بتظهر افتراضيًا' : 'Only messages that arrived after you opened the site show by default'}>
+                  {showAll ? (isArabic ? 'الجديدة فقط' : 'New only') : (isArabic ? 'عرض الكل' : 'Show all')}
+                </button>
                 {unreadCount > 0 && <button onClick={markAllRead} className="text-brand-gold-hover text-xs font-bold">{isArabic ? 'قراءة الكل' : 'Read all'}</button>}
               </div>
             </div>
@@ -300,12 +384,26 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               ))}
             </div>
             <div className="px-4 pt-1.5 pb-1 flex items-center justify-between gap-2">
-              <span className="text-fg-subtle text-[10px]">{filteredEvents.length} {isArabic ? 'تنبيه' : 'notifications'}</span>
-              <span className="text-fg-subtle/70 text-[10px]">{isArabic ? 'اسحب التنبيه جانبًا لإزالته ⇄' : 'Swipe a notification away to remove ⇄'}</span>
+              <span className="text-fg-muted text-[10px]">{filteredEvents.length} {isArabic ? 'تنبيه' : 'notifications'}</span>
+              {!showAll && hiddenUnread > 0 ? (
+                <button onClick={() => setShowAll(true)} className="text-brand-gold-hover text-[10px] font-bold">
+                  {isArabic ? `فيه ${hiddenUnread} رسالة أقدم — اعرضها` : `${hiddenUnread} older — show them`}
+                </button>
+              ) : (
+                <span className="text-fg-subtle text-[10px]">{isArabic ? 'اسحب التنبيه جانبًا لإزالته ⇄' : 'Swipe a notification away to remove ⇄'}</span>
+              )}
             </div>
+            {!showAll && since && (
+              <p className="px-4 pb-1 text-fg-muted text-[10px] mt-0 mb-0">
+                {isArabic ? 'القايمة بتوريك اللي وصل بعد ما فتحت الموقع في الجلسة دي — «عرض الكل» للتاريخ كله.' : 'Showing what arrived after you opened the site this session — “Show all” for the full history.'}
+              </p>
+            )}
             <div className="overflow-y-auto flex-1">
               {filteredEvents.length === 0 ? (
-                <p className="text-fg-subtle text-sm text-center py-8">{isArabic ? 'لا توجد تنبيهات' : 'No notifications'}</p>
+                <div className="text-center py-8 px-4">
+                  <p className="text-fg-muted text-sm mt-0 mb-0">{isArabic ? (showAll ? 'لا توجد تنبيهات' : 'مفيش رسايل جديدة لسه') : (showAll ? 'No notifications' : 'No new messages yet')}</p>
+                  {!showAll && <p className="text-fg-muted text-xs mt-1 mb-0">{isArabic ? 'اللي بيوصل بعد ما تفتح الموقع بيظهر هنا على طول — والتاريخ كله في «عرض الكل».' : 'Messages arriving after you open the site appear here — full history lives in “Show all”.'}</p>}
+                </div>
               ) : (
                 filteredEvents.map((event) => (
                   <SwipeRow key={event.id} onRemove={() => removeEvent(event)}>
@@ -331,7 +429,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm ${!event.is_read ? 'text-fg font-bold' : 'text-fg-subtle'}`}>{event.title}</p>
                         {event.body && <p className="text-fg-subtle text-xs mt-0.5 truncate">{event.body}</p>}
-                        <p className="text-fg-subtle/50 text-[10px] mt-1">
+                        <p className="text-fg-muted text-[10px] mt-1">
                           {new Date(event.created_at).toLocaleString(isArabic ? 'ar-EG' : 'en', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
                         </p>
                       </div>
