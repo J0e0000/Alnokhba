@@ -20,3 +20,6 @@ dist/
 *.local
 logs/
 *.log
+
+# supabase CLI temp
+supabase/.temp/
