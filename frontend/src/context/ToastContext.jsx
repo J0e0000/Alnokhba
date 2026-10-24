@@ -26,8 +26,9 @@ export function ToastProvider({ children }) {
     success: 'glass-card border-emerald-500/30 text-emerald-300',
     error: 'glass-card border-rose-500/30 text-rose-300',
     info: 'glass-card border-brand-gold/40 text-fg',
+    warning: 'glass-card border-amber-500/40 text-amber-400',
   }
-  const icons = { success: '✅', error: '❌', info: 'ℹ️' }
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' }
   const value = useMemo(() => ({ showToast }), [showToast])
 
   return (

@@ -1194,12 +1194,25 @@ export function WorkspaceProvider({ children }) {
         showToast(t('data_loaded'), 'success')
         return { ok: true }
       }
+      // Duplicate rules (44k): same NAME still blocks — that's a real
+      // double-add risk. Same GUARDIAN phone no longer blocks: siblings
+      // legitimately share one guardian's WhatsApp number, so the teacher
+      // gets a warning toast and the save proceeds normally (the DB has no
+      // unique index on students.phone either — this was frontend-only).
       const normalizedName = cleanName.toLowerCase()
-      const possibleDupe = students.find((s) => { const sameName = s.name.trim().toLowerCase() === normalizedName; const samePhone = form.phone && s.phone && s.phone === form.phone; return sameName || samePhone })
-      if (possibleDupe) {
-        const reason = possibleDupe.name.trim().toLowerCase() === normalizedName ? (t('same_name') || 'نفس الاسم') : (t('same_phone') || 'نفس الهاتف')
-        showToast(`${t('duplicate_student') || 'يوجد طالب بنفس البيانات'} (${reason}: ${possibleDupe.name})`, 'error')
-        return { ok: false, duplicate: possibleDupe }
+      const nameDupe = students.find((s) => s.name.trim().toLowerCase() === normalizedName)
+      if (nameDupe) {
+        showToast(`${t('duplicate_student') || 'يوجد طالب بنفس البيانات'} (${t('same_name') || 'نفس الاسم'}: ${nameDupe.name})`, 'error')
+        return { ok: false, duplicate: nameDupe }
+      }
+      const phoneDupe = form.phone ? students.find((s) => s.phone && s.phone === form.phone) : null
+      if (phoneDupe) {
+        showToast(
+          isArabic
+            ? `تنبيه: نفس رقم ولي الأمر مسجّل للطالب «${phoneDupe.name}» — تم الحفظ عادي (أخوة لنفس الوالد أمر طبيعي)`
+            : `Note: same guardian phone is already registered to "${phoneDupe.name}" — saved anyway (siblings may share a guardian)`,
+          'warning', 6000,
+        )
       }
       const payload = { teacher_id: effectiveTeacherId, code: generateStudentCode(), name: cleanName, phone: String(form.phone || '').trim(), stage: form.stage || null, group_name: form.group || null, points: 0, warnings: 0, attendance_status: 'لم يرصد', hw_status: 'لم يرصد' }
       const { data, error } = await supabase.from('students').insert(payload).select().single()
@@ -1225,6 +1238,10 @@ export function WorkspaceProvider({ children }) {
   // Bulk multi-row add — validates all rows first, then saves all (rule 19).
   // validateBulkRows is PURE (never writes); bulkAddStudents commits only
   // after the caller has shown the review step.
+  // 44k: duplicate GUARDIAN phone (within the list or vs existing students)
+  // is severity 'warning' — siblings share one guardian's number, so these
+  // rows are saved normally and only flagged to the teacher. Everything else
+  // (missing name, bad phone format, duplicate NAME) stays a blocking error.
   const validateBulkRows = useCallback((rows) => {
     const students = studentsRef.current
     const problems = []
@@ -1239,10 +1256,10 @@ export function WorkspaceProvider({ children }) {
       }
       const normalized = String(row.name || '').trim().toLowerCase()
       if (normalized && seenNames.has(normalized)) problems.push({ index: i, label, field: 'name', reason: 'اسم مكرر داخل القائمة' })
-      if (phone && seenPhones.has(phone)) problems.push({ index: i, label, field: 'phone', reason: 'هاتف مكرر داخل القائمة' })
+      if (phone && seenPhones.has(phone)) problems.push({ index: i, label, field: 'phone', reason: 'هاتف مكرر داخل القائمة', severity: 'warning' })
       if (phone) {
         const existing = students.find((s) => s.phone && s.phone === phone)
-        if (existing) problems.push({ index: i, label, field: 'phone', reason: `الهاتف مسجل للطالب ${existing.name}` })
+        if (existing) problems.push({ index: i, label, field: 'phone', reason: `الهاتف مسجل للطالب ${existing.name}`, severity: 'warning' })
       }
       if (normalized) {
         const existingName = students.find((s) => s.name.trim().toLowerCase() === normalized)
@@ -1256,7 +1273,11 @@ export function WorkspaceProvider({ children }) {
 
   const bulkAddStudents = async (rows, onProgress) => {
     const problems = validateBulkRows(rows)
-    if (problems.length) return { ok: false, problems }
+    // 44k: only real errors block the save — duplicate guardian phone rows
+    // (severity 'warning') are committed like any other row.
+    const blockingErrors = problems.filter((p) => p.severity !== 'warning')
+    if (blockingErrors.length) return { ok: false, problems }
+    const guardianPhoneWarnings = problems.filter((p) => p.severity === 'warning')
     const effectiveTeacherId = teacherIdRef.current
     const payload = rows.map((row) => ({
       teacher_id: effectiveTeacherId, code: generateStudentCode(),
@@ -1276,6 +1297,14 @@ export function WorkspaceProvider({ children }) {
       },
     })
     showToast(`تمت إضافة ${data.length} طالب`, 'success')
+    if (guardianPhoneWarnings.length) {
+      showToast(
+        isArabicRef.current
+          ? `تنبيه: ${guardianPhoneWarnings.length} ${guardianPhoneWarnings.length === 1 ? 'طالب' : 'طلاب'} بنفس رقم ولي الأمر — تم الحفظ عادي (أخوة لنفس الوالد)`
+          : `Note: ${guardianPhoneWarnings.length} row(s) share a guardian phone — saved anyway (siblings)`,
+        'warning', 6000,
+      )
+    }
     return { ok: true, students: data }
   }
 

@@ -13,7 +13,7 @@ const FIRST_STAGE = Object.values(GRADES_BY_STAGE)[0][0]
 //  • Legacy dirty stage values (bare category / free text) still render
 //    instead of breaking the select; compatibility is CATEGORY-based.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function StudentModal({ open, onClose, onSave, student, groups, groupMeta, isSaving: externalSaving }) {
+export default function StudentModal({ open, onClose, onSave, student, groups, groupMeta, students, isSaving: externalSaving }) {
   const [form, setForm] = useState({ name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '' })
   const [errors, setErrors] = useState({})
   const [hasChanged, setHasChanged] = useState(false)
@@ -48,6 +48,15 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
     () => (groups || []).filter((g) => isStageCompatible(form.stage, meta[g]?.stage)),
     [groups, meta, form.stage],
   )
+
+  // 44k: live guardian-phone duplicate notice — informational only. The
+  // edited student itself is excluded so editing without changing the phone
+  // doesn't self-flag. Never affects canSave or validation.
+  const guardianPhoneDupe = useMemo(() => {
+    const p = String(form.phone || '').trim()
+    if (!p || !isValidPhone(p)) return null
+    return (students || []).find((s) => s.phone === p && s.id !== student?.id) || null
+  }, [students, form.phone, student])
 
   const handleChange = (field, value) => {
     setForm((prev) => {
@@ -143,6 +152,11 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
           />
           {errors.phone && <p className='text-rose-400 text-[11px] mt-1'>رقم الهاتف غير صحيح أو يجب أن يكون رقمًا مصريًا من 11 رقمًا</p>}
           {form.phone && !errors.phone && <p className='text-emerald-400 text-[11px] mt-1' dir='ltr'>WhatsApp: {formatWhatsAppPhone(form.phone)}</p>}
+          {guardianPhoneDupe && (
+            <p className='text-[11px] m-0 mt-1' style={{ color: 'var(--warn-strong)' }}>
+              ⚠ نفس رقم ولي الأمر مسجّل للطالب «{guardianPhoneDupe.name}» — سيُسمح بالحفظ عادي (أخوة لنفس الوالد).
+            </p>
+          )}
         </div>
 
         <div className='grid grid-cols-2 gap-3'>

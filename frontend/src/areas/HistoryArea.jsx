@@ -254,6 +254,7 @@ export default function HistoryArea() {
         student={student}
         groups={ws.groups}
         groupMeta={ws.groupMeta}
+        students={ws.students}
         onClose={() => setEditOpen(false)}
         onSave={async (form) => {
           const result = await ws.saveStudent(form, student)

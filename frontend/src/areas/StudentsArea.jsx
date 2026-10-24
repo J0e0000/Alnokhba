@@ -389,6 +389,7 @@ export default function StudentsArea() {
         student={studentModal.student}
         groups={ws.groups}
         groupMeta={ws.groupMeta}
+        students={ws.students}
         onClose={() => setStudentModal({ open: false, student: null })}
         onSave={async (form) => {
           const result = await ws.saveStudent(form, studentModal.student)
@@ -541,12 +542,19 @@ function BulkAddModal({ onClose }) {
 
   const filled = rows.filter((r) => String(r.name || '').trim() || String(r.phone || '').trim())
 
+  // 44k: problems carry severity — only real errors block the review/save
+  // step; duplicate guardian-phone warnings are shown in amber but the
+  // teacher can proceed (siblings share one guardian's number).
+  const errorProblems = problems.filter((p) => p.severity !== 'warning')
+  const warningProblems = problems.filter((p) => p.severity === 'warning')
+
   const validateAll = () => {
     if (filled.length === 0) { setProblems([{ index: -1, reason: isArabic ? 'أدخل طالبًا واحدًا على الأقل' : 'Enter at least one student' }]); return }
     // PURE validation — nothing is written until "Save all".
     const found = ws.validateBulkRows(filled)
-    if (found.length) setProblems(found)
-    else { setProblems([]); setStep('review') }
+    setProblems(found)
+    const errors = found.filter((p) => p.severity !== 'warning')
+    if (!errors.length) setStep('review')
   }
 
   const saveAll = async () => {
@@ -634,12 +642,22 @@ function BulkAddModal({ onClose }) {
     ws.showToast?.(ok ? (isArabic ? `تم نسخ رسائل ${targets.length} طالب` : `Copied ${targets.length} messages`) : (isArabic ? 'تعذر النسخ' : 'Copy failed'), ok ? 'success' : 'error')
   }
 
-  const problemsList = (list) => (
+  // Red = blocking errors (fix before saving). Amber = guardian-phone
+  // duplicates — informational only, saving is allowed (44k).
+  const problemsList = (list, kind = 'error') => kind === 'error' ? (
     <div className="nk-notice mb-3" style={{ background: 'var(--danger-bg)', borderColor: 'var(--danger-border)', color: 'var(--danger-strong)' }}>
       <b className="block mb-1">{isArabic ? 'أخطاء يجب إصلاحها قبل الحفظ:' : 'Fix before saving:'}</b>
       <ul className="list-disc ps-5 m-0">
         {list.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'صف' : 'Row'} ${p.index + 1}: ` : ''}{p.reason}{p.label ? ` (${p.label})` : ''}</li>)}
       </ul>
+    </div>
+  ) : (
+    <div className="nk-notice mb-3" style={{ background: 'var(--warn-bg, rgba(245,158,11,.12))', borderColor: 'var(--warn-border, rgba(245,158,11,.35))', color: 'var(--warn-strong, #b45309)' }}>
+      <b className="block mb-1">{isArabic ? `تنبيهات — يُسمح بالحفظ (${list.length}):` : `Warnings — saving is allowed (${list.length}):`}</b>
+      <ul className="list-disc ps-5 m-0">
+        {list.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'صف' : 'Row'} ${p.index + 1}: ` : ''}{p.reason}{p.label ? ` (${p.label})` : ''}</li>)}
+      </ul>
+      <span className="text-[.66rem] block mt-1">{isArabic ? 'تكرار رقم ولي الأمر طبيعي بين الأخوة — سيتم تسجيلهم عادي وسيصلك تنبيه بعد الحفظ.' : 'Sharing a guardian phone is normal for siblings — rows are saved normally and a note is shown after saving.'}</span>
     </div>
   )
 
@@ -749,10 +767,11 @@ function BulkAddModal({ onClose }) {
         </div>
         <p className="text-[.7rem] text-fg-muted mt-0 mb-4">
           {step === 'edit' && (isArabic ? 'أدخل الطلاب في صفوف سريعة، ثم تحقق من الكل ← راجع ← احفظ الجميع مرة واحدة. اختيار المجموعة يحدد المرحلة تلقائيًا.' : 'Enter students in fast rows, then validate all → review → save all at once. Picking a group sets the stage automatically.')}
-          {step === 'review' && (isArabic ? 'كل الصفوف صحيحة — اضغط حفظ الجميع للإضافة دفعة واحدة.' : 'All rows valid — save all at once.')}
+          {step === 'review' && (isArabic ? (warningProblems.length ? 'الصفوف جاهزة للحفظ — راجع التنبيهات ثم اضغط حفظ الجميع.' : 'كل الصفوف صحيحة — اضغط حفظ الجميع للإضافة دفعة واحدة.') : (warningProblems.length ? 'Rows are ready — review the warnings, then save all.' : 'All rows valid — save all at once.'))}
         </p>
 
-        {problems.length > 0 && step === 'edit' && problemsList(problems)}
+        {step === 'edit' && errorProblems.length > 0 && problemsList(errorProblems, 'error')}
+        {warningProblems.length > 0 && problemsList(warningProblems, 'warning')}
 
         {step !== 'saving' && rows.map((row, i) => {
           const compatible = groupsForStage(row.stage)

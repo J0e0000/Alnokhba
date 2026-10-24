@@ -349,6 +349,11 @@ function QuickAddStudentsModal({ groupId, onClose }) {
     .map((r) => ({ ...r, group: groupId, stage: ws.groupMeta?.[groupId]?.stage || '' }))
     .filter((r) => String(r.name || '').trim() || String(r.phone || '').trim())
 
+  // 44k: only real errors block the save — duplicate guardian-phone rows
+  // (severity 'warning') proceed and are flagged in amber instead.
+  const errorProblems = problems.filter((p) => p.severity !== 'warning')
+  const warningProblems = problems.filter((p) => p.severity === 'warning')
+
   const save = async () => {
     if (saving) return
     if (!filled.length) {
@@ -357,10 +362,12 @@ function QuickAddStudentsModal({ groupId, onClose }) {
     }
     setSaving(true)
     try {
-      // Pure validation first (duplicates + phone format) — nothing is
-      // written until it passes, then ONE batched insert via the store.
+      // Pure validation first — nothing is written until it passes; only
+      // error-severity problems block. ONE batched insert via the store.
       const found = ws.validateBulkRows(filled)
-      if (found.length) { setProblems(found); return }
+      const errors = found.filter((p) => p.severity !== 'warning')
+      if (errors.length) { setProblems(found); return }
+      setProblems(found) // keep any guardian-phone warnings visible while saving
       const res = await ws.bulkAddStudents(filled, () => {})
       if (res.ok) onClose()
       else setProblems(res.problems || [])
@@ -411,11 +418,20 @@ function QuickAddStudentsModal({ groupId, onClose }) {
       >
         ＋ {isArabic ? 'إضافة صف' : 'Add row'}
       </button>
-      {problems.length > 0 && (
+      {errorProblems.length > 0 && (
         <div className="nk-notice mt-3" style={{ borderColor: 'var(--danger, #ef4444)' }} role="alert">
           <ul className="m-0 pe-4 text-[.7rem] leading-6">
-            {problems.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'طالب' : 'Student'} ${p.index + 1}: ` : ''}{p.reason}</li>)}
+            {errorProblems.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'طالب' : 'Student'} ${p.index + 1}: ` : ''}{p.reason}</li>)}
           </ul>
+        </div>
+      )}
+      {warningProblems.length > 0 && (
+        <div className="nk-notice mt-3" style={{ borderColor: 'var(--warn-border, rgba(245,158,11,.35))', background: 'var(--warn-bg, rgba(245,158,11,.12))', color: 'var(--warn-strong, #b45309)' }}>
+          <b className="text-[.7rem] block mb-1">{isArabic ? `تنبيهات — يُسمح بالحفظ (${warningProblems.length}):` : `Warnings — saving is allowed (${warningProblems.length}):`}</b>
+          <ul className="m-0 pe-4 text-[.7rem] leading-6">
+            {warningProblems.map((p, i) => <li key={i}>{p.index >= 0 ? `${isArabic ? 'طالب' : 'Student'} ${p.index + 1}: ` : ''}{p.reason}</li>)}
+          </ul>
+          <span className="text-[.64rem] block mt-1">{isArabic ? 'تكرار رقم ولي الأمر طبيعي بين الأخوة — هيتسجلوا عادي وبيصلك تنبيه بعد الحفظ.' : 'Sharing a guardian phone is normal for siblings — saved normally, with a note after saving.'}</span>
         </div>
       )}
       <div className="flex justify-end gap-2 mt-4">
