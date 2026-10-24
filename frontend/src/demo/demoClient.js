@@ -19,7 +19,7 @@
 //     channel subscribes to (so realtime code paths are exercised in preview).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const DB_KEY = 'alnokhba_demo_db_v5'
+const DB_KEY = 'alnokhba_demo_db_v6'
 const SESSION_KEY = 'alnokhba_demo_session_v1'
 
 export const DEMO_TEACHER_ID = 'a0000000-0000-4000-8000-00000000c0de'
@@ -156,11 +156,12 @@ function seed() {
   ]
   const standalone_exams = [saExam, saExamSections]
   const standalone_exam_scores = [...saScores, ...saSectionScores]
-  // واجب تفاعلي MCQ (056) — سؤالان باختيار إجابة + تسليم واحد كنموذج
+  // واجب تفاعلي MCQ (056/058) — سؤالان + سؤال نصه اختياري (الواجب في الكتاب)
+  // + فيديو شرح مقفول (يظهر بعد التسليم فقط)
   const hwTask = {
     id: uid(), teacher_id: t, title: 'واجب الوحدة الأولى — اختيار الإجابة',
-    description: 'اختار الإجابة الصحيحة لكل سؤال من بوابة الطالب.',
-    group_name: null, due_date: dayStr(3),
+    description: 'اختار الإجابة الصحيحة لكل سؤال من صفحة الواجبات.',
+    group_name: null, due_date: dayStr(3), video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     questions: [
       { text: 'كم ناتج 7 × 8؟', choices: ['54', '56', '58', '48'], correct: 1, marks: 5 },
       { text: 'عاصمة مصر؟', choices: ['الإسكندرية', 'القاهرة'], correct: 1, marks: 5 },
@@ -168,15 +169,28 @@ function seed() {
     max_score: 10, status: 'published', version: 1,
     created_at: iso(-60 * 24 * 2), updated_at: iso(-60 * 24 * 2),
   }
+  // واجب تاني منشور بدون تسليم — جاهز لتجربة صفحة /hw كاملة (أسئلة نصها فاضي)
+  const hwTask2 = {
+    id: uid(), teacher_id: t, title: 'واجب الكتاب — صفحة ٦٠',
+    description: 'الواجب في الكتاب — حدد الإجابة من عندك.',
+    group_name: null, due_date: dayStr(5), video_url: null,
+    questions: [
+      { text: '', choices: ['أ', 'ب', 'ج', 'د'], correct: 2, marks: 1 },
+      { text: '', choices: ['صح', 'غلط'], correct: 0, marks: 1 },
+      { text: 'أكمل: مصر عاصمتها؟', choices: ['القاهرة', 'أسوان'], correct: 0, marks: 1 },
+    ],
+    max_score: 3, status: 'published', version: 1,
+    created_at: iso(-60 * 24), updated_at: iso(-60 * 24),
+  }
   const hwTaskSimple = {
     id: uid(), teacher_id: t, title: 'حل أسئلة الكتاب صفحة ٤٥',
     group_name: groups[0], due_date: dayStr(2), questions: null,
     max_score: 0, status: 'published', version: 1,
     created_at: iso(-60 * 24), updated_at: iso(-60 * 24),
   }
-  const homework_tasks = [hwTask, hwTaskSimple]
+  const homework_tasks = [hwTask, hwTask2, hwTaskSimple]
   const homework_submissions = [
-    { id: uid(), teacher_id: t, task_id: hwTask.id, student_id: students[0].id, answers: [1, 1], score: 10, max_score: 10, correct_count: 2, question_count: 2, submitted_at: iso(-60 * 20), updated_at: iso(-60 * 20) },
+    { id: uid(), teacher_id: t, task_id: hwTask.id, student_id: students[0].id, answers: [1, 1], score: 10, max_score: 10, correct_count: 2, question_count: 2, results: [true, true], submitted_at: iso(-60 * 20), updated_at: iso(-60 * 20) },
   ]
   // امتحان أونلاين (057) — مؤقت سيرفر + محاولة واحدة لكل طالب + تسليم نموذجي
   const oeExam = {
@@ -751,17 +765,22 @@ function rpcCall(db, name, args) {
       // key, published-only, null-group tasks included, submission summary.
       const tasks = db.homework_tasks
         .filter((t) => (t.group_name === student.group_name || t.group_name == null) && t.status === 'published')
-        .map((t) => ({
-          id: t.id, title: t.title, due_date: t.due_date, created_at: t.created_at,
-          description: t.description || null, status: t.status, max_score: t.max_score,
-          has_questions: t.questions != null,
-          questions: t.questions
-            ? t.questions.map((q) => ({ text: q.text, choices: q.choices, marks: q.marks }))
-            : null,
-          submission: db.homework_submissions.find((hs) => hs.task_id === t.id && hs.student_id === student.id)
-            ? (({ score, max_score, correct_count, question_count, submitted_at }) => ({ score, max_score, correct_count, question_count, submitted_at }))(db.homework_submissions.find((hs) => hs.task_id === t.id && hs.student_id === student.id))
-            : null,
-        }))
+        .map((t) => {
+          const sub = db.homework_submissions.find((hs) => hs.task_id === t.id && hs.student_id === student.id) || null
+          return {
+            id: t.id, title: t.title, due_date: t.due_date, created_at: t.created_at,
+            description: t.description || null, status: t.status, max_score: t.max_score,
+            // 058: فيديو الشرح مقفول قبل التسليم — السيرفر مش بيبعت غير بعد
+            video_url: sub ? (t.video_url || null) : null,
+            has_questions: t.questions != null,
+            questions: t.questions
+              ? t.questions.map((q) => ({ text: q.text, choices: q.choices, marks: q.marks }))
+              : null,
+            submission: sub
+              ? (({ score, max_score, correct_count, question_count, submitted_at, results, answers }) => ({ score, max_score, correct_count, question_count, submitted_at, results, answers }))(sub)
+              : null,
+          }
+        })
       return {
         data: {
           student: { ...student },
@@ -943,6 +962,11 @@ function rpcCall(db, name, args) {
       if (!student) return { data: null, error: { message: 'invalid_token' } }
       const task = db.homework_tasks.find((x) => x.id === args.p_task_id)
       if (!task || task.teacher_id !== student.teacher_id) return { data: null, error: { message: 'task_not_found' } }
+      // 058: التسليم مرة واحدة — اللي سلّم ياخد نتيجته المحفوظة من غير إعادة
+      const existingSub = db.homework_submissions.find((x) => x.task_id === task.id && x.student_id === student.id)
+      if (existingSub) {
+        return { data: { status: 'already_submitted', task_id: task.id, score: existingSub.score, max_score: existingSub.max_score, correct_count: existingSub.correct_count, question_count: existingSub.question_count, submitted_at: existingSub.submitted_at, results: existingSub.results ?? null, answers: existingSub.answers }, error: null }
+      }
       if (task.status !== 'published') return { data: null, error: { message: 'task_closed' } }
       if (!Array.isArray(task.questions) || task.questions.length === 0) return { data: null, error: { message: 'no_questions' } }
       if (task.group_name != null && task.group_name !== student.group_name) return { data: null, error: { message: 'not_for_your_group' } }
@@ -964,18 +988,32 @@ function rpcCall(db, name, args) {
         if (ok) { score += marks; correctCount += 1 }
         return ok
       })
-      let sub = db.homework_submissions.find((x) => x.task_id === task.id && x.student_id === student.id)
-      const prev = sub ? { ...sub } : null
-      if (sub) {
-        sub.answers = answers; sub.score = score; sub.max_score = max
-        sub.correct_count = correctCount; sub.question_count = task.questions.length
-        sub.submitted_at = iso(0); sub.updated_at = iso(0)
-      } else {
-        sub = { id: uid(), teacher_id: student.teacher_id, task_id: task.id, student_id: student.id, answers, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: iso(0), updated_at: iso(0) }
-        db.homework_submissions.push(sub)
+      const sub = { id: uid(), teacher_id: student.teacher_id, task_id: task.id, student_id: student.id, answers, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, results, submitted_at: iso(0), updated_at: iso(0) }
+      db.homework_submissions.push(sub)
+      // 058: تسجيل تلقائي في الحصة الجاية — «واجب إلكتروني: X/Y (P%)»
+      let nextRecorded = false
+      const nextSession = db.lesson_sessions
+        .filter((l) => l.teacher_id === student.teacher_id && l.group_name === student.group_name
+          && l.session_date >= todayStr() && (l.status || 'open') !== 'completed')
+        .sort((a, b) => String(a.session_date).localeCompare(String(b.session_date)))[0]
+      if (nextSession) {
+        const pct = max > 0 ? Math.round((score / max) * 100) : 0
+        const hwText = `واجب إلكتروني: ${score}/${max} (${pct}%)`
+        const dayRow = db.attendance_records.find((r) => r.student_id === student.id && r.attendance_date === nextSession.session_date)
+        if (dayRow) {
+          dayRow.homework_status = dayRow.homework_status || hwText
+          dayRow.recorded_at = iso(0)
+        } else {
+          db.attendance_records.push({
+            id: uid(), teacher_id: student.teacher_id, student_id: student.id,
+            status: 'لم يرصد', homework_status: hwText, lesson_session_id: nextSession.id,
+            attendance_date: nextSession.session_date, recorded_at: iso(0),
+          })
+        }
+        nextRecorded = true
       }
       saveDb(db)
-      return { data: { task_id: task.id, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: sub.submitted_at, results }, error: null }
+      return { data: { status: 'ok', task_id: task.id, score, max_score: max, correct_count: correctCount, question_count: task.questions.length, submitted_at: sub.submitted_at, results, answers, next_session_recorded: nextRecorded }, error: null }
     }
     // ═══ الامتحانات الأونلاين (057) — مؤقت سيرفر + حفظ تلقائي + تسليم ═══
     case 'get_student_online_exams': {

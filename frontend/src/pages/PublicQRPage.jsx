@@ -47,6 +47,9 @@ export default function PublicQRPage() {
   const [parentPushBusy, setParentPushBusy] = useState(false)
   const [parentPushMessage, setParentPushMessage] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
+  // TASK44d (طلب المستر): أول ما حد يفتح بورتال الطالب يلاقي «تفعيل الإشعارات»
+  // علطول فوق — مش في آخر الكارت. الإخفاء يدوي بس لكل جلسة.
+  const [pushBannerDismissed, setPushBannerDismissed] = useState(false)
 
   const tokenRef = useRef('')
   // FIX (refresh race): a background poll that started BEFORE the parent tapped a
@@ -291,10 +294,17 @@ export default function PublicQRPage() {
         for (const task of homework) if (optimistic.homeworkDoneIds.has(task.id)) task.done = true
       }
 
-      // Attendance streak: count consecutive 'حاضر' from most recent record
+      // Attendance streak: count consecutive 'حاضر' from most recent record.
+      // TASK44d: skip FUTURE-dated pre-records — the auto-recorded homework row
+      // (واجب إلكتروني) for the NEXT session is created with 'لم يرصد' before
+      // that lesson is held; counting it would zero everyone's streak.
+      const todayParts = new Date()
+      const todayLocal = `${todayParts.getFullYear()}-${String(todayParts.getMonth() + 1).padStart(2, '0')}-${String(todayParts.getDate()).padStart(2, '0')}`
       let streak = 0
       for (const rec of attendance) {
-        if (!rec || rec.status !== 'حاضر') break
+        if (!rec) continue
+        if (rec.session_date && String(rec.session_date).slice(0, 10) > todayLocal) continue
+        if (rec.status !== 'حاضر') break
         streak++
       }
 
@@ -558,11 +568,8 @@ export default function PublicQRPage() {
     window.open(`https://wa.me/${digits}?text=${text}`, '_blank')
   }
 
-  // ── الواجب التفاعلي (056): اختيار إجابة + تصحيح سيرفر-آثوريتيتف ──
-  const [openTaskId, setOpenTaskId] = useState(null)
-  const [taskAnswers, setTaskAnswers] = useState({}) // taskId → [choiceIdx|null]
-  const [taskBusy, setTaskBusy] = useState(false)
-  const [taskResult, setTaskResult] = useState({}) // taskId → submit RPC result
+  // ── الواجب التفاعلي (056→058): التسليم انتقل لصفحة مخصصة /hw/:token
+  // (Task 44d) — البوابة تبعت للصفحة المخصصة بدل الورقة الجوّه الكارت.
 
   // ── الامتحان الأونلاين (057): مؤقت سيرفر + حفظ تلقائي + تسليم ──
   // oeActive = { examId, attemptId, questions, answers, deadlineAt, offsetMs, busy, submitting, result }
@@ -679,48 +686,6 @@ export default function PublicQRPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [oeRemainingMs])
 
-
-  const setTaskAnswer = (taskId, qIdx, choiceIdx) => {
-    setTaskAnswers((prev) => {
-      const cur = Array.isArray(prev[taskId]) ? [...prev[taskId]] : []
-      cur[qIdx] = choiceIdx
-      return { ...prev, [taskId]: cur }
-    })
-  }
-
-  const handleSubmitTask = async (task) => {
-    if (!tokenRef.current || taskBusy) return
-    const questions = Array.isArray(task.questions) ? task.questions : []
-    const answers = questions.map((_, i) => (taskAnswers[task.id]?.[i] ?? null))
-    setTaskBusy(true)
-    try {
-      const { data, error } = await supabase.rpc('submit_homework_task_answers', {
-        p_token: tokenRef.current,
-        p_task_id: task.id,
-        p_answers: answers,
-      })
-      if (error) {
-        console.warn('[PublicQRPage] submit_homework_task_answers failed:', error.message)
-        const msg = /task_closed/i.test(error.message) ? 'الواجب اتقفل — تواصل مع المستر.'
-          : /invalid_answers/i.test(error.message) ? 'فيه إجابة غير صحيحة الشكل — جرّب تاني.'
-          : 'تعذر إرسال الإجابات. تواصل مع المستر عبر زر تواصل.'
-        window.alert(msg)
-      } else {
-        setTaskResult((prev) => ({ ...prev, [task.id]: data }))
-        // local echo so the row shows the fresh score without waiting for refresh
-        setPortal((prev) => prev
-          ? { ...prev, homework: prev.homework.map((h) => h.id === task.id
-              ? { ...h, submission: { score: data.score, max_score: data.max_score, correct_count: data.correct_count, question_count: data.question_count, submitted_at: data.submitted_at } }
-              : h) }
-          : prev)
-      }
-    } catch (err) {
-      console.error('Submit homework error:', err)
-      window.alert('تعذر إرسال الإجابات (مشكلة اتصال). تحقق من الإنترنت وحاول مرة أخرى.')
-    } finally {
-      setTaskBusy(false)
-    }
-  }
 
   const handleEnableParentPush = async () => {
     if (parentPushBusy) return
@@ -848,8 +813,30 @@ export default function PublicQRPage() {
     }))
   }
 
+  const handleDismissPushBanner = () => {
+    setPushBannerDismissed(true)
+    try { sessionStorage.setItem('nokhba_push_banner_dismissed', '1') } catch { /* private mode */ }
+  }
+
   return (
     <Shell wide teacherName={teacherName} branding={branding}>
+      {/* TASK44d — تفعيل الإشعارات فورًا (أول كارت في البوابة) */}
+      {!parentPushEnabled && !pushBannerDismissed && (
+        <div style={pushBanner}>
+          <div style={pushBannerBody}>
+            <b style={pushBannerTitle}>🔔 فعّل الإشعارات</b>
+            <span style={pushBannerSub}>نتايج الواجبات والامتحانات والحصص توصلك فورًا — حتى والموقع مقفول.</span>
+            {parentPushMessage && <span style={pushBannerMsg}>{parentPushMessage}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+            <button style={pushBannerBtn} onClick={handleEnableParentPush} disabled={parentPushBusy}>
+              {parentPushBusy ? 'جاري التفعيل...' : 'تفعيل الإشعارات'}
+            </button>
+            <button style={pushBannerX} onClick={handleDismissPushBanner} aria-label="إخفاء تنبيه الإشعارات">✕</button>
+          </div>
+        </div>
+      )}
+
       {/* Student Card */}
       <div style={studentCard}>
         <div style={avatarCircle}>{(student.name || '؟').trim().charAt(0)}</div>
@@ -986,13 +973,14 @@ export default function PublicQRPage() {
                 )}
               </div>
               {h.has_questions ? (
-                <button
-                  style={hwDoneBtn}
-                  disabled={markingTaskId === h.id}
-                  onClick={() => setOpenTaskId(openTaskId === h.id ? null : h.id)}
+                // TASK44d: زر «تسليم الواجب» يفتح صفحة الواجبات المخصصة /hw/:token
+                // — صفحة كاملة للأسئلة والنتيجة، مش ورقة جوّه البوابة.
+                <a
+                  style={{ ...hwDoneBtn, textDecoration: 'none', display: 'inline-block', textAlign: 'center' }}
+                  href={`/hw/${tokenRef.current}`}
                 >
-                  {openTaskId === h.id ? 'إغلاق' : (h.submission ? 'إعادة الحل' : 'ابدأ الحل')}
-                </button>
+                  {h.submission ? 'نتيجتك ✓' : 'تسليم الواجب ←'}
+                </a>
               ) : h.done ? (
                 <span style={hwDoneBadge}>✓ تم</span>
               ) : (
@@ -1005,16 +993,6 @@ export default function PublicQRPage() {
                 </button>
               )}
             </div>
-            {h.has_questions && openTaskId === h.id && (
-              <HomeworkAnswerSheet
-                task={h}
-                answers={taskAnswers[h.id] || []}
-                onPick={(qi, ci) => setTaskAnswer(h.id, qi, ci)}
-                onSubmit={() => handleSubmitTask(h)}
-                busy={taskBusy}
-                result={taskResult[h.id]}
-              />
-            )}
           </div>
         ))}
       </SectionCard>
@@ -1464,61 +1442,6 @@ function OnlineExamPlayer({ state, onClose, onPick, onSubmit }) {
   )
 }
 
-// ── ورقة إجابة الواجب التفاعلي (056): اختيار إجابة لكل سؤال ثم تسليم ──
-function HomeworkAnswerSheet({ task, answers, onPick, onSubmit, busy, result }) {
-  const questions = Array.isArray(task.questions) ? task.questions : []
-  const answered = questions.filter((_, i) => answers[i] != null).length
-  return (
-    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12, padding: '12px', background: 'rgba(251,156,27,0.06)', borderRadius: 12, border: '1px solid rgba(251,156,27,0.3)' }}>
-      {questions.map((q, qi) => {
-        const choices = Array.isArray(q.choices) ? q.choices : []
-        const correct = result?.results?.[qi]
-        return (
-          <div key={qi}>
-            <p style={{ fontSize: '13px', fontWeight: 800, color: NAVY, margin: '0 0 6px 0' }}>
-              {qi + 1}. {String(q.text || '')}
-              {result && (
-                <span style={{ color: correct ? '#22C55E' : '#EF4444', marginRight: 6 }}>{correct ? '✓' : '✗'}</span>
-              )}
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {choices.map((c, ci) => {
-                const picked = answers[qi] === ci
-                return (
-                  <label key={ci} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, cursor: busy ? 'wait' : 'pointer',
-                    padding: '7px 10px', borderRadius: 10, fontSize: '13px', color: NAVY,
-                    background: picked ? 'rgba(251,156,27,0.18)' : WHITE,
-                    border: picked ? '1.5px solid #FB9C1B' : '1px solid rgba(148,163,184,0.35)',
-                    fontWeight: picked ? 800 : 500,
-                  }}>
-                    <input type="radio" name={`q-${task.id}-${qi}`} checked={picked} onChange={() => onPick(qi, ci)} disabled={busy} style={{ accentColor: '#FB9C1B' }} />
-                    {String(c)}
-                  </label>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-      {result && (
-        <div style={{ padding: '10px 12px', borderRadius: 10, background: '#22C55E15', border: '1px solid #22C55E55', fontWeight: 800, fontSize: '13px', color: NAVY, textAlign: 'center' }}>
-          نتيجتك: {Number(result.score)} من {Number(result.max_score)} — {result.correct_count}/{result.question_count} إجابة صحيحة ✓
-        </div>
-      )}
-      <button onClick={onSubmit} disabled={busy || answered === 0} style={{
-        ...hwDoneBtn, width: '100%', padding: '10px', fontSize: '13px',
-        opacity: busy || answered === 0 ? 0.6 : 1, cursor: busy ? 'wait' : 'pointer',
-      }}>
-        {busy ? 'جاري التصحيح...' : (result ? 'إعادة الإرسال' : `تسليم الإجابات (${answered}/${questions.length})`)}
-      </button>
-      {!result && answered === 0 && (
-        <p style={{ fontSize: '11px', color: GRAY_400, margin: 0, textAlign: 'center' }}>اختار إجابة سؤال واحد على الأقل قبل التسليم</p>
-      )}
-    </div>
-  )
-}
-
 // ═══════════════════════════════════════════════════════════════
 // Design tokens — sampled from the approved logo: navy #142D62, orange #FB9C1B
 // ═══════════════════════════════════════════════════════════════
@@ -1527,7 +1450,7 @@ const NAVY = '#142D62'
 const NAVY_LIGHT = '#f8fafc'
 const GOLD = '#A65700'
 const GOLD_HOVER = '#8C4900'
-const WHITE = '#142D62'
+const WHITE = '#FFFFFF'
 const GRAY_400 = '#718096'
 const GREEN = '#25D366'
 
@@ -1629,6 +1552,27 @@ const hwRow = { display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 1
 const hwTitle = { fontSize: '13px', fontWeight: 700, color: NAVY, margin: 0 }
 const hwDue = { fontSize: '11px', color: GRAY_400, margin: '2px 0 0 0' }
 const hwDoneBadge = { fontSize: '12px', fontWeight: 800, color: '#22C55E', whiteSpace: 'nowrap' }
+
+// TASK44d — بانر «تفعيل الإشعارات» الفوري أعلى البوابة
+const pushBanner = {
+  width: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 12,
+  padding: '14px 16px', borderRadius: 16,
+  background: 'linear-gradient(135deg, rgba(251,156,27,.14) 0%, rgba(20,45,98,.06) 100%)',
+  border: '1.5px solid rgba(251,156,27,.55)', boxShadow: '0 8px 22px rgba(20,45,98,.08)',
+}
+const pushBannerBody = { display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }
+const pushBannerTitle = { fontSize: 14.5, color: NAVY, fontWeight: 900 }
+const pushBannerSub = { fontSize: 12.5, color: '#475569', lineHeight: 1.6 }
+const pushBannerMsg = { fontSize: 11.5, color: GOLD, fontWeight: 700 }
+const pushBannerBtn = {
+  padding: '9px 14px', borderRadius: 12, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+  background: 'linear-gradient(135deg, #A65700 0%, #E07F00 100%)', color: '#fff',
+  fontWeight: 900, fontSize: 12.5, whiteSpace: 'nowrap',
+}
+const pushBannerX = {
+  width: 30, height: 30, borderRadius: 10, border: '1px solid rgba(100,116,139,.35)',
+  background: '#fff', color: '#64748B', cursor: 'pointer', fontSize: 13, flexShrink: 0,
+}
 const hwDoneBtn = {
   fontSize: '11px', fontWeight: 700, color: NAVY, background: GOLD, border: 'none',
   borderRadius: '8px', padding: '6px 10px', cursor: 'pointer', whiteSpace: 'nowrap',

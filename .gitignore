@@ -1,3 +1,6 @@
+# credentials — never commit (Task 44d)
+.secrets/
+
 .vercel
 .env*
 

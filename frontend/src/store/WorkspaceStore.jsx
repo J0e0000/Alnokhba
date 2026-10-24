@@ -1731,7 +1731,7 @@ export function WorkspaceProvider({ children }) {
         choices: (q.choices || []).map((c) => String(c || '').trim()).filter(Boolean),
         correct: Number(q.correct) || 0,
         marks: Math.max(Number(q.marks) || 1, 0),
-      })).filter((q) => q.text && q.choices.length >= 2)
+      })).filter((q) => q.choices.length >= 2) // 058: نص السؤال اختياري (الواجب ممكن يكون في الكتاب)
       const maxScore = clean.reduce((a, q) => a + q.marks, 0)
       const { data, error } = await supabase.from('homework_tasks').insert({
         teacher_id: teacherIdRef.current,
@@ -1751,6 +1751,44 @@ export function WorkspaceProvider({ children }) {
       showToast(isArabic ? 'تعذر إنشاء الواجب' : 'Could not create homework', 'error')
       return null
     } finally { setIsSaving(false) }
+  }
+
+  // TASK44d: تعديل واجب قبل ما حد يحله — نسخة تحديث من مسار الإنشاء
+  const updateHomeworkTask = async (task, { title, description, group_name, due_date, questions, video_url }) => {
+    const isArabic = isArabicRef.current
+    const backup = task
+    try {
+      const clean = (questions || []).map((q) => ({
+        text: String(q.text || '').trim(),
+        choices: (q.choices || []).map((c) => String(c || '').trim()).filter(Boolean),
+        correct: Number(q.correct) || 0,
+        marks: Math.max(Number(q.marks) || 1, 0),
+      })).filter((q) => q.choices.length >= 2)
+      const maxScore = clean.reduce((a, q) => a + q.marks, 0)
+      const patch = {
+        title: String(title || '').trim(),
+        description: String(description || '').trim() || null,
+        group_name: group_name || null,
+        due_date: due_date || null,
+        questions: clean.length ? clean : null,
+        max_score: maxScore,
+        video_url: String(video_url || '').trim() || null,
+      }
+      const { data, error } = await supabase.from('homework_tasks')
+        .update(patch)
+        .eq('id', task.id)
+        .eq('teacher_id', teacherIdRef.current)
+        .select().single()
+      if (error) throw error
+      setHomeworkTasks((p) => p.map((t) => (t.id === task.id ? data : t)))
+      showToast(isArabic ? 'اتحدّث الواجب ✓' : 'Homework updated', 'success')
+      return data
+    } catch (err) {
+      console.error('Update homework task error:', err)
+      setHomeworkTasks((p) => p.map((t) => (t.id === backup.id ? backup : t)))
+      showToast(isArabic ? 'تعذر تحديث الواجب' : 'Could not update homework', 'error')
+      return null
+    }
   }
 
   const setHomeworkTaskStatus = async (task, status) => {
@@ -2069,7 +2107,7 @@ export function WorkspaceProvider({ children }) {
     bulkAssignGroup, bulkDeleteStudents, restoreStudents,
     saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
     createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams, ungradeStandaloneStudent,
-    refreshHomework, createHomeworkTask, setHomeworkTaskStatus, deleteHomeworkTask,
+    refreshHomework, createHomeworkTask, updateHomeworkTask, setHomeworkTaskStatus, deleteHomeworkTask,
     refreshOnlineExams, createOnlineExam, setOnlineExamStatus, deleteOnlineExam, resetOnlineExamAttempt,
     handleUndo, handleRedo, handleHistoryRestore, syncPendingSaves,
     // derived helpers

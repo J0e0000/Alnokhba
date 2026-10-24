@@ -26,6 +26,8 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const SubscriptionGate = lazy(() => import('./pages/SubscriptionGate'))
 const PublicQRPage = lazy(() => import('./pages/PublicQRPage'))
+// /hw/:token — صفحة الواجبات المخصصة (Task 44d): عامة بالتوكن بدون تسجيل دخول
+const PublicHomeworkPage = lazy(() => import('./pages/PublicHomeworkPage'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
 const StatusPage = lazy(() => import('./pages/StatusPage'))
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
@@ -46,6 +48,11 @@ const PageFallback = () => (
  */
 function isPublicQRPath() {
   return /^\/qr\//.test(window.location.pathname)
+}
+
+// /hw/:token — صفحة الواجبات المخصصة (Task 44d): عامة بالتوكن بدون تسجيل دخول
+function isPublicHWPath() {
+  return /^\/hw\//.test(window.location.pathname)
 }
 
 // /centers — EL NO5BA CENTERS (separate product, same ecosystem/auth/branding).
@@ -219,6 +226,10 @@ export default function App() {
   // Public QR page — no auth, no providers needed
   if (isPublicQRPath()) {
     return <ProductionErrorBoundary><Suspense fallback={<PageFallback />}><PublicQRPage /></Suspense></ProductionErrorBoundary>
+  }
+  // صفحة الواجبات المخصصة (Task 44d) — no auth, no providers needed
+  if (isPublicHWPath()) {
+    return <ProductionErrorBoundary><Suspense fallback={<PageFallback />}><PublicHomeworkPage /></Suspense></ProductionErrorBoundary>
   }
   // EL NO5BA CENTERS — separate product; shares auth/branding, own workflow.
   if (isCentersPath()) {
