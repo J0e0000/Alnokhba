@@ -1,5 +1,21 @@
 import React from 'react'
-import { track } from '../lib/posthog'
+
+/* Crash telemetry with ZERO bundle cost: do NOT import posthog here — a
+   static import would pull the whole posthog-js library (~300 KB) into the
+   main bundle (real regression measured in the 2026-10-26 build). Instead:
+   capture through the window bridge posthog.js installs (window.__nkPosthog),
+   or push into window.__nkQueue which posthog init drains (last 200) when it
+   loads idle. If analytics never loaded, the console error below still logs. */
+function reportCrash(area, payload) {
+  try {
+    const ph = typeof window !== 'undefined' && window.__nkPosthog
+    if (ph && typeof ph.capture === 'function') { ph.capture('area_crash', payload); return }
+    if (typeof window !== 'undefined') {
+      if (!Array.isArray(window.__nkQueue)) window.__nkQueue = []
+      window.__nkQueue.push({ event: 'area_crash', ...payload })
+    }
+  } catch { /* analytics must never break recovery */ }
+}
 
 /**
  * AreaErrorBoundary — crash CONTAINMENT for one screen/area (security+speed
@@ -30,14 +46,12 @@ export default class AreaErrorBoundary extends React.Component {
     try { window.__NOKHBA_BOOTED__ = true } catch { /* older browsers */ }
     try { window.__nokhbaBooted = true } catch { /* older browsers */ }
     const area = this.props.area || 'unknown'
-    try {
-      track('area_crash', {
-        area,
-        message: String(error?.message || 'unknown').slice(0, 220),
-        stack_head: String(error?.stack || '').slice(0, 500),
-        errorId: this.state.errorId,
-      })
-    } catch { /* analytics must never break recovery */ }
+    reportCrash(area, {
+      area,
+      message: String(error?.message || 'unknown').slice(0, 220),
+      stack_head: String(error?.stack || '').slice(0, 500),
+      errorId: this.state.errorId,
+    })
     console.error('[NOKHBA_AREA_ERROR]', area, {
       error: error?.message || 'unknown error',
       componentStack: (info?.componentStack || '').split('\n').slice(0, 5).join(' | '),
