@@ -19,6 +19,7 @@ import ExamWorkspace from '../exams/ExamWorkspace'
 import HomeworkWorkspace from '../homework/HomeworkWorkspace'
 import OnlineExamWorkspace from '../exams/OnlineExamWorkspace'
 import TourOverlay from '../components/TourOverlay'
+import AreaErrorBoundary from '../components/AreaErrorBoundary'
 
 // PERF (bundle splitting): Home and the Session Workspace stay in the main
 // bundle (they ARE the daily flow — lazy chunks would add a flash to the
@@ -278,20 +279,20 @@ export default function AppShell({ onOpenAdmin }) {
         </aside>
 
         <main className="flex-1 min-w-0">
-          {ui.area === 'home' && <HomePage />}
-          {ui.area === 'session' && <SessionWorkspace params={ui.sessionParams} />}
-          {ui.area === 'exam' && <ExamWorkspace params={ui.examParams} />}
-          {ui.area === 'task' && <HomeworkWorkspace params={ui.taskParams} />}
-          {ui.area === 'onlineExam' && <OnlineExamWorkspace params={ui.oeParams} />}
+          {ui.area === 'home' && <AreaErrorBoundary area='home'><HomePage /></AreaErrorBoundary>}
+          {ui.area === 'session' && <AreaErrorBoundary area='session'><SessionWorkspace params={ui.sessionParams} /></AreaErrorBoundary>}
+          {ui.area === 'exam' && <AreaErrorBoundary area='exam'><ExamWorkspace params={ui.examParams} /></AreaErrorBoundary>}
+          {ui.area === 'task' && <AreaErrorBoundary area='task'><HomeworkWorkspace params={ui.taskParams} /></AreaErrorBoundary>}
+          {ui.area === 'onlineExam' && <AreaErrorBoundary area='onlineExam'><OnlineExamWorkspace params={ui.oeParams} /></AreaErrorBoundary>}
           <Suspense fallback={<div className="py-10 text-center text-sm text-fg-muted" role="status">{isArabic ? AREA_FALLBACK_AR : AREA_FALLBACK_EN}</div>}>
-            {ui.area === 'students' && <StudentsArea />}
-            {ui.area === 'history' && <HistoryArea />}
-            {ui.area === 'homework' && <HomeworkArea />}
-            {ui.area === 'reports' && <ReportsArea />}
-            {ui.area === 'settings' && <SettingsArea />}
+            {ui.area === 'students' && <AreaErrorBoundary area='students'><StudentsArea /></AreaErrorBoundary>}
+            {ui.area === 'history' && <AreaErrorBoundary area='history'><HistoryArea /></AreaErrorBoundary>}
+            {ui.area === 'homework' && <AreaErrorBoundary area='homework'><HomeworkArea /></AreaErrorBoundary>}
+            {ui.area === 'reports' && <AreaErrorBoundary area='reports'><ReportsArea /></AreaErrorBoundary>}
+            {ui.area === 'settings' && <AreaErrorBoundary area='settings'><SettingsArea /></AreaErrorBoundary>}
             {/* legacy 'insights'/'analytics' deep links land in Settings —
                 فريق التحليل lives there now (one infographic report). */}
-            {(ui.area === 'insights' || ui.area === 'analytics') && <SettingsArea />}
+            {(ui.area === 'insights' || ui.area === 'analytics') && <AreaErrorBoundary area='settings'><SettingsArea /></AreaErrorBoundary>}
           </Suspense>
         </main>
       </div>

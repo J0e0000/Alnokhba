@@ -210,7 +210,7 @@ async function handleAdminAction(req: Request): Promise<Response> {
     const targetUserId = String(body.targetUserId || "").trim();
     if (!targetUserId) return json({ error: "targetUserId is required" }, 400);
     const password = String(body.password || "");
-    if (password.length < 8) return json({ error: "Password must be at least 8 characters" }, 400);
+    if (password.length < 10) return json({ error: "Password must be at least 10 characters" }, 400);
     // Tighter burst guard for password resets: 10 / 5 minutes per admin.
     if (!(await rateLimited(admin, { key: `aaa-pw:${user.id}`, max: 10, windowSeconds: 300 }))) {
       await audit(admin, { action: "set_password", actorId: user.id, targetUserId, success: false, details: "تجاوز حد تغيير كلمات المرور مؤقتًا" });

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "start": "vite --host 0.0.0.0 --port 3000",
-    "build": "vite build && node scripts/css-compat.mjs && node scripts/prerender.mjs",
+    "build": "vite build && node scripts/css-compat.mjs && node scripts/js-compat.mjs && node scripts/es2019_dist_check.mjs && node scripts/prerender.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "db:push": "echo \"[nokhba] Supabase backend — no local db push needed\""
@@ -31,6 +31,7 @@
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.3",
     "autoprefixer": "^10.5.4",
+    "esbuild": "^0.28.2",
     "oxlint": "^1.71.0",
     "path-to-regexp": "^6.1.0",
     "postcss": "^8.5.22",

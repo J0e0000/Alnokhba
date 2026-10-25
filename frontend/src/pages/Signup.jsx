@@ -28,7 +28,7 @@ export default function Signup({ onSwitchToLogin }) {
   const [done, setDone] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const pwOk = password.length >= 8
+  const pwOk = password.length >= 10
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -134,9 +134,9 @@ export default function Signup({ onSwitchToLogin }) {
                 <label htmlFor="su-pw" className="mb-1.5 block text-sm font-bold text-on-surface-variant">كلمة المرور</label>
                 <div className="relative">
                   <input
-                    id="su-pw" type={showPw ? 'text' : 'password'} required minLength={8} autoComplete="new-password" value={password}
+                    id="su-pw" type={showPw ? 'text' : 'password'} required minLength={10} autoComplete="new-password" value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="٨ حروف/أرقام على الأقل" dir="ltr"
+                    placeholder="١٠ حروف/أرقام على الأقل" dir="ltr"
                     aria-invalid={!pwOk && password.length > 0}
                     className="glass-input w-full rounded-xl px-3.5 py-2.5 pl-12 text-right text-sm outline-none"
                   />
@@ -150,7 +150,7 @@ export default function Signup({ onSwitchToLogin }) {
                 </div>
                 {password.length > 0 && (
                   <p className={`mt-1.5 text-xs font-bold ${pwOk ? 'text-[var(--ok-strong,var(--fg))]' : 'text-fg-subtle'}`}>
-                    {pwOk ? '✓ كلمة المرور تمام' : `فاضل ${8 - password.length} حروف على الأقل`}
+                    {pwOk ? '✓ كلمة المرور تمام' : `فاضل ${10 - password.length} حروف على الأقل`}
                   </p>
                 )}
               </div>

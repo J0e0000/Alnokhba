@@ -175,8 +175,9 @@ export default function AdminDashboard({ onBack }) {
   }
 
   const changePassword = async (teacher) => {
-    const password = window.prompt(`اكتب كلمة المرور الجديدة لـ ${teacher.full_name || teacher.email} (8 أحرف على الأقل):`, '')
+    const password = window.prompt(`اكتب كلمة المرور الجديدة لـ ${teacher.full_name || teacher.email} (10 أحرف على الأقل):`, '')
     if (password === null) return
+    if (password.length < 10) { showToast('كلمة المرور لازم تكون 10 أحرف على الأقل', 'error'); return }
     const confirmation = window.prompt('أعد كتابة كلمة المرور للتأكيد:', '')
     if (confirmation === null) return
     if (password !== confirmation) { showToast('كلمتا المرور غير متطابقتين', 'error'); return }

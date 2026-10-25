@@ -313,22 +313,22 @@ export function WorkspaceProvider({ children }) {
       const empty = Promise.resolve({ data: [] })
       const [stR, scoresR, logsR, attendanceR, lessonSessionsR, examsR, saExamsR, saScoresR, saAuditR, hwTasksR, hwSubsR, oeR, oaR] = await Promise.all(tid ? [
         supabase.from('students').select('*').eq('teacher_id', tid).order('created_at'),
-        supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
+        supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at').limit(4000),
         supabase.from('behavior_logs').select('*').eq('teacher_id', tid).gte('created_at', todayStart.toISOString()).order('created_at'),
         // PERF + FIX: attendance_date is required by the Analytics 30/90-day
         // filters (InsightsReport advanced tools) — it used to be missing from this select,
         // which silently made every period-filtered attendance percentage
         // null. Selecting it costs nothing.
         supabase.from('attendance_records').select('student_id, status, recorded_at, lesson_session_id, homework_status, attendance_date').eq('teacher_id', tid).order('recorded_at', { ascending: false }).limit(5000),
-        supabase.from('lesson_sessions').select('*').eq('teacher_id', tid).order('session_date', { ascending: false }).order('started_at', { ascending: false }).limit(500),
+        supabase.from('lesson_sessions').select('*').eq('teacher_id', tid).order('session_date', { ascending: false }).order('started_at', { ascending: false }).limit(300),
         supabase.from('exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
         supabase.from('standalone_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-        supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at'),
-        supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(300),
+        supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at').limit(2000),
+        supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(150),
         supabase.from('homework_tasks').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-        supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(1000),
+        supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(800),
         supabase.from('online_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-        supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(2000),
+        supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(1000),
       ] : [empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty])
       const st = stR.data ?? []
       setStudents(st)
@@ -401,7 +401,7 @@ export function WorkspaceProvider({ children }) {
       if (!tid) return
       const [examsR, scoresR] = await Promise.all([
         supabase.from('exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-        supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at'),
+        supabase.from('exam_scores').select('*, exams(title, max_score_per_section)').eq('teacher_id', tid).order('created_at').limit(4000),
       ])
       setExamsList(examsR.data ?? [])
       const scoresMap = {}
@@ -430,8 +430,8 @@ export function WorkspaceProvider({ children }) {
     if (!tid) return
     const [examsR, scoresR, auditR] = await Promise.all([
       supabase.from('standalone_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-      supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at'),
-      supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(300),
+      supabase.from('standalone_exam_scores').select('*').eq('teacher_id', tid).order('created_at').limit(2000),
+      supabase.from('standalone_exam_audit_logs').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(150),
     ])
     setStandaloneExams((examsR.data ?? []).map((e) => ({ ...e, grade_scale: normalizeGradeScale(e.grade_scale) })))
     setStandaloneExamScores(scoresR.data ?? [])
@@ -1742,7 +1742,7 @@ export function WorkspaceProvider({ children }) {
     if (!tid) return
     const [tasksR, subsR] = await Promise.all([
       supabase.from('homework_tasks').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-      supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(1000),
+      supabase.from('homework_submissions').select('*').eq('teacher_id', tid).order('submitted_at', { ascending: false }).limit(800),
     ])
     setHomeworkTasks(tasksR.data ?? [])
     setHomeworkSubmissions(subsR.data ?? [])
@@ -1865,7 +1865,7 @@ export function WorkspaceProvider({ children }) {
     if (!tid) return
     const [eR, aR] = await Promise.all([
       supabase.from('online_exams').select('*').eq('teacher_id', tid).order('created_at', { ascending: false }).limit(200),
-      supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(2000),
+      supabase.from('online_exam_attempts').select('*').eq('teacher_id', tid).order('started_at', { ascending: false }).limit(1000),
     ])
     if (!eR.error) setOnlineExams(eR.data ?? [])
     if (!aR.error) setOnlineExamAttempts(aR.data ?? [])

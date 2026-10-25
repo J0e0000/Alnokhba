@@ -101,8 +101,7 @@ print("5) SECURITY DEFINER FUNCTIONS WITHOUT hardened search_path")
 print("=" * 70)
 sd = sql("""
 select p.proname, p.prosecdef,
-       (select setting from pg_db_role_setting s join pg_roles r on r.oid=s.setrole where s.setdatabase=0 and r.rolname='postgres' limit 1) as dummy,
-       array_to_string(p.proconfig, ',') as config
+       coalesce(array_to_string(p.proconfig, ','), '') as config
 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 where n.nspname='public' and p.prosecdef=true
 """)

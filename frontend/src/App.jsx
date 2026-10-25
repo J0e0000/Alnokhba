@@ -191,7 +191,7 @@ function Gate() {
   }
 
   if (profile?.is_admin && adminView && !supportSession) {
-    return <Suspense fallback={<PageFallback />}><AdminDashboard onBack={() => setAdminView(false)} /></Suspense>
+    return <ProductionErrorBoundary><Suspense fallback={<PageFallback />}><AdminDashboard onBack={() => setAdminView(false)} /></Suspense></ProductionErrorBoundary>
   }
 
   // أثناء جلسة وصول الدعم نسمح بعرض بيانات حساب منتهي/غير مفعّل للفحص
