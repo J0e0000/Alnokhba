@@ -49,8 +49,26 @@ for (const f of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
     bad++
   }
 }
+// CORRUPTION GUARD (2026-10-26 incident): the now-removed js-compat post-build
+// pass re-minified every chunk with esbuild at target=es2019, which LOWERED
+// `import.meta` into a plain `const u={}` — Vite's preload helper then ran
+// `new URL(dep, undefined)` and EVERY lazy chunk threw
+// "Failed to construct 'URL': Invalid URL" (all pages crashed behind the
+// area error boundaries). `import.meta` is a RUNTIME feature (Safari 11.1+,
+// far below the iOS 13 floor), NOT syntax — es2019 targets must keep it
+// verbatim, and no post-build pass may strip it. The Vite preload helper
+// always references import.meta.url; if it vanishes from the dist, lazy
+// preload URLs are broken. This tripwire fails the build loudly in that case.
+let totalMeta = 0
+for (const f of readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+  totalMeta += (readFileSync(`${dir}/${f}`, 'utf8').match(/import\.meta/g) || []).length
+}
+if (totalMeta === 0) {
+  console.error(`❌ import.meta vanished from dist — lazy preload URL bases are broken (es2019-lowering-style corruption); every lazy import would throw "Invalid URL"`)
+  bad++
+}
 if (bad) {
   console.error(`\n[es2019_dist_check] ${bad} chunk(s) violate the documented browser floor (iOS 13 / Safari 13).`)
   process.exit(1)
 }
-console.log('[es2019_dist_check] all dist chunks are ES2019-clean ✅')
+console.log(`[es2019_dist_check] all dist chunks are ES2019-clean ✅ (import.meta intact: ${totalMeta} refs)`)
