@@ -26,6 +26,15 @@ export default defineConfig({
     // Downlevel CSS alongside the JS so older WebKit doesn't hit syntax it
     // can't parse while minifying (Round 10).
     cssTarget: ['safari13', 'ios13', 'chrome87', 'firefox78'],
+    // 2026-10-26 INCIDENT: a now-removed post-build pass corrupted chunk
+    // CONTENTS (import.meta → {}) while keeping rolldown's chunk FILENAMES,
+    // and /assets/* is served immutable (max-age=1y) — browsers that visited
+    // during the broken window kept the poisoned copies cached forever, so
+    // the app stayed crashed for them even after the fix deployed. Bumping
+    // assetsDir changes EVERY asset URL, forcing a clean refetch on all
+    // clients. Do not reuse an old assetsDir name after a content-corrupting
+    // incident — bump it instead (app-v3, app-v4, ...).
+    assetsDir: 'app-v2',
   },
   // ── Why NOT @vitejs/plugin-legacy (Round 10 decision) ──────────────────────
   // plugin-legacy exists for browsers WITHOUT ES-module support (iOS Safari

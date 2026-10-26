@@ -22,10 +22,20 @@
  *  Idempotent — safe to run twice. Only touches dist/assets/*.css.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-const ASSETS_DIR = new URL('./../dist/assets/', import.meta.url).pathname
+// Assets dir resolution — vite.config build.assetsDir is 'app-v2' since the
+// 2026-10-26 immutable-cache-poisoning incident (broken chunks were cached
+// under immutable max-age=1y in user browsers; renaming the folder forces a
+// clean refetch). Fall back to the legacy 'assets' for safety.
+const ASSETS_DIR = ['app-v2', 'assets']
+  .map((d) => new URL(`./../dist/${d}/`, import.meta.url).pathname)
+  .find((p) => existsSync(p) && readdirSync(p).some((f) => f.endsWith('.css')))
+if (!ASSETS_DIR) {
+  console.error('[css-compat] no CSS files found in dist/app-v2 or dist/assets — did `vite build` run?')
+  process.exit(1)
+}
 const files = readdirSync(ASSETS_DIR).filter((f) => f.endsWith('.css'))
 if (files.length === 0) {
   console.error('[css-compat] no CSS files found in dist/assets — did `vite build` run?')

@@ -9,10 +9,18 @@
 //
 // Probe regex is also refined: real optional chaining is `?.` followed by an
 // identifier / [ / ( — `?.5` is a ternary over a `.5` decimal literal.
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { transformSync } from 'esbuild'
 
-const dir = 'dist/assets'
+// Assets dir resolution — mirrors vite.config build.assetsDir ('app-v2' since
+// the 2026-10-26 immutable-cache-poisoning incident), with legacy fallback.
+const dir = ['dist/app-v2', 'dist/assets'].find(
+  (d) => existsSync(d) && readdirSync(d).some((n) => n.endsWith('.js')),
+)
+if (!dir) {
+  console.error('❌ no JS chunks found in dist/app-v2 or dist/assets — did `vite build` run?')
+  process.exit(1)
+}
 const probes = [
   [/[\w)\]'"`]\?\.(?=[a-zA-Z_$\[(])/g, '?.  optional chaining'],
   [/\?\?(?![=.])/g, '??  nullish coalescing'],
