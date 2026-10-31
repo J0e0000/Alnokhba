@@ -215,7 +215,7 @@ export default function Signup({ onSwitchToLogin }) {
                 <p className="text-sm font-black text-[#FBBF6D]">بعد الـ{DAYS_AR} يوم؟</p>
                 <p className="mt-1.5 text-xs leading-6 text-slate-300">
                   الحساب بيتوقف مؤقتًا — مش حذف. بياناتك تفضل محفوظة ومش بتتحذف،
-                  ولو كملت باقة تبدأ من ٣٩٩ جنيه/شهر وبتتفعل على واتساب. مفيش تجديد تلقائي.
+                  ولو كملت اشتراك واحد ٥٠٠ جنيه/شهر (أي عدد طلاب) وبيتفعل على واتساب. مفيش تجديد تلقائي.
                 </p>
               </div>
 

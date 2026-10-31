@@ -32,7 +32,7 @@ export default function SubscriptionGate() {
         </a>
 
         <div className="glass-input rounded-xl p-4 text-xs leading-6 text-fg-subtle mb-6">
-          كلمنا على واتساب واختار الباقة المناسبة لمركزك — مفيش تجديد تلقائي ولا خصم صامت،
+          كلمنا على واتساب وفعّل اشتراكك — ٥٠٠ جنيه/شهر ثابتة لأي عدد من الطلاب. مفيش تجديد تلقائي ولا خصم صامت،
           والتفعيل بيتم بمجرد تأكيدك.
         </div>
 

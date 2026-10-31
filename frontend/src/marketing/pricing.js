@@ -1,17 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// PRICING — THE single source of truth (Phase 18, prices approved 2026-09).
+// PRICING — THE single source of truth (unified model, owner-approved 2026-10-26).
 // Every pricing surface (landing plans, /pricing page, trial page, pricing
 // FAQ) reads from this file. NO price numbers are hard-coded anywhere else.
 //
-// Approved plan table (owner-approved, monthly, EGP):
-//   Starter     up to 300 students    399 EGP
-//   Growth      up to 1,000 students  799 EGP
-//   Pro         up to 3,000 students  1,499 EGP
-//   Enterprise  3,000+ students       custom quote
+// Approved model (owner-approved 2026-10-26): ONE unified plan —
+//   500 EGP / month, ANY number of active students, ALL features included.
+// The old tiered table (Starter 399 / Growth 799 / Pro 1,499 / Enterprise
+// custom) is retired everywhere.
 //
-// NOTE (audit 2026-10): multi-branch management is NOT implemented yet —
-// branch fields are labelled «قريبًا» everywhere and never used as the
-// sizing axis. The sizing axis is active students.
+// NOTE: multi-branch management is NOT implemented yet — branch fields are
+// labelled «قريبًا» everywhere and are not a pricing axis anymore: one
+// price, no student cap.
 //
 // Honest model rules (verified in code, do not violate):
 //  - No self-serve payment gateway exists → activation/renewal happens on
@@ -43,89 +42,33 @@ export const TRIAL = {
 
 export const PLANS = [
   {
-    id: 'starter',
-    name: 'Starter',
-    tagline: 'للبداية صح — سنتر صغير أو مدرس فردي',
-    who: 'للمدرس الفردي أو السنتر الصغير اللي بيبدأ نظامة',
-    monthlyPrice: 399,
+    id: 'nokhba',
+    name: 'باقة النخبة',
+    tagline: 'باقة واحدة — كل المميزات، أي عدد طلاب',
+    who: 'لأي مدرّس أو سنتر أو أكاديمية — من أول طالب لحد آلاف الطلاب',
+    monthlyPrice: 500,
     annualPrice: null, // لا توجد أسعار سنوية معتمدة — تتفق عليها على واتساب
     priceUnit: 'جنيه/شهر',
-    studentLimit: 'حتى ٣٠٠ طالب نشط',
-    branchLimit: 'فرع واحد — قريبًا',
-    highlighted: false,
+    studentLimit: 'عدد طلاب غير محدود',
+    branchLimit: null, // الفروع لسه قيد التطوير — مش محور تسعير
+    highlighted: true, // بطاقة واحدة — الإبراز للشكل بس
     cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
+    // كل سطر هنا متحقق منه في الكود الفعلي (2026-10-26) — مفيش ميزة غير موجودة.
     capabilities: [
-      'طلاب ومجموعات حتى ٣٠٠ طالب نشط',
-      'مسار الحصة كامل: حضور، تفاعل، واجب',
-      'بوابة الطالب برابط QR',
-      'تقارير واتساب لأولياء الأمور',
-      'التطبيق على الموبايل (PWA)',
-    ],
-  },
-  {
-    id: 'growth',
-    name: 'Growth',
-    tagline: 'الأنسب لأغلب المراكز اللي بتكبر',
-    who: 'للمركز اللي بيكبر وعايز الصورة كاملة من مكان واحد',
-    monthlyPrice: 799,
-    annualPrice: null,
-    priceUnit: 'جنيه/شهر',
-    studentLimit: 'حتى ١٬٠٠٠ طالب نشط',
-    branchLimit: '٣ فروع — قريبًا',
-    highlighted: true, // الأكثر اختيارًا — التوازن بين السعر والقدرات لأغلب المراكز
-    cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
-    capabilities: [
-      'كل قدرات Starter — حتى ١٬٠٠٠ طالب',
-      'الامتحانات والدرجات بأقسامها',
-      'فريق التحليل الأسبوعي',
-      'إشعارات أولياء الأمور والطلاب',
-      'حسابات مساعدين لفريق الشغل',
-    ],
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    tagline: 'للمركز الكامل بفروع وفريق شغل',
-    who: 'للمركز الكبير أو سلسلة المجموعات اللي محتاجة تحكم كامل',
-    monthlyPrice: 1499,
-    annualPrice: null,
-    priceUnit: 'جنيه/شهر',
-    studentLimit: 'حتى ٣٬٠٠٠ طالب نشط',
-    branchLimit: 'فروع غير محدودة — قريبًا',
-    highlighted: false,
-    cta: { label: 'ابدأ التجربة المجانية', kind: 'trial' },
-    capabilities: [
-      'كل قدرات Growth — حتى ٣٬٠٠٠ طالب',
-      'امتحانات منفصلة بإرسال النتايج على واتساب',
-      'قائمة الإرسال المحصّنة للواتساب',
-      'تقارير موسّعة وسجل عمليات كامل',
-      'دعم مباشر على واتساب',
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    tagline: 'للمجموعات والسلاسل التعليمية',
-    who: 'للمجموعات والسلاسل اللي عدّت ٣٬٠٠٠ طالب أو محتاجة إعداد خاص',
-    monthlyPrice: null, // سعر مخصص — بيتحدد حسب الحجم على واتساب
-    annualPrice: null,
-    priceUnit: 'سعر مخصص',
-    studentLimit: '٣٬٠٠٠+ طالب نشط',
-    branchLimit: 'حسب الهيكل بتاعك',
-    highlighted: false,
-    cta: { label: 'كلمنا على واتساب', kind: 'whatsapp' },
-    capabilities: [
-      'كل قدرات Pro بلا حد عملي للطلاب',
-      'هيكل مخصص للسلاسل — حسابات منفصلة بعزل بيانات كامل',
-      'إعداد وتفعيل بمساعدة مباشرة',
-      'مرونة في البنية حسب حجم شغلك',
-      'أولوية في الدعم على واتساب',
+      'طلاب ومجموعات بلا حد — ملف كامل لكل طالب وإضافة دفعة واحدة',
+      'مسار الحصة: حضور بلمسة أو بمسح QR، تفاعل، وواجب بأحواله — بحفظ تلقائي',
+      'امتحانات ودرجات بأقسامها + امتحانات أونلاين ومتابعة المحاولات',
+      'واجبات بتتوزع وبتتصحّح من مكانها + تحويل واجب بالصورة لاختبار تفاعلي بالذكاء الاصطناعي',
+      'فريق التحليل: مراجعة أسبوعية لمؤشرات كل مجموعة بأسباب وخطوات مقترحة',
+      'تقارير واتساب لأولياء الأمور: توليد تلقائي ومراجعة قبل الإرسال وحماية من التكرار',
+      'بوابة الطالب وولي الأمر برابط QR: حضور وواجبات ونتايج من غير كلمة سر',
+      'حسابات مساعدين لفريق الشغل + إشعارات لحظية + تطبيق موبايل (PWA) + لوجو مخصص',
     ],
   },
 ]
 
 export const PRICING_NOTE =
-  'الأسعار شهرية بالجنيه المصري وواضحة فوق — بتفعل وبتتجدد عبر واتساب بعد تأكيدك الشخصي. مفيش دفع أونلاين ولا تجديد تلقائي ولا خصم صامت.'
+  'اشتراك واحد واضح: ٥٠٠ جنيه/شهر لأي عدد من الطلاب وبكل المميزات — بتفعل وبتتجدد عبر واتساب بعد تأكيدك الشخصي. مفيش دفع أونلاين ولا تجديد تلقائي ولا خصم صامت.'
 
 /** Renders the approved price in Arabic-Indic digits, or the custom-quote label. */
 export function formatPrice(plan) {
@@ -136,11 +79,4 @@ export function formatPrice(plan) {
 /** Arabic-Indic digits for any number shown inside Arabic copy (14 → ١٤). */
 export const fmtAr = (n) => Number(n).toLocaleString('ar-EG')
 
-/** Lightweight plan recommender (no form submit, no backend) — by active students. */
-export function recommendPlan({ students }) {
-  if (students == null) return null
-  if (students <= 300) return 'starter'
-  if (students <= 1000) return 'growth'
-  if (students <= 3000) return 'pro'
-  return 'enterprise'
-}
+

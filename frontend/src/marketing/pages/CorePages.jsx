@@ -219,7 +219,7 @@ export function TrialPage() {
           ))}
         </div>
         <p className="mt-6 text-sm leading-7 text-slate-400">
-          بعد التجربة: تختار باقتك (تبدأ من ٣٩٩ جنيه/شهر) وتتفق على التفاصيل على{' '}
+          بعد التجربة: اشتراك واحد ٥٠٠ جنيه/شهر لأي عدد من الطلاب وتتفق على التفاصيل على{' '}
           <a href={WHATSAPP_URL} target="_blank" rel="noreferrer" className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">واتساب</a> —
           والتفعيل بيتم فور تأكيد الدفع. الشرح الكامل في صفحة{' '}
           <a href="/pricing" className="font-black text-[#FBBF6D] underline decoration-nk-400/40 underline-offset-4">الأسعار</a>.

@@ -23,3 +23,9 @@ logs/
 
 # supabase CLI temp
 supabase/.temp/
+scripts/push-alnokhba.sh
+.local-tmp/
+.zscripts/
+.zshots/
+agent-ctx/
+adwork/
