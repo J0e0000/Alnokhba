@@ -1,0 +1,713 @@
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabaseClient'
+import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
+import { SkeletonList } from '../components/Skeleton'
+import ConfirmDialog from '../components/ConfirmDialog'
+import AdminTeamsPanel from '../components/AdminTeamsPanel'
+import AdminBackupsPanel from '../components/AdminBackupsPanel'
+import AdminAuditLogsPanel from '../components/AdminAuditLogsPanel'
+import AdminSupportAccessModal from '../components/AdminSupportAccessModal'
+import { downloadCSV, localDateStr } from '../lib/csv'
+import { describeEdgeFunctionError } from '../lib/edgeFunctionErrors'
+
+const STATUS_LABEL = { trial: 'تجربة مجانية', active: 'مشترك فعّال', expired: 'منتهي', cancelled: 'ملغي' }
+const ACTION_LABEL = { extend: 'تفعيل/تمديد', cancel: 'إلغاء اشتراك', verify: 'تأكيد حساب', password_change: 'تغيير كلمة مرور', backup_failed: '⚠️ فشل نسخة احتياطية' }
+const ACCOUNT_TYPE_LABEL = { assistant: 'مساعد', teacher: 'مدرّس' }
+const EMAIL_STATUS_LABEL = { sent: '✅ الإيميل اتبعت', failed: '⚠️ فشل إرسال الإيميل', not_sent: '— الإيميل لم يُحاول إرساله' }
+
+const TABS = [
+  ['teachers', 'المدرّسون'],
+  ['renewals', '🔄 سجل التجديدات'],
+  ['teams', '👥 الفرق'],
+  ['backups', '💾 النسخ الاحتياطي'],
+  ['audit', '🛡️ سجل التدقيق'],
+  ['log', '📜 سجل النشاط'],
+  ['broadcast', '📢 رسالة بث'],
+]
+
+export default function AdminDashboard({ onBack }) {
+  const { user, signOut, refreshProfile } = useAuth()
+  const { showToast } = useToast()
+  const [cancelTarget, setCancelTarget] = useState(null)
+  const [teachers, setTeachers] = useState([])
+  const [statsByTeacher, setStatsByTeacher] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState(null)
+  const [extendDays, setExtendDays] = useState(30)
+  const [extendMode, setExtendMode] = useState('date') // 'date' = تاريخ محدد | 'days' = تمديد بأيام
+  const [deadlineDate, setDeadlineDate] = useState('')
+  const [tab, setTab] = useState('teachers')
+  const [activityLog, setActivityLog] = useState([])
+  const [broadcasts, setBroadcasts] = useState([])
+  const [broadcastText, setBroadcastText] = useState('')
+  // سجل التجديدات (migration_048) + حالة الحفظ لمنع الطلبات المكرّرة
+  const [renewals, setRenewals] = useState([])
+  const [renewalsLoaded, setRenewalsLoaded] = useState(false)
+  const [savingExpiryId, setSavingExpiryId] = useState(null)
+  const [retryingEmailId, setRetryingEmailId] = useState(null)
+
+  // ── جديد: بحث وفلترة الفرق وعرض التفاصيل ووصول الدعم ──
+  const [teacherSearch, setTeacherSearch] = useState('')
+  const [teamFilter, setTeamFilter] = useState('all') // all | none | <team_id>
+  const [teamOverview, setTeamOverview] = useState({ teams: [], members: [] })
+  const [teamOverviewError, setTeamOverviewError] = useState(false)
+  const [detailId, setDetailId] = useState(null)
+  const [supportTarget, setSupportTarget] = useState(null)
+
+  const load = async () => {
+    setLoading(true)
+    const [{ data, error }, { data: stats }] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.rpc('admin_teacher_stats'),
+    ])
+    if (!error) setTeachers(data ?? [])
+    const map = {}
+    ;(stats ?? []).forEach((r) => { map[r.teacher_id] = r })
+    setStatsByTeacher(map)
+    setLoading(false)
+  }
+
+  const loadTeamOverview = async () => {
+    const { data, error } = await supabase.rpc('admin_teams_overview')
+    if (error) { setTeamOverviewError(true); return }
+    setTeamOverviewError(false)
+    setTeamOverview({ teams: data?.teams ?? [], members: data?.members ?? [] })
+  }
+
+  const loadLog = async () => {
+    const { data } = await supabase
+      .from('admin_activity_log')
+      .select('*, admin:profiles!admin_activity_log_admin_id_fkey(full_name), target:profiles!admin_activity_log_target_teacher_id_fkey(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    setActivityLog(data ?? [])
+  }
+
+  const loadBroadcasts = async () => {
+    const { data } = await supabase.from('broadcast_messages').select('*').order('created_at', { ascending: false }).limit(20)
+    setBroadcasts(data ?? [])
+  }
+
+  // سجل التجديدات — سجل دائم تراكمي (migration_048): التاريخ السابق/الجديد،
+  // من قام بالتجديد، الباقة، وحالة إيميل التجديد. لو الجدول مش منشّر بعد
+  // (migration مش متشغلة) البروفايل يفضل شغال والتبويب يعرض رسالة واضحة.
+  const loadRenewals = async () => {
+    const { data, error } = await supabase
+      .from('subscription_renewals')
+      .select('*, teacher:profiles!subscription_renewals_teacher_id_fkey(full_name, email), admin:profiles!subscription_renewals_admin_id_fkey(full_name)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (error) { setRenewals([]); setRenewalsLoaded(false); return }
+    setRenewals(data ?? [])
+    setRenewalsLoaded(true)
+  }
+
+  useEffect(() => { load() }, [])
+  useEffect(() => { loadTeamOverview() }, [])
+  useEffect(() => { if (tab === 'log') loadLog(); if (tab === 'broadcast') loadBroadcasts(); if (tab === 'renewals') loadRenewals() }, [tab])
+
+  const logActivity = async (targetId, action, details) => {
+    await supabase.from('admin_activity_log').insert({ admin_id: user.id, target_teacher_id: targetId, action, details })
+  }
+
+  const setStatus = async (id, status) => {
+    await supabase.from('profiles').update({ subscription_status: status }).eq('id', id)
+    await logActivity(id, 'cancel', 'إلغاء الاشتراك')
+    load()
+    showToast('اتلغى الاشتراك', 'success')
+  }
+
+  const invokeAdminAction = async (body) => {
+    const { data, error } = await supabase.functions.invoke('admin-account-actions', { body })
+    // Read the REAL response body — error.message is always the generic
+    // "non-2x status code" string; the body tells us WHY (unsupported action
+    // on an old deployment → applyExpiry's graceful fallback, rate limit,
+    // admin check…). Without this the legacy fallback below is dead code.
+    if (error) throw await describeEdgeFunctionError(error, { functionName: 'admin-account-actions' })
+    if (data?.error) throw new Error(data.error)
+    return data
+  }
+
+  const toggleVerify = async (id, current) => {
+    try {
+      if (!current) await invokeAdminAction({ action: 'confirm_account', targetUserId: id })
+      else {
+        const { error } = await supabase.rpc('admin_set_verified', { p_profile_id: id, p_verified: false })
+        if (error) throw error
+      }
+      showToast(!current ? 'تم تأكيد الحساب وتفعيله' : 'تم إلغاء تفعيل الحساب', 'success')
+      load()
+    } catch (error) { showToast(error.message || 'تعذر تغيير حالة الحساب', 'error') }
+  }
+
+  const changePassword = async (teacher) => {
+    const password = window.prompt(`اكتب كلمة المرور الجديدة لـ ${teacher.full_name || teacher.email} (8 أحرف على الأقل):`, '')
+    if (password === null) return
+    const confirmation = window.prompt('أعد كتابة كلمة المرور للتأكيد:', '')
+    if (confirmation === null) return
+    if (password !== confirmation) { showToast('كلمتا المرور غير متطابقتين', 'error'); return }
+    try {
+      await invokeAdminAction({ action: 'set_password', targetUserId: teacher.id, password })
+      showToast('تم تغيير كلمة المرور بنجاح', 'success')
+    } catch (error) { showToast(error.message || 'تعذر تغيير كلمة المرور', 'error') }
+  }
+
+  // ── تحديد موعد انتهاء الاشتراك (تاريخ محدد أو تمديد بالأيام) ──
+  const toInputDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const openSubscriptionEditor = (t) => {
+    setEditingId(t.id)
+    setExtendMode('date')
+    const base = t.subscription_expires_at && new Date(t.subscription_expires_at) > new Date() ? new Date(t.subscription_expires_at) : new Date()
+    setDeadlineDate(toInputDate(base))
+    setExtendDays(30)
+  }
+
+  const previewExpiry = (t) => {
+    if (extendMode === 'days') {
+      const days = Number(extendDays)
+      if (!days || days <= 0) return null
+      const b = t.subscription_expires_at && new Date(t.subscription_expires_at) > new Date() ? new Date(t.subscription_expires_at) : new Date()
+      b.setDate(b.getDate() + days)
+      return b
+    }
+    if (!deadlineDate) return null
+    const [y, m, d] = deadlineDate.split('-').map(Number)
+    if (!y || !m || !d) return null
+    return new Date(y, m - 1, d, 23, 59, 59)
+  }
+
+  const applyExpiry = async (t) => {
+    // حماية من الطلبات المكرّرة: زر واحد قيد الحفظ في كل مرة
+    if (savingExpiryId) return
+    let base, details
+    if (extendMode === 'days') {
+      const days = Number(extendDays)
+      if (!days || days <= 0) { showToast('اكتب عدد أيام صحيح', 'error'); return }
+      base = t.subscription_expires_at && new Date(t.subscription_expires_at) > new Date() ? new Date(t.subscription_expires_at) : new Date()
+      base.setDate(base.getDate() + days)
+      details = `تمديد ${days} يوم`
+    } else {
+      if (!deadlineDate) { showToast('اختار تاريخ الانتهاء الأول', 'error'); return }
+      const [y, m, d] = deadlineDate.split('-').map(Number)
+      base = new Date(y, m - 1, d, 23, 59, 59)
+      details = `تحديد تاريخ الانتهاء: ${deadlineDate}`
+    }
+    const isRenewal = base.getTime() > Date.now()
+    setSavingExpiryId(t.id)
+    try {
+      // مسار التجديد الجديد (edge function): حفظ الاشتراك أولًا → سجل دائم
+      // في subscription_renewals → سجل النشاط → إيميل التجديد (فشل الإيميل
+      // لا يُرجع التجديد أبدًا — بيتسجل وبيظهر زر إعادة الإرسال).
+      let data = null
+      try {
+        data = await invokeAdminAction({
+          action: 'renew_subscription',
+          targetUserId: t.id,
+          newExpiresAt: base.toISOString(),
+        })
+      } catch (fnError) {
+        const msg = String(fnError?.message || fnError)
+        // Fallback: نسخة الدالة المنشّرة لسه مش محدّثة (Unsupported action) —
+        // نفس الحفظ القديم مباشرة عشان الأدمن ميتقفلش، مع إشارة بتحديث الدالة.
+        if (msg.includes('Unsupported action')) {
+          const { error } = await supabase.from('profiles').update({
+            subscription_status: isRenewal ? 'active' : 'expired',
+            subscription_expires_at: base.toISOString(),
+          }).eq('id', t.id)
+          if (error) throw error
+          await logActivity(t.id, 'extend', details)
+          showToast(`تم الحفظ — تاريخ الانتهاء الجديد: ${base.toLocaleDateString('ar-EG')}`, 'success')
+          showToast('ملاحظة: حدّث Edge Function ‏admin-account-actions (RENEWAL-DEPLOYMENT.md) لتسجيل سجل التجديدات وإرسال الإيميل تلقائيًا', 'info', 7000)
+          setEditingId(null)
+          load()
+          return
+        }
+        throw fnError
+      }
+
+      const newDateStr = new Date(data?.renewal?.new_expires_at || base.toISOString()).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      if (data?.partial) {
+        showToast(data.warning || 'تم تحديث الاشتراك مع ملاحظة', 'error', 7000)
+      } else if (isRenewal) {
+        showToast(`تم تجديد الاشتراك بنجاح — تاريخ الانتهاء الجديد: ${newDateStr}`, 'success', 6000)
+        if (data?.email?.attempted && !data?.email?.sent) {
+          showToast(`تنبيه: التجديد اتسجّل لكن فشل إرسال الإيميل (${data.email.error || 'سبب غير معروف'}) — اعتمد «إعادة إرسال الإيميل» من سجل التجديدات`, 'error', 8000)
+        }
+      } else {
+        showToast(`تم تحديد موعد الانتهاء: ${newDateStr}`, 'success')
+      }
+      setEditingId(null)
+      load()
+      if (renewalsLoaded) loadRenewals()
+    } catch (error) {
+      showToast(error?.message || 'تعذر تحديث موعد الانتهاء', 'error')
+    } finally {
+      setSavingExpiryId(null)
+    }
+  }
+
+  // إعادة إرسال إيميل تجديد فاشل — لا تغيّر أي بيانات اشتراك، إيميل فقط
+  const retryRenewalEmail = async (renewalId) => {
+    if (retryingEmailId) return
+    setRetryingEmailId(renewalId)
+    try {
+      const data = await invokeAdminAction({ action: 'retry_renewal_email', renewalId })
+      if (data?.email?.sent) showToast('تم إرسال الإيميل بنجاح ✓', 'success')
+      else showToast(`ما زال الإرسال فاشلًا: ${data?.email?.error || 'سبب غير معروف'}`, 'error', 7000)
+      await loadRenewals()
+    } catch (error) {
+      showToast(error?.message || 'تعذر إعادة إرسال الإيميل', 'error')
+    } finally {
+      setRetryingEmailId(null)
+    }
+  }
+
+  const sendBroadcast = async (e) => {
+    e.preventDefault()
+    if (!broadcastText.trim()) return
+    await supabase.from('broadcast_messages').insert({ admin_id: user.id, message: broadcastText.trim() })
+    setBroadcastText('')
+    loadBroadcasts()
+  }
+
+  const deleteBroadcast = async (id) => {
+    await supabase.from('broadcast_messages').delete().eq('id', id)
+    loadBroadcasts()
+  }
+
+  // ── فلترة المدرّسين: بحث (اسم/إيميل/هاتف) + فريق ──
+  const teamsByProfile = useMemo(() => {
+    const map = {}
+    for (const m of teamOverview.members) {
+      (map[m.profile_id] ||= []).push(m.team_id)
+    }
+    return map
+  }, [teamOverview])
+
+  const filteredTeachers = useMemo(() => {
+    const q = teacherSearch.trim().toLowerCase()
+    return teachers.filter((t) => {
+      if (q && !`${t.full_name || ''} ${t.email || ''} ${t.phone || ''}`.toLowerCase().includes(q)) return false
+      if (teamFilter === 'all') return true
+      if (teamFilter === 'none') return !(teamsByProfile[t.id] || []).length
+      return (teamsByProfile[t.id] || []).includes(teamFilter)
+    })
+  }, [teachers, teacherSearch, teamFilter, teamsByProfile])
+
+  // ── تنبيهات تشغيلية (owner spec: admin gets operational notifications) ──
+  // Computed live from the SAME profiles rows already loaded — no invented
+  // events, no extra queries. Three families only: new accounts (7d),
+  // subscriptions expiring within 7 days, and already-expired subscriptions.
+  const opsAlerts = useMemo(() => {
+    const now = Date.now()
+    const dayMs = 24 * 60 * 60 * 1000
+    const newAccounts = []
+    const expiring = []
+    const expired = []
+    for (const t of teachers) {
+      if (t.is_admin) continue
+      if (t.created_at && now - new Date(t.created_at).getTime() <= 7 * dayMs) {
+        newAccounts.push({ t, when: new Date(t.created_at).toLocaleDateString('ar-EG') })
+      }
+      const exp = t.subscription_expires_at ? new Date(t.subscription_expires_at).getTime() : null
+      if (!exp) continue
+      const daysLeft = Math.ceil((exp - now) / dayMs)
+      if (daysLeft < 0 && t.subscription_status !== 'cancelled') {
+        expired.push({ t, daysLeft })
+      } else if (daysLeft >= 0 && daysLeft <= 7 && ['active', 'trial'].includes(t.subscription_status)) {
+        expiring.push({ t, daysLeft })
+      }
+    }
+    return { newAccounts, expiring, expired }
+  }, [teachers])
+
+  // ── تصدير البيانات (إجراء الأدمن فقط — owner request): البيانات المُصدّرة
+  // هي نفس نظرة الأدمن المحمّلة بالفعل (profiles + admin_teacher_stats + الفرق)
+  // مع احترام البحث/الفلتر الحالي — بدون استعلامات إضافية أو صلاحيات جديدة.
+  const exportUsersCSV = () => {
+    const headers = ['الاسم', 'الإيميل', 'الهاتف', 'نوع الحساب', 'أدمن', 'مفعّل', 'حالة الاشتراك', 'ينتهي في', 'عدد الطلاب', 'الفرق', 'تاريخ التسجيل', 'آخر نشاط']
+    const rows = filteredTeachers.map((t) => {
+      const stats = statsByTeacher[t.id]
+      const exp = t.subscription_expires_at ? new Date(t.subscription_expires_at).getTime() : null
+      const isExpired = exp !== null && exp < Date.now()
+      const effectiveStatus = isExpired && t.subscription_status !== 'cancelled' ? 'expired' : t.subscription_status
+      const teams = (teamsByProfile[t.id] || [])
+        .map((id) => teamOverview.teams.find((x) => x.id === id)?.name)
+        .filter(Boolean)
+        .join('؛ ')
+      return [
+        t.full_name || '',
+        t.email || '',
+        t.phone || '',
+        ACCOUNT_TYPE_LABEL[t.account_type] || 'مدرّس',
+        t.is_admin ? 'نعم' : 'لا',
+        t.is_verified ? 'نعم' : 'لا',
+        STATUS_LABEL[effectiveStatus] || effectiveStatus || '',
+        t.subscription_expires_at ? new Date(t.subscription_expires_at).toLocaleDateString('ar-EG') : '',
+        stats?.student_count ?? 0,
+        teams,
+        t.created_at ? new Date(t.created_at).toLocaleDateString('ar-EG') : '',
+        stats?.last_activity ? new Date(stats.last_activity).toLocaleDateString('ar-EG') : '',
+      ]
+    })
+    downloadCSV(`nokhba_users_${localDateStr()}.csv`, headers, rows)
+    showToast(`تم تصدير بيانات ${filteredTeachers.length} مستخدم ✓`, 'success')
+  }
+
+  const supportStarted = async () => {
+    // الجلسة اتبدأت — حدّث السياق (هيحوّلنا للوحة المستخدم مع شريط وصول الدعم)
+    await refreshProfile()
+  }
+
+  const viewAccountFromTeams = (profileId) => {
+    setTab('teachers')
+    setTeacherSearch('')
+    setDetailId(profileId)
+    const t = teachers.find((x) => x.id === profileId)
+    if (!t) load().then(() => setDetailId(profileId))
+  }
+
+  return (
+    <div className="min-h-screen bg-brand-bg text-fg" dir="rtl">
+      <header className="border-b border-outline bg-surface backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex flex-wrap justify-between items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/nokhba-mark.svg" alt="النخبة" className="w-9 h-9 shrink-0" />
+            <div className="min-w-0">
+              <h1 className="font-black text-lg text-fg">لوحة الأدمن</h1>
+              <p className="text-fg-muted text-xs hidden sm:block">إدارة الحسابات والاشتراكات والفرق والنسخ الاحتياطي والأمان</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <button onClick={onBack} className="text-brand-gold-hover hover:text-brand-gold-hover text-sm font-bold">لوحتي كمعلم</button>
+            <button onClick={signOut} className="text-fg-muted hover:text-[var(--danger-strong)] text-sm">تسجيل الخروج</button>
+          </div>
+        </div>
+        <div className="max-w-5xl mx-auto px-4 flex gap-4 text-sm border-t border-outline overflow-x-auto">
+          {TABS.map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`py-2 border-b-2 font-bold whitespace-nowrap ${tab === key ? 'border-brand-gold text-brand-gold-hover' : 'border-transparent text-fg-muted'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-6">
+        {tab === 'teachers' && (loading ? (
+          <SkeletonList rows={4} />
+        ) : (
+          <div className="space-y-3">
+            {/* تنبيهات تشغيلية — حسابات جديدة / اشتراكات قاربت أو انتهت */}
+            {(opsAlerts.newAccounts.length > 0 || opsAlerts.expiring.length > 0 || opsAlerts.expired.length > 0) && (
+              <div className="bg-surface border border-outline rounded-xl p-3.5">
+                <p className="font-bold text-fg text-sm mb-2">🔔 تنبيهات تشغيلية</p>
+                <div className="space-y-1.5 text-xs">
+                  {opsAlerts.newAccounts.map(({ t, when }) => (
+                    <p key={`new-${t.id}`} className="m-0 text-fg-muted">👤 حساب جديد: <b className="text-fg">{t.full_name || t.email}</b> · {when}</p>
+                  ))}
+                  {opsAlerts.expiring.map(({ t, daysLeft }) => (
+                    <p key={`exp-${t.id}`} className="m-0" style={{ color: 'var(--warn-strong)' }}>⏳ اشتراك <b>{t.full_name || t.email}</b> يقرب من الانتهاء · متبقي {daysLeft} يوم</p>
+                  ))}
+                  {opsAlerts.expired.map(({ t }) => (
+                    <p key={`x-${t.id}`} className="m-0" style={{ color: 'var(--danger-strong)' }}>🔴 انتهى اشتراك <b>{t.full_name || t.email}</b></p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* بحث + فلترة حسب الفريق */}
+            <div className="bg-surface border border-outline rounded-xl p-3 flex flex-wrap gap-2 items-end">
+              <label className="flex-1 min-w-[220px] text-xs font-bold text-fg-muted">
+                بحث (اسم / إيميل / هاتف)
+                <input value={teacherSearch} onChange={(e) => setTeacherSearch(e.target.value)} placeholder="اكتب للبحث..." className="mt-1 w-full bg-surface-container border border-outline rounded-lg px-3 py-2 text-sm text-fg outline-none focus:border-brand-gold" />
+              </label>
+              <label className="text-xs font-bold text-fg-muted">
+                الفريق
+                <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} className="mt-1 bg-surface-container border border-outline rounded-lg px-3 py-2 text-sm text-fg">
+                  <option value="all">كل الفرق</option>
+                  <option value="none">بدون فريق</option>
+                  {teamOverview.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+              {teamOverviewError && <span className="text-[11px] text-[var(--warn-strong)]">(شغّل migration_036 لتفعيل فلترة الفرق)</span>}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-fg-muted">{filteredTeachers.length} من {teachers.length} مستخدم</p>
+              <button
+                onClick={exportUsersCSV}
+                className="bg-brand-gold/15 text-brand-gold-hover border border-brand-gold/40 text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-brand-gold/25 transition"
+                title="تصدير بيانات المستخدمين الظاهرين (مع البحث والفلتر) كملف CSV — إجراء الأدمن فقط"
+              >
+                ⬇ تصدير البيانات (CSV)
+              </button>
+            </div>
+
+            {filteredTeachers.map((t) => {
+              const expired = t.subscription_expires_at && new Date(t.subscription_expires_at) < new Date()
+              const effectiveStatus = expired && t.subscription_status !== 'cancelled' ? 'expired' : t.subscription_status
+              const stats = statsByTeacher[t.id]
+              const userTeams = (teamsByProfile[t.id] || []).map((id) => teamOverview.teams.find((x) => x.id === id)).filter(Boolean)
+              return (
+                <div key={t.id} className={`bg-surface border rounded-xl p-4 transition ${detailId === t.id ? 'border-brand-gold/60 ring-1 ring-brand-gold/20' : 'border-outline'}`}>
+                  <div className="flex flex-wrap justify-between items-center gap-3">
+                    <div className="min-w-0">
+                      <p className="font-bold text-fg flex items-center gap-2 flex-wrap">
+                        {t.full_name || '—'}
+                        {t.is_admin && <span className="text-[10px] bg-[var(--info-bg)] text-[var(--info-strong)] px-1.5 py-0.5 rounded">أدمن</span>}
+                        {t.account_type === 'assistant' && <span className="text-[10px] bg-surface-container-high text-fg-muted px-1.5 py-0.5 rounded">مساعد</span>}
+                        {userTeams.map((team) => (
+                          <span key={team.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: team.color || '#D4AF37' }}>{team.name}</span>
+                        ))}
+                      </p>
+                      <p className="text-fg-muted text-xs" dir="ltr">{t.email} {t.phone && `· ${t.phone}`}</p>
+                      <p className="text-fg-muted text-xs mt-1">
+                        <StatusBadge status={effectiveStatus} />
+                        {t.is_verified ? (
+                          <span className="text-[var(--ok-strong)] mr-2">· ✅ مفعّل</span>
+                        ) : (
+                          <span className="text-[var(--warn-strong)] mr-2">· ⏳ بانتظار التفعيل</span>
+                        )}
+                        · ينتهي {t.subscription_expires_at ? new Date(t.subscription_expires_at).toLocaleDateString('ar-EG') : '—'}
+                      </p>
+                      {stats && (
+                        <p className="text-fg-muted text-xs mt-1">
+                          👥 {stats.student_count ?? 0} طالب · آخر نشاط: {stats.last_activity ? new Date(stats.last_activity).toLocaleDateString('ar-EG') : 'مفيش نشاط بعد'}
+                        </p>
+                      )}
+                    </div>
+
+                    {editingId === t.id ? (
+                      <div className="w-full sm:w-[340px] bg-surface-container border border-outline rounded-xl p-3 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <p className="text-xs font-bold text-fg">تحديد موعد انتهاء الاشتراك</p>
+                          <div className="flex bg-surface-container-high rounded-lg p-0.5 gap-0.5 text-[11px] font-bold">
+                            <button type="button" onClick={() => setExtendMode('date')} className={`px-2 py-1 rounded-md transition ${extendMode === 'date' ? 'bg-brand-gold text-brand-navy' : 'text-fg-muted'}`}>تاريخ محدد</button>
+                            <button type="button" onClick={() => setExtendMode('days')} className={`px-2 py-1 rounded-md transition ${extendMode === 'days' ? 'bg-brand-gold text-brand-navy' : 'text-fg-muted'}`}>تمديد بأيام</button>
+                          </div>
+                        </div>
+
+                        {extendMode === 'date' ? (
+                          <input type="date" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} dir="ltr"
+                            className="w-full bg-surface-container-high border border-outline rounded-lg px-2 py-1.5 text-sm text-fg outline-none focus:border-brand-gold" />
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <input type="number" min={1} value={extendDays} onChange={(e) => setExtendDays(e.target.value)} dir="ltr"
+                              className="w-16 bg-surface-container-high border border-outline rounded-lg px-2 py-1.5 text-sm text-center text-fg outline-none focus:border-brand-gold" />
+                            <span className="text-xs text-fg-muted">يوم</span>
+                            <div className="flex gap-1">
+                              {[7, 30, 90].map((n) => (
+                                <button key={n} type="button" onClick={() => setExtendDays(n)} className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${Number(extendDays) === n ? 'bg-brand-gold/15 text-brand-gold-hover border-brand-gold/40' : 'border-outline text-fg-muted'}`}>+{n}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {previewExpiry(t) && (
+                          <p className="text-[11px] text-fg-muted">
+                            النتيجة: ينتهي <span className="font-bold text-fg">{previewExpiry(t).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                            {previewExpiry(t).getTime() <= Date.now() && <span className="text-[var(--danger-strong)] font-bold"> — هيبقى منتهي</span>}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => applyExpiry(t)}
+                            disabled={savingExpiryId === t.id}
+                            className="bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 text-white text-xs font-bold px-3 py-2 rounded-lg min-h-[2.4rem]"
+                          >
+                            {savingExpiryId === t.id ? '… جاري الحفظ' : 'حفظ موعد الانتهاء'}
+                          </button>
+                          <button onClick={() => setEditingId(null)} disabled={savingExpiryId === t.id} className="text-fg-muted text-xs hover:text-fg min-h-[2.4rem]">إلغاء</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row flex-wrap gap-2 items-end">
+                        <div className="flex gap-1.5 flex-wrap justify-end">
+                          <button onClick={() => setDetailId(detailId === t.id ? null : t.id)} className="bg-surface-container-high text-fg text-xs font-bold px-2.5 py-1.5 rounded-lg">👁 عرض</button>
+                          {!t.is_admin && (
+                            <button onClick={() => setSupportTarget(t)} className="bg-[var(--warn-bg)] border border-[var(--warn-border)] text-[var(--warn-strong)] text-xs font-bold px-2.5 py-1.5 rounded-lg">🛠️ وصول الدعم</button>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap justify-end">
+                          {!t.is_verified && (
+                            <button onClick={() => toggleVerify(t.id, false)} className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">تفعيل الحساب الآن</button>
+                          )}
+                          {t.is_verified && (
+                            <button onClick={() => toggleVerify(t.id, true)} className="bg-surface-container-high text-fg text-xs font-bold px-3 py-1.5 rounded-lg">إلغاء التفعيل</button>
+                          )}
+                          <button onClick={() => openSubscriptionEditor(t)} className="bg-brand-gold/15 text-brand-gold-hover border border-brand-gold/40 text-xs font-bold px-3 py-1.5 rounded-lg">✏️ تحديد الانتهاء</button>
+                          <button onClick={() => changePassword(t)} className="bg-[var(--info-bg)] text-[var(--info-strong)] border border-[var(--info-border)] text-xs font-bold px-3 py-1.5 rounded-lg">🔑 كلمة المرور</button>
+                          <button onClick={() => setCancelTarget(t)} className="bg-[var(--danger-bg)] text-[var(--danger-strong)] border border-[var(--danger-border)] text-xs font-bold px-3 py-1.5 rounded-lg">إلغاء الاشتراك</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── تفاصيل موسّعة (زر عرض) ── */}
+                  {detailId === t.id && (
+                    <div className="mt-3 pt-3 border-t border-outline grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+                      <DetailLine label="المعرّف (ID)" value={t.id} mono />
+                      <DetailLine label="نوع الحساب" value={ACCOUNT_TYPE_LABEL[t.account_type] || 'مدرّس'} />
+                      <DetailLine label="تاريخ التسجيل" value={new Date(t.created_at).toLocaleString('ar-EG')} />
+                      <DetailLine label="عدد الطلاب" value={String(stats?.student_count ?? 0)} />
+                      <DetailLine label="الفِرق" value={userTeams.length ? userTeams.map((x) => x.name).join('، ') : 'بدون فريق'} />
+                      <DetailLine label="آخر نشاط" value={stats?.last_activity ? new Date(stats.last_activity).toLocaleString('ar-EG') : 'مفيش نشاط'} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            {filteredTeachers.length === 0 && <p className="text-fg-muted text-sm text-center py-8">لا يوجد مستخدمون مطابقون للبحث/الفلتر.</p>}
+            {teachers.length === 0 && <p className="text-fg-muted text-sm text-center py-8">لا يوجد مدرّسون مسجّلون بعد.</p>}
+          </div>
+        ))}
+
+        {tab === 'teams' && <AdminTeamsPanel teachers={teachers} showToast={showToast} onViewAccount={viewAccountFromTeams} />}
+
+        {/* ── سجل التجديدات — سجل دائم تراكمي (migration_048): لا يُستبدل ولا يُحذف ── */}
+        {tab === 'renewals' && (
+          !renewalsLoaded ? (
+            <div className="space-y-3">
+              <SkeletonList rows={3} />
+              <p className="text-[.68rem] text-fg-muted text-center">
+                السجل فاضي أو تعذر قراءته؟ شغّل <b>migration_048</b> من SQL Editor أولًا — الخطوات في supabase/RENEWAL-DEPLOYMENT.md.
+              </p>
+            </div>
+          ) : renewals.length === 0 ? (
+            <p className="text-fg-muted text-sm text-center py-8">
+              لا يوجد تجديدات مسجّلة بعد — أول تجديد هيظهر هنا بالتاريخ السابق والجديد ومن قام به وحالة إيميل التجديد.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              <p className="text-xs text-fg-muted">آخر {renewals.length} تجديد (الأحدث أولًا) — السجل تراكمي دائم.</p>
+              {renewals.map((r) => (
+                <div key={r.id} className="bg-surface border border-outline rounded-xl p-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-bold text-fg text-sm">
+                        {r.teacher?.full_name || '—'}
+                        <span className="text-fg-muted text-xs font-normal mr-1" dir="ltr">{r.teacher?.email ? `· ${r.teacher.email}` : ''}</span>
+                      </p>
+                      <p className="text-fg-muted text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span>📅 تجديد في {new Date(r.created_at).toLocaleDateString('ar-EG')}</span>
+                        <span>·</span>
+                        <span>من {r.previous_expires_at ? new Date(r.previous_expires_at).toLocaleDateString('ar-EG') : '—'}</span>
+                        <span>←</span>
+                        <b className="text-fg">ينتهي {new Date(r.new_expires_at).toLocaleDateString('ar-EG')}</b>
+                        <span>·</span>
+                        <span>{r.new_status === 'active' ? 'الحالة: مشترك فعّال' : `الحالة: ${STATUS_LABEL[r.new_status] || r.new_status}`}</span>
+                        {r.plan_name && <><span>·</span><span>الباقة: {r.plan_name}</span></>}
+                        {r.days_added != null && Number.isFinite(r.days_added) && <><span>·</span><span>{r.days_added > 0 ? `+${r.days_added} يوم` : `${r.days_added} يوم`}</span></>}
+                      </p>
+                      <p className="text-fg-muted text-xs mt-0.5">
+                        بواسطة: <b className="text-fg">{r.admin?.full_name || 'النظام'}</b>
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-start sm:items-end gap-1.5 shrink-0">
+                      <span className={`text-[11px] font-bold px-2 py-1 rounded-lg ${r.email_status === 'sent' ? 'text-[var(--ok-strong)] bg-[var(--ok-bg)]' : r.email_status === 'failed' ? 'text-[var(--warn-strong)] bg-[var(--warn-bg)]' : 'text-fg-muted bg-surface-container'}`}>
+                        {EMAIL_STATUS_LABEL[r.email_status] || r.email_status}
+                      </span>
+                      {(r.email_status === 'failed') && (
+                        <button
+                          onClick={() => retryRenewalEmail(r.id)}
+                          disabled={retryingEmailId === r.id}
+                          className="bg-[var(--info-bg)] text-[var(--info-strong)] border border-[var(--info-border)] text-[11px] font-bold px-2.5 py-1.5 rounded-lg disabled:opacity-60 min-h-[2.2rem]"
+                          title={r.email_error || 'إعادة محاولة إرسال إيميل التجديد'}
+                        >
+                          {retryingEmailId === r.id ? '… جاري الإرسال' : '↻ إعادة إرسال الإيميل'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {r.email_status === 'failed' && r.email_error && (
+                    <p className="text-[11px] mt-2 text-[var(--warn-strong)] bg-[var(--warn-bg)] border border-[var(--warn-border)] rounded-lg px-2.5 py-1.5 break-words">
+                      سبب فشل الإيميل: {r.email_error}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {tab === 'backups' && <AdminBackupsPanel showToast={showToast} />}
+
+        {tab === 'audit' && <AdminAuditLogsPanel teams={teamOverview.teams} showToast={showToast} />}
+
+        {tab === 'log' && (
+          <div className="space-y-2">
+            {activityLog.length === 0 ? (
+              <p className="text-fg-muted text-sm text-center py-8">لا يوجد نشاط مسجّل بعد.</p>
+            ) : activityLog.map((r) => (
+              <div key={r.id} className="bg-surface border border-outline rounded-lg p-3 text-sm">
+                <span className="text-brand-gold-hover font-bold">{r.admin?.full_name || 'النظام/المجدول'}</span>
+                {' '}<span className="text-fg-muted">{ACTION_LABEL[r.action] || r.action} لـ</span>{' '}
+                <span className="text-fg font-bold">{r.target?.full_name || '—'}</span>
+                {r.details && <span className="text-fg-muted"> ({r.details})</span>}
+                <p className="text-on-surface-variant text-xs mt-1">{new Date(r.created_at).toLocaleString('ar-EG')}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === 'broadcast' && (
+          <div className="space-y-4">
+            <form onSubmit={sendBroadcast} className="bg-surface border border-outline rounded-xl p-4 space-y-2">
+              <p className="text-sm font-bold text-on-surface-variant">رسالة جديدة لكل المدرّسين</p>
+              <textarea rows={3} value={broadcastText} onChange={(e) => setBroadcastText(e.target.value)}
+                placeholder="مثال: هيحصل تحديث للنظام يوم الجمعة الساعة 2 فجرًا، الخدمة هتتوقف لمدة نص ساعة تقريبًا."
+                className="w-full bg-surface-container border border-outline rounded-lg px-3 py-2 text-sm text-fg outline-none focus:border-brand-gold" />
+              <button className="bg-brand-gold hover:bg-brand-gold-hover text-brand-navy font-bold px-4 py-2 rounded-lg text-sm">إرسال للكل</button>
+            </form>
+            <div className="space-y-2">
+              {broadcasts.map((b) => (
+                <div key={b.id} className="bg-surface border border-outline rounded-lg p-3 flex justify-between items-start gap-2">
+                  <div>
+                    <p className="text-sm text-fg">{b.message}</p>
+                    <p className="text-on-surface-variant text-xs mt-1">{new Date(b.created_at).toLocaleString('ar-EG')}</p>
+                  </div>
+                  <button onClick={() => deleteBroadcast(b.id)} className="text-[var(--danger-strong)] hover:opacity-75 text-xs shrink-0">حذف</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <ConfirmDialog
+        open={!!cancelTarget} title="إلغاء الاشتراك" danger confirmLabel="إلغاء الاشتراك"
+        message={`هيتم إلغاء اشتراك "${cancelTarget?.full_name}" وهيفقد الوصول للنظام فورًا.`}
+        onConfirm={() => { setStatus(cancelTarget.id, 'cancelled'); setCancelTarget(null) }}
+        onCancel={() => setCancelTarget(null)}
+      />
+
+      <AdminSupportAccessModal
+        open={!!supportTarget}
+        teacher={supportTarget}
+        onClose={() => setSupportTarget(null)}
+        onStarted={supportStarted}
+        showToast={showToast}
+      />
+    </div>
+  )
+}
+
+function DetailLine({ label, value, mono }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-fg-muted shrink-0">{label}:</span>
+      <span className={`text-fg font-bold text-left truncate ${mono ? 'font-mono' : ''}`} dir={mono ? 'ltr' : 'rtl'} title={String(value)}>{value}</span>
+    </div>
+  )
+}
+
+function StatusBadge({ status }) {
+  const colors = {
+    trial: 'text-brand-gold-hover', active: 'text-[var(--ok-strong)]', expired: 'text-brand-gold-hover', cancelled: 'text-[var(--danger-strong)]',
+  }
+  return <span className={`font-bold ${colors[status] || 'text-fg-muted'}`}>{STATUS_LABEL[status] || status}</span>
+}

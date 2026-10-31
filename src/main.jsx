@@ -1,0 +1,80 @@
+import { StrictMode, useEffect } from 'react'
+import { createRoot } from 'react-dom/client'
+// MUST be the first import — installs runtime method polyfills (.at,
+// Object.hasOwn, replaceAll, findLast…) before ANY app code runs.
+import './lib/legacyPolyfills.js'
+import './index.css'
+import App from './App.jsx'
+import ProductionErrorBoundary from './components/ProductionErrorBoundary'
+
+// Service-worker HYGIENE ONLY — the push SW is NOT registered here anymore.
+// Browsers that parents open the student portal with (WhatsApp/in-app viewer,
+// some Android OEM browsers) pop a "notifications" permission ask as soon as a
+// SW registers, so an at-boot registration = a popup on every portal visit.
+// The SW is registered ON DEMAND inside pushNotifications.js when the user
+// actually opts in (teacher center / parent portal button) — permission always
+// follows a real tap. An already-installed push SW (push-only, no fetch
+// handler) keeps working on opted-in devices; we only clean foreign SWs and
+// legacy caches here.
+if ('serviceWorker' in navigator) window.addEventListener('load', async () => {
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.filter((r) => r.scope !== `${location.origin}/`).map((r) => r.unregister()))
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.filter((name) => /workbox|vite|pwa|precache/i.test(name)).map((name) => caches.delete(name)))
+    }
+  } catch (err) { console.warn('Service worker cleanup failed:', err) }
+})
+
+/**
+ * BootSignal — Round 13/14 boot-flag contract.
+ *
+ * The index.html boot layer paints an instant splash and starts a 15s
+ * watchdog. The flag must be raised from INSIDE the render tree (after the
+ * first React commit) — not merely after createRoot() — so a crash during
+ * the very first render still leaves the watchdog armed and the user gets
+ * the Arabic fallback screen instead of a silent white page. Removing the
+ * splash here (and only here) guarantees the app actually painted content.
+ */
+function BootSignal() {
+  useEffect(() => {
+    window.__NOKHBA_BOOTED__ = true
+    window.__nokhbaBooted = true
+    // Notify the index.html diagnostics engine that the app actually painted.
+    try { if (window.__NOKHBA_DIAG && window.__NOKHBA_DIAG.markBooted) window.__NOKHBA_DIAG.markBooted() } catch { /* engine optional */ }
+    // Remove the splash — unless the diagnostics engine owns the screen
+    // (opened with ?diag=1): then the report stays visible on purpose.
+    let engineOwnsUI = false
+    try { engineOwnsUI = !!(window.__NOKHBA_DIAG && window.__NOKHBA_DIAG.uiActive) } catch { /* engine optional */ }
+    const splash = document.getElementById('nokhba-boot')
+    if (splash && splash.parentNode && !engineOwnsUI) splash.parentNode.removeChild(splash)
+  }, [])
+  return null
+}
+
+// Apply language & direction BEFORE React renders (prevents RTL/LTR flicker)
+// Guarded: blocked-storage iframes (preview panes, strict privacy modes)
+// must not crash the app before the error boundary even mounts.
+let savedLang = 'ar'
+try { if (localStorage.getItem('app-language') === 'en') savedLang = 'en' } catch { /* storage blocked */ }
+document.documentElement.setAttribute('dir', savedLang === 'ar' ? 'rtl' : 'ltr')
+document.documentElement.setAttribute('lang', savedLang)
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <BootSignal />
+    <ProductionErrorBoundary>
+      <App />
+    </ProductionErrorBoundary>
+  </StrictMode>,
+)
+
+// Analytics (PostHog) — loads AFTER first paint via idle callback so the
+// boot path is never delayed. No-op unless VITE_POSTHOG_KEY is configured.
+const kickAnalytics = () => { import('./lib/posthog.js').then((m) => m.initPostHog()).catch(() => {}) }
+if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  window.requestIdleCallback(kickAnalytics, { timeout: 3000 })
+} else {
+  setTimeout(kickAnalytics, 1500)
+}

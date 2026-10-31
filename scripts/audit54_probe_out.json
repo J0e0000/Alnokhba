@@ -1,0 +1,307 @@
+{
+ "functions": [
+  {
+   "proname": "get_accounts_summary",
+   "args": "p_teacher_id uuid, p_date_from date, p_date_to date, p_group_name text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.get_accounts_summary(p_teacher_id uuid, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date, p_group_name text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_group_pricing jsonb;\r\n  v_center_share_type text;\r\n  v_center_share_value numeric;\r\n  v_assistant_costs jsonb;\r\n  v_total_revenue numeric := 0;\r\n  v_center_share_total numeric := 0;\r\n  v_assistant_cost_total numeric := 0;\r\n  v_expenses_total numeric := 0;\r\n  v_lesson_count integer := 0;\r\n  v_student_payment_total numeric := 0;\r\nbegin\r\n  -- Get teacher's financial config\r\n  select group_pricing, center_share_type, center_share_value, assistant_costs\r\n  into v_group_pricing, v_center_share_type, v_center_share_value, v_assistant_costs\r\n  from teacher_settings where teacher_id = p_teacher_id;\r\n\r\n  if v_group_pricing is null then v_group_pricing := '{}'::jsonb; end if;\r\n  if v_assistant_costs is null then v_assistant_costs := '{}'::jsonb; end if;\r\n\r\n  -- Count lessons (session_logs) in the period\r\n  select count(*) into v_lesson_count\r\n  from session_logs\r\n  where teacher_id = p_teacher_id\r\n    and (p_date_from is null or created_at::date >= p_date_from)\r\n    and (p_date_to is null or created_at::date <= p_date_to)\r\n    and (p_group_name is null or group_name = p_group_name);\r\n\r\n  -- Calculate total revenue = sum of all lesson prices for sessions held\r\n  -- For each session_log entry, get the group's price\r\n  v_total_revenue := (\r\n    select coalesce(sum(\r\n      coalesce((v_group_pricing -> sl.group_name)::numeric, 0)\r\n    ), 0)\r\n    from session_logs sl\r\n    where sl.teacher_id = p_teacher_id\r\n      and (p_date_from is null or sl.created_at::date >= p_date_from)\r\n      and (p_date_to is null or sl.created_at::date <= p_date_to)\r\n      and (p_group_name is null or sl.group_name = p_group_name)\r\n  );\r\n\r\n  -- Total student payments received in the period\r\n  v_student_payment_total := (\r\n    select coalesce(sum(amount), 0)\r\n    from student_payments sp\r\n    join students s on s.id = sp.student_id\r\n    where sp.teacher_id = p_teacher_id\r\n      and (p_date_from is null or sp.payment_date >= p_date_from)\r\n      and (p_date_to is null or sp.payment_date <= p_date_to)\r\n      and (p_group_name is null or s.group_name = p_group_name)\r\n  );\r\n\r\n  -- Calculate center share\r\n  if v_center_share_type = 'percentage' then\r\n    v_center_share_total := v_total_revenue * (v_center_share_value / 100.0);\r\n  else\r\n    -- Fixed amount per lesson\r\n    v_center_share_total := v_lesson_count * v_center_share_value;\r\n  end if;\r\n\r\n  -- Calculate assistant costs (per lesson)\r\n  v_assistant_cost_total := v_lesson_count * (\r\n    select coalesce(sum(av.value::numeric), 0)\r\n    from jsonb_each_text(v_assistant_costs) av\r\n  );\r\n\r\n  -- Total expenses\r\n  v_expenses_total := (\r\n    select coalesce(sum(amount), 0)\r\n    from expenses\r\n    where teacher_id = p_teacher_id\r\n      and (p_date_from is null or expense_date >= p_date_from)\r\n      and (p_date_to is null or expense_date <= p_date_to)\r\n  );\r\n\r\n  return jsonb_build_object(\r\n    'totalRevenue', v_total_revenue,\r\n    'studentPaymentsReceived', v_student_payment_total,\r\n    'lessonCount', v_lesson_count,\r\n    'centerShare', v_center_share_total,\r\n    'centerShareType', v_center_share_type,\r\n    'centerShareValue', v_center_share_value,\r\n    'assistantCosts', v_assistant_cost_total,\r\n    'expenses', v_expenses_total,\r\n    'netProfit', v_total_revenue - v_center_share_total - v_assistant_cost_total - v_expenses_total\r\n  );\r\nend;\r\n$function$\n"
+  },
+  {
+   "proname": "get_student_portal_data",
+   "args": "p_token text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.get_student_portal_data(p_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_student record;\r\n  v_teacher_id uuid;\r\n  v_ranks jsonb;\r\n  v_whatsapp text;\r\n  v_report_fields text[];\r\n  v_attendance jsonb;\r\n  v_lesson_attendance jsonb;\r\n  v_behavior jsonb;\r\n  v_announcements jsonb;\r\n  v_exam_scores jsonb;\r\n  v_exams jsonb;\r\n  v_session_log jsonb;\r\n  v_lesson_sessions jsonb;\r\n  v_session_today jsonb;\r\n  v_schedule jsonb;\r\n  v_homework_tasks jsonb;\r\n  v_homework_status jsonb;\r\nbegin\r\n  select s.id, s.name, s.points, s.group_name, s.attendance_status,\r\n         s.hw_status, s.teacher_id, s.stage, s.code, s.warnings\r\n    into v_student\r\n  from students s\r\n  inner join student_qr_tokens t on t.student_id = s.id\r\n  where t.token = p_token and t.revoked_at is null\r\n  limit 1;\r\n\r\n  if v_student.id is null and p_token ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then\r\n    select s.id, s.name, s.points, s.group_name, s.attendance_status,\r\n           s.hw_status, s.teacher_id, s.stage, s.code, s.warnings\r\n      into v_student\r\n    from students s where s.id = p_token::uuid limit 1;\r\n  end if;\r\n  if v_student.id is null then return null; end if;\r\n  v_teacher_id := v_student.teacher_id;\r\n\r\n  select ts.ranks, ts.whatsapp_number, ts.report_fields\r\n    into v_ranks, v_whatsapp, v_report_fields\r\n  from teacher_settings ts where ts.teacher_id = v_teacher_id;\r\n\r\n  -- One latest final record per calendar day; never expose duplicate day states.\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'status', q.status, 'recorded_at', q.recorded_at,\r\n    'lesson_session_id', q.lesson_session_id,\r\n    'homework_status', q.homework_status,\r\n    'session_date', q.session_date\r\n  ) order by q.session_date desc, q.recorded_at desc), '[]'::jsonb) into v_attendance\r\n  from (\r\n    select distinct on (coalesce(ls.session_date, (ar.recorded_at at time zone 'UTC')::date))\r\n      ar.status, ar.recorded_at, ar.lesson_session_id, ar.homework_status,\r\n      coalesce(ls.session_date, (ar.recorded_at at time zone 'UTC')::date) as session_date\r\n    from attendance_records ar\r\n    left join lesson_sessions ls on ls.id = ar.lesson_session_id\r\n    where ar.student_id = v_student.id and ar.teacher_id = v_teacher_id\r\n    order by coalesce(ls.session_date, (ar.recorded_at at time zone 'UTC')::date) desc, ar.recorded_at desc\r\n  ) q;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'id', ar.id, 'status', ar.status, 'recorded_at', ar.recorded_at,\r\n    'lesson_session_id', ar.lesson_session_id,\r\n    'homework_status', ar.homework_status,\r\n    'session_date', ls.session_date, 'group_name', ls.group_name,\r\n    'lesson_topic', ls.lesson_topic, 'homework_text', ls.homework_text,\r\n    'video_link', ls.video_link, 'session_status', ls.status\r\n  ) order by ar.recorded_at desc), '[]'::jsonb) into v_lesson_attendance\r\n  from attendance_records ar\r\n  inner join lesson_sessions ls on ls.id = ar.lesson_session_id\r\n  where ar.student_id = v_student.id and ar.teacher_id = v_teacher_id;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'note', bl.note, 'points_delta', bl.points_delta, 'created_at', bl.created_at\r\n  ) order by bl.created_at desc), '[]'::jsonb) into v_behavior\r\n  from behavior_logs bl\r\n  where bl.student_id = v_student.id and bl.teacher_id = v_teacher_id;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'id', an.id, 'title', an.title, 'message', an.message,\r\n    'created_at', an.created_at, 'student_id', an.student_id\r\n  ) order by an.created_at desc), '[]'::jsonb) into v_announcements\r\n  from announcements an\r\n  where an.teacher_id = v_teacher_id\r\n    and (an.student_id is null or an.student_id = v_student.id);\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'id', es.id, 'exam_id', es.exam_id, 'total_score', es.total_score,\r\n    'section_scores', es.section_scores, 'created_at', es.created_at,\r\n    'lesson_session_id', es.lesson_session_id,\r\n    'exam_title', ex.title, 'exam_sections', ex.sections,\r\n    'exam_max_per_section', ex.max_score_per_section\r\n  ) order by es.created_at desc), '[]'::jsonb) into v_exam_scores\r\n  from exam_scores es\r\n  inner join exams ex on ex.id = es.exam_id\r\n  where es.student_id = v_student.id and es.teacher_id = v_teacher_id;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'id', ex.id, 'title', ex.title, 'sections', ex.sections,\r\n    'max_score_per_section', ex.max_score_per_section,\r\n    'lesson_session_id', ex.lesson_session_id\r\n  ) order by ex.created_at desc), '[]'::jsonb) into v_exams\r\n  from exams ex where ex.teacher_id = v_teacher_id;\r\n\r\n  select to_jsonb(sl) into v_session_log\r\n  from session_logs sl\r\n  where sl.teacher_id = v_teacher_id and sl.group_name = v_student.group_name\r\n  order by sl.session_date desc limit 1;\r\n\r\n  -- Return at most three useful lesson cards: current, previous, next.\r\n  -- Each row carries the final state for this student in that lesson.\r\n  select coalesce(jsonb_agg(to_jsonb(c) - 'sort_rank' order by c.sort_rank), '[]'::jsonb)\r\n    into v_lesson_sessions\r\n  from (\r\n    (select ls.*, 0 as sort_rank,\r\n      coalesce((select ar.status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as attendance_status,\r\n      coalesce((select ar.homework_status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as homework_status\r\n      from lesson_sessions ls\r\n      where ls.teacher_id = v_teacher_id and ls.group_name = v_student.group_name and ls.session_date = current_date\r\n      order by ls.started_at desc limit 1)\r\n    union all\r\n    (select ls.*, 1 as sort_rank,\r\n      coalesce((select ar.status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as attendance_status,\r\n      coalesce((select ar.homework_status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as homework_status\r\n      from lesson_sessions ls\r\n      where ls.teacher_id = v_teacher_id and ls.group_name = v_student.group_name and ls.session_date < current_date\r\n      order by ls.session_date desc, ls.started_at desc limit 1)\r\n    union all\r\n    (select ls.*, 2 as sort_rank,\r\n      coalesce((select ar.status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as attendance_status,\r\n      coalesce((select ar.homework_status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f') as homework_status\r\n      from lesson_sessions ls\r\n      where ls.teacher_id = v_teacher_id and ls.group_name = v_student.group_name and ls.session_date > current_date\r\n      order by ls.session_date asc, ls.started_at asc limit 1)\r\n  ) c;\r\n\r\n  select to_jsonb(ls) || jsonb_build_object(\r\n    'attendance_status', coalesce((select ar.status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f'),\r\n    'homework_status', coalesce((select ar.homework_status from attendance_records ar where ar.lesson_session_id = ls.id and ar.student_id = v_student.id order by ar.recorded_at desc limit 1), '\u0644\u0645 \u064a\u0631\u0635\u062f')\r\n  ) into v_session_today\r\n  from lesson_sessions ls\r\n  where ls.teacher_id = v_teacher_id and ls.group_name = v_student.group_name\r\n  order by case when ls.session_date = current_date then 0 else 1 end, ls.session_date desc, ls.started_at desc\r\n  limit 1;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object('weekday', gs.weekday)), '[]'::jsonb)\r\n    into v_schedule\r\n  from group_schedule gs\r\n  where gs.teacher_id = v_teacher_id and gs.group_name = v_student.group_name;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object(\r\n    'id', ht.id, 'title', ht.title, 'due_date', ht.due_date, 'created_at', ht.created_at\r\n  ) order by ht.created_at desc), '[]'::jsonb) into v_homework_tasks\r\n  from homework_tasks ht\r\n  where ht.teacher_id = v_teacher_id and ht.group_name = v_student.group_name;\r\n\r\n  select coalesce(jsonb_agg(jsonb_build_object('task_id', hts.task_id, 'done', hts.done)), '[]'::jsonb)\r\n    into v_homework_status\r\n  from homework_task_status hts where hts.student_id = v_student.id;\r\n\r\n  return jsonb_build_object(\r\n    'student', jsonb_build_object(\r\n      'id', v_student.id, 'name', v_student.name, 'points', v_student.points,\r\n      'group_name', v_student.group_name, 'attendance_status', v_student.attendance_status,\r\n      'hw_status', v_student.hw_status, 'teacher_id', v_student.teacher_id,\r\n      'stage', v_student.stage, 'code', v_student.code, 'warnings', v_student.warnings\r\n    ),\r\n    'ranks', coalesce(v_ranks, '[]'::jsonb), 'whatsapp_number', coalesce(v_whatsapp, ''),\r\n    'report_fields', coalesce(to_jsonb(v_report_fields), '[]'::jsonb),\r\n    'attendance', v_attendance, 'lesson_attendance', v_lesson_attendance,\r\n    'behavior', v_behavior, 'announcements', v_announcements,\r\n    'exam_scores', v_exam_scores, 'exams', v_exams,\r\n    'session_log', v_session_log, 'lesson_sessions', v_lesson_sessions,\r\n    'session_today', v_session_today, 'schedule', v_schedule,\r\n    'homework_tasks', v_homework_tasks, 'homework_status', v_homework_status,\r\n    'token_source', 'db', 'teacherId', v_teacher_id,\r\n    'paymentSummary', (select jsonb_build_object('totalPaid', coalesce(sum(p.amount), 0), 'paymentCount', count(p.id), 'lastPaymentDate', max(p.payment_date)) from student_payments p where p.student_id = v_student.id and p.teacher_id = v_teacher_id),\r\n    'lessonPrice', (select (group_pricing -> v_student.group_name)::numeric from teacher_settings where teacher_id = v_teacher_id),\r\n    'notifications', (select coalesce(jsonb_agg(row_to_json(r)), '[]'::jsonb) from (select n.id, n.title, n.body, n.category, n.deep_link, n.is_read, n.created_at from student_notifications n where n.student_id = v_student.id and n.teacher_id = v_teacher_id order by n.created_at desc limit 50) r),\r\n    'unreadNotificationCount', (select count(*) from student_notifications where student_id = v_student.id and teacher_id = v_teacher_id and is_read = false),\r\n    'branding', (select jsonb_build_object('display_name', coalesce(display_name, ''), 'center_name', coalesce(center_name, ''), 'logo_url', coalesce(logo_url, '')) from workspace_branding where teacher_id = v_teacher_id)\r\n  );\r\nend;\r\n$function$\n"
+  },
+  {
+   "proname": "get_student_standalone_exams",
+   "args": "p_token text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.get_student_standalone_exams(p_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\ndeclare\n  v_student_id uuid;\n  v_teacher_id uuid;\nbegin\n  if p_token is null or length(btrim(p_token)) = 0 then\n    return '[]'::jsonb;\n  end if;\n\n  -- \u062a\u0648\u0643\u0646 \u0627\u0644\u0628\u0648\u0627\u0628\u0629 \u2192 \u0627\u0644\u0637\u0627\u0644\u0628 (\u0646\u0641\u0633 \u0645\u0633\u0627\u0631 019/037 \u0628\u0627\u0644\u0638\u0628\u0637)\n  select q.student_id, s.teacher_id\n    into v_student_id, v_teacher_id\n  from public.student_qr_tokens q\n  join public.students s on s.id = q.student_id\n  where q.token = p_token and q.revoked_at is null\n  limit 1;\n\n  -- \u0627\u062d\u062a\u064a\u0627\u0637: \u0631\u0648\u0627\u0628\u0637 QR \u0627\u0644\u0642\u062f\u064a\u0645\u0629 \u0627\u0644\u0644\u064a \u0643\u0627\u0646\u062a \u0628\u062a\u0633\u062a\u062e\u062f\u0645 UUID \u0627\u0644\u0637\u0627\u0644\u0628 \u0646\u0641\u0633\u0647 \u0643\u062a\u0648\u0643\u0646\n  if v_student_id is null\n     and p_token ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[0-9a-f]{12}$' then\n    select s.id, s.teacher_id\n      into v_student_id, v_teacher_id\n    from public.students s\n    where s.id = p_token::uuid\n    limit 1;\n  end if;\n\n  if v_student_id is null then\n    return '[]'::jsonb;\n  end if;\n\n  -- \u062f\u0631\u062c\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628 \u0641\u064a \u0627\u0644\u0627\u0645\u062a\u062d\u0627\u0646\u0627\u062a \u0627\u0644\u0645\u0646\u0641\u0635\u0644\u0629 (\u0627\u0644\u0645\u0645\u062a\u062d\u0646 = \u0627\u0644\u0644\u064a \u0644\u064a\u0647 \u0635\u0641 \u062f\u0631\u062c\u0629)\n  return coalesce((\n    select jsonb_agg(jsonb_build_object(\n      'exam_id', e.id,\n      'title', e.title,\n      'exam_date', e.exam_date,\n      'exam_status', e.status,\n      'score', es.score,\n      'max_score', e.max_score,\n      'grade_scale', e.grade_scale,\n      'graded_at', es.updated_at\n    ) order by e.exam_date desc, e.created_at desc)\n    from public.standalone_exam_scores es\n    join public.standalone_exams e on e.id = es.exam_id\n    where es.student_id = v_student_id\n      and es.teacher_id = v_teacher_id\n  ), '[]'::jsonb);\nend;\n$function$\n"
+  },
+  {
+   "proname": "link_assistant_by_email",
+   "args": "assistant_email text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.link_assistant_by_email(assistant_email text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  target_id uuid;\r\nbegin\r\n  select id into target_id from auth.users where email = assistant_email;\r\n  if target_id is null then\r\n    raise exception '\u0644\u0627 \u064a\u0648\u062c\u062f \u062d\u0633\u0627\u0628 \u0645\u0633\u062c\u0651\u0644 \u0628\u0647\u0630\u0627 \u0627\u0644\u0625\u064a\u0645\u064a\u0644';\r\n  end if;\r\n  if target_id = auth.uid() then\r\n    raise exception '\u0645\u064a\u0646\u0641\u0639\u0634 \u062a\u0631\u0628\u0637 \u062d\u0633\u0627\u0628\u0643 \u0628\u0646\u0641\u0633\u0647';\r\n  end if;\r\n  insert into workspace_members (owner_id, member_id)\r\n  values (auth.uid(), target_id)\r\n  on conflict (member_id) do update set owner_id = excluded.owner_id;\r\nend;\r\n$function$\n"
+  },
+  {
+   "proname": "mark_notification_read",
+   "args": "p_notification_id uuid, p_token text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.mark_notification_read(p_notification_id uuid, p_token text)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_student_id uuid;\r\nbegin\r\n  -- Resolve token to student_id\r\n  select student_id into v_student_id\r\n  from student_qr_tokens\r\n  where token = p_token and revoked_at is null\r\n  limit 1;\r\n\r\n  if v_student_id is null and p_token ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then\r\n    select id into v_student_id from students where id = p_token::uuid limit 1;\r\n  end if;\r\n\r\n  if v_student_id is null then\r\n    raise exception 'invalid token';\r\n  end if;\r\n\r\n  update student_notifications\r\n  set is_read = true\r\n  where id = p_notification_id\r\n    and student_id = v_student_id;\r\nend;\r\n$function$\n"
+  },
+  {
+   "proname": "upsert_lesson_attendance",
+   "args": "p_lesson_session_id uuid, p_student_id uuid, p_status text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.upsert_lesson_attendance(p_lesson_session_id uuid, p_student_id uuid, p_status text)\n RETURNS attendance_records\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_teacher_id uuid;\r\n  v_row public.attendance_records;\r\nbegin\r\n  -- \u0627\u0644\u062d\u0635\u0629 \u0645\u0648\u062c\u0648\u062f\u0629\u061f (\u0648\u0645\u0646\u0647\u0627 \u0628\u0646\u062c\u064a\u0628 \u0635\u0627\u062d\u0628 \u0645\u0633\u0627\u062d\u0629 \u0627\u0644\u0639\u0645\u0644 \u0627\u0644\u0645\u0635\u0631\u0651\u062d \u0644\u0647)\r\n  select ls.teacher_id into v_teacher_id\r\n  from public.lesson_sessions ls\r\n  where ls.id = p_lesson_session_id;\r\n\r\n  if v_teacher_id is null then\r\n    raise exception 'lesson_not_found';\r\n  end if;\r\n\r\n  -- \u0627\u0644\u0635\u0644\u0627\u062d\u064a\u0629: \u0635\u0627\u062d\u0628 \u0645\u0633\u0627\u062d\u0629 \u0627\u0644\u0639\u0645\u0644 \u0623\u0648 \u0623\u062d\u062f \u0623\u0639\u0636\u0627\u0626\u0647\u0627 (\u0646\u0641\u0633 can_access_workspace)\r\n  if not public.can_access_workspace(v_teacher_id) then\r\n    raise exception 'not_authorized';\r\n  end if;\r\n\r\n  -- \u062a\u062d\u0642\u0642 \u0642\u064a\u0645\u0629 \u0627\u0644\u062d\u0627\u0644\u0629 (\u0645\u062b\u0627\u0644: \u062d\u0627\u0636\u0631 / \u063a\u0627\u0626\u0628 / \u0644\u0645 \u064a\u0631\u0635\u062f)\r\n  if p_status is null or length(btrim(p_status)) = 0 or length(p_status) > 60 then\r\n    raise exception 'invalid_status';\r\n  end if;\r\n\r\n  -- upsert \u0630\u0631\u064a: \u0635\u0641 \u0648\u0627\u062d\u062f \u0644\u0643\u0644 (\u0637\u0627\u0644\u0628 \u00d7 \u062d\u0635\u0629)\r\n  insert into public.attendance_records as ar\r\n    (teacher_id, student_id, lesson_session_id, status, homework_status, recorded_at)\r\n  values\r\n    (v_teacher_id, p_student_id, p_lesson_session_id, p_status, '\u0644\u0645 \u064a\u0631\u0635\u062f', now())\r\n  on conflict (lesson_session_id, student_id)\r\n  do update\r\n    set status = excluded.status,\r\n        recorded_at = now()\r\n  returning ar.* into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n"
+  },
+  {
+   "proname": "upsert_lesson_homework",
+   "args": "p_lesson_session_id uuid, p_student_id uuid, p_homework_status text",
+   "prosecdef": true,
+   "owner": "postgres",
+   "def": "CREATE OR REPLACE FUNCTION public.upsert_lesson_homework(p_lesson_session_id uuid, p_student_id uuid, p_homework_status text)\n RETURNS attendance_records\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\ndeclare\r\n  v_teacher_id uuid;\r\n  v_row public.attendance_records;\r\nbegin\r\n  select ls.teacher_id into v_teacher_id\r\n  from public.lesson_sessions ls\r\n  where ls.id = p_lesson_session_id;\r\n\r\n  if v_teacher_id is null then\r\n    raise exception 'lesson_not_found';\r\n  end if;\r\n\r\n  if not public.can_access_workspace(v_teacher_id) then\r\n    raise exception 'not_authorized';\r\n  end if;\r\n\r\n  if p_homework_status is null or length(btrim(p_homework_status)) = 0 or length(p_homework_status) > 60 then\r\n    raise exception 'invalid_homework_status';\r\n  end if;\r\n\r\n  insert into public.attendance_records as ar\r\n    (teacher_id, student_id, lesson_session_id, status, homework_status, recorded_at)\r\n  values\r\n    (v_teacher_id, p_student_id, p_lesson_session_id, '\u0644\u0645 \u064a\u0631\u0635\u062f', p_homework_status, now())\r\n  on conflict (lesson_session_id, student_id)\r\n  do update\r\n    set homework_status = excluded.homework_status\r\n  returning ar.* into v_row;\r\n\r\n  return v_row;\r\nend;\r\n$function$\n"
+  }
+ ],
+ "grants": [],
+ "indexes": [
+  {
+   "tablename": "attendance_records",
+   "indexname": "attendance_records_lesson_idx",
+   "indexdef": "CREATE INDEX attendance_records_lesson_idx ON public.attendance_records USING btree (lesson_session_id) WHERE (lesson_session_id IS NOT NULL)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "attendance_records_pkey",
+   "indexdef": "CREATE UNIQUE INDEX attendance_records_pkey ON public.attendance_records USING btree (id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "attendance_records_student_idx",
+   "indexdef": "CREATE INDEX attendance_records_student_idx ON public.attendance_records USING btree (student_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "attendance_records_student_lesson_uniq",
+   "indexdef": "CREATE UNIQUE INDEX attendance_records_student_lesson_uniq ON public.attendance_records USING btree (student_id, lesson_session_id) WHERE (lesson_session_id IS NOT NULL)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_lesson_student",
+   "indexdef": "CREATE INDEX idx_attendance_lesson_student ON public.attendance_records USING btree (lesson_session_id, student_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_records_lesson",
+   "indexdef": "CREATE INDEX idx_attendance_records_lesson ON public.attendance_records USING btree (lesson_session_id, student_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_records_session",
+   "indexdef": "CREATE INDEX idx_attendance_records_session ON public.attendance_records USING btree (lesson_session_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_records_student_date",
+   "indexdef": "CREATE INDEX idx_attendance_records_student_date ON public.attendance_records USING btree (student_id, attendance_date DESC)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_student",
+   "indexdef": "CREATE INDEX idx_attendance_student ON public.attendance_records USING btree (student_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_teacher",
+   "indexdef": "CREATE INDEX idx_attendance_teacher ON public.attendance_records USING btree (teacher_id)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "idx_attendance_teacher_student_date",
+   "indexdef": "CREATE INDEX idx_attendance_teacher_student_date ON public.attendance_records USING btree (teacher_id, student_id, recorded_at)"
+  },
+  {
+   "tablename": "attendance_records",
+   "indexname": "uq_attendance_lesson_student",
+   "indexdef": "CREATE UNIQUE INDEX uq_attendance_lesson_student ON public.attendance_records USING btree (lesson_session_id, student_id)"
+  },
+  {
+   "tablename": "behavior_logs",
+   "indexname": "behavior_logs_pkey",
+   "indexdef": "CREATE UNIQUE INDEX behavior_logs_pkey ON public.behavior_logs USING btree (id)"
+  },
+  {
+   "tablename": "behavior_logs",
+   "indexname": "idx_behavior_student",
+   "indexdef": "CREATE INDEX idx_behavior_student ON public.behavior_logs USING btree (student_id)"
+  },
+  {
+   "tablename": "exam_scores",
+   "indexname": "exam_scores_pkey",
+   "indexdef": "CREATE UNIQUE INDEX exam_scores_pkey ON public.exam_scores USING btree (id)"
+  },
+  {
+   "tablename": "exam_scores",
+   "indexname": "idx_exam_scores_exam",
+   "indexdef": "CREATE INDEX idx_exam_scores_exam ON public.exam_scores USING btree (exam_id)"
+  },
+  {
+   "tablename": "exam_scores",
+   "indexname": "idx_exam_scores_lesson_session",
+   "indexdef": "CREATE INDEX idx_exam_scores_lesson_session ON public.exam_scores USING btree (lesson_session_id)"
+  },
+  {
+   "tablename": "exam_scores",
+   "indexname": "idx_exam_scores_student",
+   "indexdef": "CREATE INDEX idx_exam_scores_student ON public.exam_scores USING btree (student_id)"
+  },
+  {
+   "tablename": "exam_scores",
+   "indexname": "idx_exam_scores_student_date",
+   "indexdef": "CREATE INDEX idx_exam_scores_student_date ON public.exam_scores USING btree (student_id, created_at DESC)"
+  },
+  {
+   "tablename": "standalone_exam_scores",
+   "indexname": "idx_standalone_exam_scores_exam",
+   "indexdef": "CREATE INDEX idx_standalone_exam_scores_exam ON public.standalone_exam_scores USING btree (exam_id)"
+  },
+  {
+   "tablename": "standalone_exam_scores",
+   "indexname": "idx_standalone_exam_scores_student",
+   "indexdef": "CREATE INDEX idx_standalone_exam_scores_student ON public.standalone_exam_scores USING btree (student_id, created_at DESC)"
+  },
+  {
+   "tablename": "standalone_exam_scores",
+   "indexname": "standalone_exam_scores_exam_id_student_id_key",
+   "indexdef": "CREATE UNIQUE INDEX standalone_exam_scores_exam_id_student_id_key ON public.standalone_exam_scores USING btree (exam_id, student_id)"
+  },
+  {
+   "tablename": "standalone_exam_scores",
+   "indexname": "standalone_exam_scores_pkey",
+   "indexdef": "CREATE UNIQUE INDEX standalone_exam_scores_pkey ON public.standalone_exam_scores USING btree (id)"
+  }
+ ],
+ "columns": [
+  {
+   "table_name": "assistant_requests",
+   "column_name": "id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "teacher_id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "assistant_id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "status",
+   "data_type": "text"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "message",
+   "data_type": "text"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "created_at",
+   "data_type": "timestamp with time zone"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "resolved_at",
+   "data_type": "timestamp with time zone"
+  },
+  {
+   "table_name": "assistant_requests",
+   "column_name": "resolved_by",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "student_id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "token",
+   "data_type": "text"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "created_at",
+   "data_type": "timestamp with time zone"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "updated_at",
+   "data_type": "timestamp with time zone"
+  },
+  {
+   "table_name": "student_qr_tokens",
+   "column_name": "revoked_at",
+   "data_type": "timestamp with time zone"
+  },
+  {
+   "table_name": "workspace_members",
+   "column_name": "id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "workspace_members",
+   "column_name": "owner_id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "workspace_members",
+   "column_name": "member_id",
+   "data_type": "uuid"
+  },
+  {
+   "table_name": "workspace_members",
+   "column_name": "role",
+   "data_type": "text"
+  },
+  {
+   "table_name": "workspace_members",
+   "column_name": "created_at",
+   "data_type": "timestamp with time zone"
+  }
+ ],
+ "assistant_requests_count": [
+  {
+   "n": 0
+  }
+ ],
+ "workspace_members_count": [
+  {
+   "n": 4
+  }
+ ],
+ "edge_functions": [
+  {
+   "slug": "admin-account-actions",
+   "verify_jwt": true,
+   "status": "ACTIVE"
+  },
+  {
+   "slug": "send-push-notification",
+   "verify_jwt": false,
+   "status": "ACTIVE"
+  },
+  {
+   "slug": "admin-backup",
+   "verify_jwt": false,
+   "status": "ACTIVE"
+  }
+ ],
+ "secret_names": [
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_PUBLISHABLE_KEYS",
+  "SUPABASE_SECRET_KEYS",
+  "SUPABASE_DB_URL",
+  "SUPABASE_JWKS",
+  "VAPID_SUBJECT",
+  "VAPID_PUBLIC_KEY",
+  "VAPID_PRIVATE_KEY"
+ ]
+}

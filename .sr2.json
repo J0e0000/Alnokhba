@@ -1,0 +1,83 @@
+[
+  {
+    "url": "https://vercel.com",
+    "name": "Vercel: Agentic Infrastructure",
+    "snippet": "Build agents on infrastructure that thinks like them · Ship apps that scale from zero to millions instantly · Host platforms that serve every customer · Recently ...",
+    "host_name": "vercel.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vercel.com/login",
+    "name": "Login",
+    "snippet": "Log in to Vercel. Continue with Email. Continue with Google Continue with GitHub. Continue with ChatGPT. Continue with SAML SSO. Continue ... Login – Vercel.",
+    "host_name": "vercel.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vercel.com/ai",
+    "name": "AI apps and agents - Vercel",
+    "snippet": "Everything you need to build, run, and govern frontier agents. From the framework to model routing, secure execution, and identity.",
+    "host_name": "vercel.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://v0.app",
+    "name": "v0 by Vercel - Build Full-Stack Web Apps with AI",
+    "snippet": "Your collaborative AI assistant to design, iterate, and scale full-stack applications for the web.",
+    "host_name": "v0.app",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vercel.com/new",
+    "name": "New Project",
+    "snippet": "Flask Python Boilerplate. Deploy Python Flask applications with zero configuration. Only need Web Analytics or Speed Insights? Create an empty project.",
+    "host_name": "vercel.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://myal.vercel.app",
+    "name": "MYAL",
+    "snippet": "A curated list of Android apps with Material You / Material Design support.",
+    "host_name": "myal.vercel.app",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vercel.com/kb/guide/application-authentication-on-vercel",
+    "name": "Application authentication on Vercel",
+    "snippet": "Secure application authentication on Vercel across layers: proxy checks, the Data Access Layer, PPR-safe rendering, and platform controls like Firewall and ...",
+    "host_name": "vercel.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://lablab.ai/apps/tech/vercel",
+    "name": "Vercel Applications",
+    "snippet": "It features seamless drag-and-drop, instant translation, and surgical voice-editing for ultimate tailoring. TechFlow Al-Momayaz. Vercel. application badge.",
+    "host_name": "lablab.ai",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.youtube.com/watch?v=9B2v6A2nH_g",
+    "name": "Build and Deploy AI App with Vercel V0, Cursor, Claude and",
+    "snippet": "Build and Deploy AI App with Vercel V0, Cursor, Claude and Couchbase - Part 3 · How to use Cursor AI to Create Your Own AI Chat App in NextJS - ...",
+    "host_name": "www.youtube.com",
+    "rank": 8,
+    "date": "",
+    "favicon": ""
+  }
+]

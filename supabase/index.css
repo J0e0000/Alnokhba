@@ -1,0 +1,313 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════
+   NEBULA ACADEMIC OS — Design System
+   ═══════════════════════════════════════════════════ */
+
+@theme {
+  --color-brand-navy: #ffffff;
+  --color-brand-navy-light: #f8fafc;
+  --color-brand-gold: #0f766e;
+  --color-brand-gold-hover: #0d9488;
+  --color-brand-cyan: #0f9f91;
+  --color-brand-bg: var(--app-bg);
+
+  /* Nebula Surface Tokens */
+  --color-surface: #ffffff;
+  --color-surface-bright: #ffffff;
+  --color-surface-container: #f8fafc;
+  --color-surface-container-high: #f1f5f9;
+  --color-surface-container-highest: #e2e8f0;
+  --color-surface-container-low: #f8fafc;
+  --color-surface-container-lowest: #f1f5f9;
+  --color-on-surface: #172033;
+  --color-on-surface-variant: #5b667c;
+  --color-primary: #0f9f91;
+  --color-outline: #cbd5e1;
+
+  /* Brand Accents */
+  --color-electric-blue: #0f9f91;
+  --color-vibrant-gold: #d97706;
+  --color-neon-success: #15803d;
+  --color-neon-error: #dc2626;
+  --color-glass-surface: rgba(255, 255, 255, 0.76);
+}
+
+* { font-family: 'Cairo', ui-sans-serif, system-ui, sans-serif; }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* ============================================================
+   Dark / Light Mode — CSS Variables
+   ============================================================ */
+:root {
+  --app-bg: #f4f7fb;
+  --app-bg-glow-1: rgba(71, 230, 193, 0.12);
+  --app-bg-glow-2: rgba(167, 139, 250, 0.08);
+  --surface: rgba(255, 255, 255, 0.82);
+  --surface-solid: #ffffff;
+  --surface-blur: blur(18px);
+  --surface-border: rgba(148, 163, 184, 0.25);
+  --surface-border-hover: rgba(71, 178, 160, 0.55);
+  --input-bg: rgba(248, 250, 252, 0.9);
+  --input-border: rgba(148, 163, 184, 0.34);
+  --fg: #172033;
+  --fg-muted: #5b667c;
+  --fg-subtle: #8792a6;
+  --shadow: 0 14px 34px rgba(51, 65, 85, 0.12);
+}
+
+html.light {
+  --app-bg: #F3F4F6;
+  --app-bg-glow-1: rgba(0, 229, 255, 0.04);
+  --app-bg-glow-2: rgba(255, 215, 0, 0.06);
+  --surface: #FFFFFF;
+  --surface-solid: #F8FAFC;
+  --surface-blur: none;
+  --surface-border: #E2E8F0;
+  --surface-border-hover: #CBD5E1;
+  --input-bg: #FFFFFF;
+  --input-border: #CBD5E1;
+  --fg: #0F172A;
+  --fg-muted: #475569;
+  --fg-subtle: #94A3B8;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+body {
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(circle at 12% -10%, rgba(71, 230, 193, 0.12) 0%, transparent 34%),
+    radial-gradient(circle at 90% 12%, rgba(167, 139, 250, 0.1) 0%, transparent 30%),
+    radial-gradient(circle at 50% 110%, rgba(255, 184, 107, 0.08) 0%, transparent 42%);
+  background-attachment: fixed;
+  color: var(--fg);
+  transition: background-color .25s ease, color .25s ease;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(136, 144, 154, 0.3); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #475e8c; }
+
+.spreadsheet-container::-webkit-scrollbar { width: 6px; height: 6px; }
+.spreadsheet-container::-webkit-scrollbar-track { background: rgba(0, 19, 45, 0.5); }
+.spreadsheet-container::-webkit-scrollbar-thumb { background: rgba(136, 144, 154, 0.3); border-radius: 4px; }
+
+/* ═══════════════════════════════════════════════════
+   Glass Card (Level 1 — Primary Container)
+   ═══════════════════════════════════════════════════ */
+.glass-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.86));
+  backdrop-filter: var(--surface-blur);
+  -webkit-backdrop-filter: var(--surface-blur);
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+}
+.glass-card:hover { border-color: var(--surface-border-hover); box-shadow: 0 18px 42px rgba(51, 65, 85, .16); }
+
+/* ═══════════════════════════════════════════════════
+   Claymorphism Widget (Level 2 — Interactive)
+   ═══════════════════════════════════════════════════ */
+.clay-widget {
+  background: linear-gradient(145deg, #ffffff 0%, #f1f5f9 100%);
+  border-radius: 16px;
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.9),
+    inset -1px -1px 4px rgba(148, 163, 184, 0.22),
+    0 8px 16px rgba(51, 65, 85, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+.clay-widget:active {
+  box-shadow:
+    inset 1px 1px 3px rgba(255, 255, 255, 0.05),
+    inset -1px -1px 3px rgba(0, 0, 0, 0.5),
+    0 2px 5px rgba(0, 0, 0, 0.2);
+  transform: scale(0.98);
+}
+
+/* ═══════════════════════════════════════════════════
+   Clay Button Variants
+   ═══════════════════════════════════════════════════ */
+.clay-btn {
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.1),
+    inset -1px -1px 4px rgba(0, 0, 0, 0.4),
+    0 4px 6px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s ease;
+}
+.clay-btn:active {
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.05),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.5);
+  transform: scale(0.98);
+}
+
+.clay-btn-gold {
+  background: linear-gradient(135deg, #ffb86b 0%, #ff8f70 100%);
+  color: #21182c;
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.5),
+    inset -1px -1px 4px rgba(0, 0, 0, 0.2),
+    0 4px 10px rgba(255, 215, 0, 0.3);
+  transition: all 0.2s ease;
+}
+.clay-btn-gold:hover {
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, 0.5),
+    inset -1px -1px 4px rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(255, 215, 0, 0.5);
+  transform: translateY(-1px);
+}
+.clay-btn-gold:active {
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.3);
+  transform: scale(0.98);
+}
+
+/* ═══════════════════════════════════════════════════
+   Sunken Input (Recessed into surface)
+   ═══════════════════════════════════════════════════ */
+.sunken-input {
+  background-color: var(--input-bg);
+  box-shadow:
+    inset 2px 2px 5px rgba(148, 163, 184, 0.12),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════
+   Glow Effects
+   ═══════════════════════════════════════════════════ */
+.glow-gold { box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); }
+.glow-blue { box-shadow: 0 0 15px rgba(0, 229, 255, 0.4); }
+.glow-success { box-shadow: 0 0 8px #22C55E; }
+.glow-error { box-shadow: 0 0 8px #EF4444; }
+.filter-glow-blue { filter: drop-shadow(0 0 8px rgba(0, 229, 255, 0.6)); }
+
+/* ═══════════════════════════════════════════════════
+   Legacy Compatibility — Maps old classes to new system
+   ═══════════════════════════════════════════════════ */
+.glass-input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--fg);
+}
+.glass-input:focus {
+  border-color: #47e6c1;
+  box-shadow: 0 0 0 3px rgba(71, 230, 193, 0.14);
+}
+.glass-input::placeholder { color: var(--fg-subtle); }
+
+.text-fg { color: var(--fg); }
+.text-fg-muted { color: var(--fg-muted); }
+.text-fg-subtle { color: var(--fg-subtle); }
+.border-subtle { border-color: var(--surface-border); }
+
+.card-hover { transition: all .2s ease; }
+.card-hover:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+
+.btn-glow {
+  background: linear-gradient(135deg, #47e6c1, #38bfa1);
+  color: #08151c;
+  box-shadow: 0 8px 20px rgba(71, 230, 193, 0.2);
+  transition: box-shadow .25s ease, transform .25s ease;
+}
+.btn-glow:hover { box-shadow: 0 12px 28px rgba(71, 230, 193, 0.34); transform: translateY(-2px); filter: saturate(1.08); }
+.btn-glow:active { transform: scale(0.98); }
+
+/* ═══════════════════════════════════════════════════
+   Animations
+   ═══════════════════════════════════════════════════ */
+@keyframes slideUp {
+  from { transform: translateY(100px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes scan {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(200px); }
+}
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 18px rgba(71, 230, 193, 0.42); }
+  50% { opacity: .78; box-shadow: 0 0 7px rgba(71, 230, 193, 0.16); }
+}
+@keyframes shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.animate-slide-up { animation: slideUp 0.4s ease-out; }
+.animate-scan { animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+.animate-pulse-glow { animation: pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.animate-timer { animation: shrink 10s linear forwards; }
+
+/* ═══════════════════════════════════════════════════
+   Save Flash Micro-Feedback
+   ═══════════════════════════════════════════════════ */
+@keyframes saveFlash {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.5) translateY(-8px); }
+}
+.save-flash {
+  animation: saveFlash 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+/* NOKHBA V1 mobile-first polish */
+button, [role="button"], input, select, textarea { touch-action: manipulation; }
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-brand-gold) 70%, transparent);
+  outline-offset: 2px;
+}
+@media (max-width: 767px) {
+  button, [role="button"] { min-height: 42px; }
+  input, select, textarea { min-height: 44px; }
+  .modal-panel, [role="dialog"] { max-width: calc(100vw - 1rem); }
+}
+@supports (padding: env(safe-area-inset-bottom)) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+}
+.nokhba-tile { min-height: 140px; border-radius: 1rem; }
+.nokhba-section-heading { letter-spacing: -.01em; }
+
+
+/* ============================================================
+   Unified Glassy White finishing layer
+   Keeps legacy utility classes visually consistent with the new theme.
+   ============================================================ */
+.bg-brand-navy { background-color: #ffffff !important; }
+.bg-brand-navy-light { background-color: #f8fafc !important; }
+.text-brand-gold { color: #0f766e !important; }
+.text-brand-gold-hover { color: #0d9488 !important; }
+.text-violet-300, .text-violet-400 { color: #6d28d9 !important; }
+.text-emerald-300, .text-emerald-400 { color: #15803d !important; }
+.text-amber-300, .text-amber-400 { color: #b45309 !important; }
+.text-rose-300, .text-rose-400 { color: #be123c !important; }
+.bg-violet-500\/10 { background-color: rgba(124, 58, 237, .08) !important; }
+.bg-rose-500\/10 { background-color: rgba(225, 29, 72, .08) !important; }
+.bg-brand-gold\/10 { background-color: rgba(15, 118, 110, .08) !important; }
+.border-violet-500\/30 { border-color: rgba(124, 58, 237, .22) !important; }
+.border-rose-500\/30 { border-color: rgba(225, 29, 72, .22) !important; }
+.border-brand-gold\/30 { border-color: rgba(15, 118, 110, .24) !important; }
+.hover\:bg-white\/10:hover, .hover\:bg-white\/5:hover { background-color: rgba(15, 23, 42, .05) !important; }
+.hover\:text-violet-300:hover, .hover\:text-violet-400:hover { color: #5b21b6 !important; }
+.hover\:text-rose-300:hover, .hover\:text-rose-400:hover { color: #9f1239 !important; }
+
+button, input, select, textarea { font-family: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid rgba(15, 159, 145, .22);
+  outline-offset: 2px;
+}
+
+aside, header, main { color: var(--fg); }
+aside button, header button { transition: background-color .18s ease, color .18s ease, border-color .18s ease, transform .18s ease; }
+aside nav button { min-height: 44px; }
+@media (max-width: 767px) {
+  main { padding-left: 1rem; padding-right: 1rem; }
+  .glass-card, .clay-widget { border-radius: 16px; }
+}

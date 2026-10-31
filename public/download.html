@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>النخبة — تنزيل Round 14</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, 'Segoe UI', Tahoma, sans-serif; background: #0b1220; color: #e7ecf5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { max-width: 640px; width: 100%; background: #111a2c; border: 1px solid rgba(212,175,55,.25); border-radius: 20px; padding: 32px; }
+  h1 { color: #d4af37; font-size: 24px; margin-bottom: 6px; }
+  .sub { color: #9aa7bd; font-size: 13px; margin-bottom: 24px; }
+  .box { border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 18px; margin-bottom: 14px; background: rgba(255,255,255,.03); }
+  .box h2 { font-size: 16px; color: #fff; margin-bottom: 4px; }
+  .box p { font-size: 13px; color: #9aa7bd; line-height: 1.7; margin: 6px 0 12px; }
+  a.btn { display: inline-flex; align-items: center; gap: 8px; background: #d4af37; color: #0b1220; font-weight: 800; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-size: 14px; }
+  a.btn:hover { background: #e6c45a; }
+  .tag { display: inline-block; background: rgba(212,175,55,.15); color: #d4af37; border-radius: 999px; padding: 2px 10px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+  .steps { font-size: 12.5px; color: #9aa7bd; line-height: 2; }
+  .steps b { color: #e7ecf5; }
+  ol { padding-right: 18px; }
+  code { background: rgba(255,255,255,.08); padding: 2px 8px; border-radius: 6px; font-size: 12px; direction: ltr; display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🚀 Round 14 — إصلاح خطأ النشر + كل دروع الصفحة البيضاء</h1>
+    <div class="sub">تصحيح vercel.json اللي كان بيوقف النشر من الـ CLI → دلوقتي إصلاحات Rounds 12+13 (الصلاح الذاتي + التحميل مرة واحدة + ErrorBoundary) بتوصل للموقع فعليًا · نفس اللينك · الناس مش محتاجة أي حاجة</div>
+
+    <div class="box">
+      <h2>📦 الواجهة الكاملة — FE-fixed.zip <span class="tag">استبدال ملفات فقط</span></h2>
+      <p>كل إصلاحات Rounds 1–14. <b>مفيش SQL جديد · مفيش تغيير Edge Functions · مفيش متغيرات بيئة.</b></p>
+      <p>حمّل النسخة الأخيرة من نفس رابط التسليم المعتاد (filebin).</p>
+    </div>
+
+    <div class="box">
+      <h2>⚡ خطوات النشر</h2>
+      <div class="steps">
+        <ol>
+          <li>فك الـ zip واستبدل ملفات الواجهة بمحتواه.</li>
+          <li>انشر <b>من نفس مشروع Vercel</b> (CLI: <code>vercel --prod</code> من جذر المشروع) — عشان الرابط يفضل <code>al-nokhbba.vercel.app</code> نفسه.</li>
+          <li>رسالة الخطأ بتاعة <code>Header at index 3</code> مختفت تمامًا — النشر هيعدي عادي.</li>
+          <li>بعد النشر: افتح اللينك من أي تليفون — حتى اللي كان بيضا هيتصلح تلقائيًا.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>🧪 جرّب بنفسك</h2>
+      <div class="steps">
+        <ol>
+          <li>افتح لينك بورتال أي طالب — المفروض يفتح عادي.</li>
+          <li>افتح لينك بتوكن غلط — لازم تظهر رسالة «الرابط غير متاح» بالعربي (مش صفحة بيضا).</li>
+          <li>صفحة التشخيص: <a href="/diag.html" style="color:#d4af37">/diag.html</a> — لازم كل الفحوصات خضراء.</li>
+        </ol>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>📱 الناس محتاجة تعمل حاجة؟ ولا لينكات جديدة؟</h2>
+      <div class="steps">
+        <p><b>لأ — ولا حاجة، ومفيش أي لينكات جديدة.</b> نفس الرابط. أول ما تنشر التحديث ده بنجاح، التليفونات العالقة هتصلّح نفسها تلقائيًا أول ما تفتح اللينك.</p>
+        <p>لو حد لسه عنده مشكلة بعد النشر: افتح من تليفونه <code>/diag.html</code> وابعت التقرير.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
