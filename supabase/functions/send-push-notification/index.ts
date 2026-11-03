@@ -6,13 +6,44 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 )
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: {
-    'content-type': 'application/json',
-    'access-control-allow-origin': '*',
-  },
-})
+// ── CORS: allowlist echo (audit hardening) — بدل '*' أي أصل تاني ما يقرأش ──
+const BASE_CORS = {
+  'access-control-allow-headers': 'authorization, content-type, apikey, x-client-info',
+  'access-control-allow-methods': 'POST, OPTIONS',
+}
+const APP_ORIGINS = new Set([
+  'https://al-nokhbba.vercel.app',
+  'https://frontend-alfares.vercel.app',
+])
+function allowedOrigin(req) {
+  const o = req.headers.get('origin') || ''
+  if (APP_ORIGINS.has(o)) return o
+  if (/^https:\/\/frontend-alfares-[a-z0-9-]+\.vercel\.app$/.test(o)) return o
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) return o
+  return null
+}
+function corsHeaders(req) {
+  const h = { ...BASE_CORS }
+  const origin = allowedOrigin(req)
+  if (origin) h['access-control-allow-origin'] = origin
+  return h
+}
+function makeJson(req) {
+  const headers = { 'content-type': 'application/json', ...corsHeaders(req) }
+  return (body, status = 200) => new Response(JSON.stringify(body), { status, headers })
+}
+
+// ── Rate limit (consume_rate_limit — migration_049; fail-open) ──────────────
+// للمتصفح فقط: نداءات الـ DB trigger (بدون Origin) محمية أصلًا بتحقق الـ job
+// من الداتابيز — مش محتاجة عدّاد. ping/النداءات العابرة من المتصفح بتتحسب.
+async function browserRateLimited(req, key, max, windowSeconds) {
+  if (!req.headers.get('origin')) return true // server-side trigger path
+  try {
+    const { data, error } = await supabase.rpc('consume_rate_limit', { p_key: key, p_max: max, p_window_seconds: windowSeconds })
+    if (error) { console.error('[send-push] rate-limit rpc failed:', error.message); return true }
+    return data === true
+  } catch (err) { console.error('[send-push] rate-limit rpc threw:', err); return true }
+}
 
 // Return per-subscription click URL: the student's own portal when known,
 // otherwise the job's URL (legacy behavior).
@@ -21,24 +52,25 @@ function clickUrlFor(job: { url?: string }, subscription: { portal_url?: string 
 }
 
 Deno.serve(async (req) => {
+  const json = makeJson(req) // per-request CORS echo — shadows module helper
   // CORS preflight: the browser sends OPTIONS before a POST with an
   // Authorization header. Answer it explicitly (the old deployed version
   // crashed on empty bodies here, which made browser-side health checks
   // impossible).
   if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: {
-        'access-control-allow-origin': '*',
-        'access-control-allow-headers': 'authorization, content-type, apikey, x-client-info',
-        'access-control-allow-methods': 'POST, OPTIONS',
-      },
-    })
+    return new Response('ok', { headers: corsHeaders(req) })
   }
 
   try {
     const subject = Deno.env.get('VAPID_SUBJECT') || ''
     const publicKey = Deno.env.get('VAPID_PUBLIC_KEY') || ''
     const privateKey = Deno.env.get('VAPID_PRIVATE_KEY') || ''
+
+    // Rate limit browser-originated calls: 120 / 5 دقائق لكل IP — ضد الضجيج فقط
+    const ip = (req.headers.get('x-forwarded-for') || 'unknown').split(',')[0].trim()
+    if (!(await browserRateLimited(req, `spn:${ip}`, 120, 300))) {
+      return json({ ok: false, error: 'rate_limited', message: 'طلبات كتير جدًا — استنى شوية' }, 429)
+    }
 
     const payload = await req.json().catch(() => ({}))
 

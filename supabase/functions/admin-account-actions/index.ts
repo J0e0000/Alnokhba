@@ -1,16 +1,36 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+// ── CORS: allowlist echo (audit hardening) — بدل '*' أي أصل تاني ما يقدرش
+// يقرأ ردود الدالة. نفس الأصل دايمًا بيبعت Origin في الـ POST العابرين.
+const BASE_CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const APP_ORIGINS = new Set([
+  "https://al-nokhbba.vercel.app",
+  "https://frontend-alfares.vercel.app",
+]);
+function allowedOrigin(req: Request): string | null {
+  const o = req.headers.get("origin") || "";
+  if (APP_ORIGINS.has(o)) return o;
+  if (/^https:\/\/frontend-alfares-[a-z0-9-]+\.vercel\.app$/.test(o)) return o; // preview deploys
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) return o; // local dev
+  return null;
+}
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = allowedOrigin(req);
+  const h: Record<string, string> = { ...BASE_CORS };
+  if (origin) h["Access-Control-Allow-Origin"] = origin;
+  return h;
+}
 
-function json(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function makeJson(req: Request) {
+  const headers = { ...corsHeaders(req), "Content-Type": "application/json" };
+  return (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: status === 429 ? { ...headers, "Retry-After": "60" } : headers,
+    });
 }
 
 // ── Renewal email (Resend HTTP API) ─────────────────────────────────────────
@@ -156,7 +176,8 @@ async function rateLimited(
 // readable JSON error — a bare platform 500 is what produced the opaque
 // "Edge Function returned a non-2x status code" toast on the client.
 async function handleAdminAction(req: Request): Promise<Response> {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const json = makeJson(req); // per-request CORS echo — shadows nothing module-level
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const authorization = req.headers.get("Authorization");
@@ -613,6 +634,6 @@ Deno.serve(async (req: Request) => {
     return await handleAdminAction(req);
   } catch (err) {
     console.error("[admin-account-actions] unhandled error:", String((err as Error)?.stack || err));
-    return json({ error: `Server error: ${String((err as Error)?.message || err)}` }, 500);
+    return makeJson(req)({ error: `Server error: ${String((err as Error)?.message || err)}` }, 500);
   }
 });

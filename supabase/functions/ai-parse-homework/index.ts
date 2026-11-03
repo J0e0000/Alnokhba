@@ -11,10 +11,54 @@
 // عبر المحلّل المحلي في src/lib/hwQuiz.js).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+import { createClient } from 'npm:@supabase/supabase-js@2'
+
+// ── CORS: allowlist echo (audit hardening) — بدل '*' أي أصل تاني ما يقرأش الرد ──
+const BASE_CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+const APP_ORIGINS = new Set([
+  'https://al-nokhbba.vercel.app',
+  'https://frontend-alfares.vercel.app',
+])
+function allowedOrigin(req) {
+  const o = req.headers.get('origin') || ''
+  if (APP_ORIGINS.has(o)) return o
+  if (/^https:\/\/frontend-alfares-[a-z0-9-]+\.vercel\.app$/.test(o)) return o
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) return o
+  return null
+}
+function corsHeaders(req) {
+  const h = { ...BASE_CORS }
+  const origin = allowedOrigin(req)
+  if (origin) h['Access-Control-Allow-Origin'] = origin
+  return h
+}
+function makeJson(req) {
+  const headers = { ...corsHeaders(req), 'Content-Type': 'application/json' }
+  return (status, body) => new Response(JSON.stringify(body), {
+    status,
+    headers: status === 429 ? { ...headers, 'Retry-After': '60' } : headers,
+  })
+}
+
+// ── Rate limit (consume_rate_limit — migration_049; fail-open) ──────────────
+// تحليل sub من الـ JWT بدون تحقق — المنصة نفسها (verify_jwt=true) تحققت منه
+function jwtSub(authorization) {
+  try {
+    const t = (authorization || '').replace(/^Bearer\s+/i, '')
+    const b64 = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return String(JSON.parse(atob(b64))?.sub || '')
+  } catch { return '' }
+}
+async function rateLimited(key, max, windowSeconds) {
+  try {
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { autoRefreshToken: false, persistSession: false } })
+    const { data, error } = await admin.rpc('consume_rate_limit', { p_key: key, p_max: max, p_window_seconds: windowSeconds })
+    if (error) { console.error('[ai-parse-homework] rate-limit rpc failed:', error.message); return true }
+    return data === true
+  } catch (err) { console.error('[ai-parse-homework] rate-limit rpc threw:', err); return true }
 }
 
 const MAX_BASE64_BYTES = 10 * 1024 * 1024
@@ -36,13 +80,6 @@ const PROMPT = `أنت مساعد متخصص في قراءة أوراق الأس
 
 أرجع بهذا الشكل فقط:
 {"questions":[{"question_text":"...","kind":"mcq","options":["..."],"correct_options":["..."],"explanation":null}]}`
-
-function json(status, body) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  })
-}
 
 async function callGemini(apiKey, base64, mime) {
   const model = 'gemini-2.0-flash'
@@ -106,8 +143,16 @@ function extractJson(text) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS })
+  const json = makeJson(req) // per-request CORS echo — shadows module helper
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(req) })
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' })
+
+  // Rate limit: 20 ملف / 5 دقائق لكل مستر — تكلفة الـ AI هي اللي بنحميها
+  const identity = jwtSub(req.headers.get('authorization'))
+    || (req.headers.get('x-forwarded-for') || 'unknown').split(',')[0].trim()
+  if (!(await rateLimited(`aiph:${identity}`, 20, 300))) {
+    return json(429, { error: 'rate_limited', message: 'محاولات تحليل كتير جدًا في وقت قصير — استنى شوية ثم أعد المحاولة' })
+  }
 
   let body
   try { body = await req.json() } catch { return json(400, { error: 'invalid_json' }) }

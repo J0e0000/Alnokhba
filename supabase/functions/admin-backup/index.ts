@@ -74,17 +74,36 @@ const RESTORE_TABLES = [
   "standalone_exams", "standalone_exam_scores",
 ]
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+// ── CORS: allowlist echo (audit hardening) — بدل '*' ──────────────────────────────
+const BASE_CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
+const APP_ORIGINS = new Set([
+  "https://al-nokhbba.vercel.app",
+  "https://frontend-alfares.vercel.app",
+])
+function allowedOrigin(req: Request): string | null {
+  const o = req.headers.get("origin") || ""
+  if (APP_ORIGINS.has(o)) return o
+  if (/^https:\/\/frontend-alfares-[a-z0-9-]+\.vercel\.app$/.test(o)) return o
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) return o
+  return null
+}
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = allowedOrigin(req)
+  const h: Record<string, string> = { ...BASE_CORS }
+  if (origin) h["Access-Control-Allow-Origin"] = origin
+  return h
+}
 
-function json(body: Record<string, unknown>, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  })
+function makeJson(req: Request) {
+  const headers = { ...corsHeaders(req), "Content-Type": "application/json" }
+  return (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: status === 429 ? { ...headers, "Retry-After": "60" } : headers,
+    })
 }
 
 function waitUntil(promise: Promise<unknown>) {
@@ -488,7 +507,8 @@ async function rateLimited(key: string, max: number, windowSeconds: number): Pro
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
+  const json = makeJson(req); // per-request CORS echo
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(req) })
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405)
 
   const url = Deno.env.get("SUPABASE_URL")
