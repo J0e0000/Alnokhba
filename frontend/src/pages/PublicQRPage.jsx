@@ -3,9 +3,11 @@
  * No authentication required — access is controlled entirely by the token.
  *
  * Shows: student card (name/rank/points), collapsible QR code, today's
- * session status, announcements feed, recent activity, homework tasks,
- * exam/quiz results, attendance streak, a WhatsApp button to the teacher,
- * and a "download monthly report" button.
+ * session status, the weekly lecture table for the student's stage (all the
+ * teacher's groups in the student's grade — migration 062), announcements
+ * feed, recent activity, homework tasks, exam/quiz results, attendance
+ * streak, a WhatsApp button to the teacher, and a "download monthly report"
+ * button.
  *
  * Auto-refreshes every 10s while open (safety-net polling) PLUS instantly
  * whenever the teacher's dashboard broadcasts a refresh ping (Round 7) —
@@ -111,7 +113,7 @@ export default function PublicQRPage() {
       const tnCachePre = teacherNameCacheRef.current
       const tnCacheFreshPre = tnCachePre.name !== null && (Date.now() - tnCachePre.at) < TEACHER_NAME_TTL_MS
       const needTeacherName = !isBackgroundRefresh || reason === 'visible' || !tnCacheFreshPre
-      const [dataRes, accessRes, teacherNameRes, standaloneRes, onlineRes] = await Promise.all([
+      const [dataRes, accessRes, teacherNameRes, standaloneRes, onlineRes, stageScheduleRes] = await Promise.all([
         supabase.rpc('get_student_portal_data', { p_token: token }),
         supabase.rpc('get_student_portal_access', { p_token: token }),
         needTeacherName ? supabase.rpc('get_portal_teacher_name', { p_token: token }) : Promise.resolve(null),
@@ -121,10 +123,21 @@ export default function PublicQRPage() {
         // Online exams (migration_057) — OPTIONAL: list without questions
         // (questions are only returned by start_online_exam when the timer starts).
         supabase.rpc('get_student_online_exams', { p_token: token }),
+        // Weekly lecture table for the student's stage (migration_062) — OPTIONAL:
+        // if the RPC is missing (migration not run yet) the card just hides.
+        supabase.rpc('get_student_stage_schedule', { p_token: token }),
       ])
       if (standaloneRes?.error) console.warn('[PublicQRPage] optional standalone-exams RPC failed:', standaloneRes.error.message || standaloneRes.error)
       if (onlineRes?.error) console.warn('[PublicQRPage] optional online-exams RPC failed:', onlineRes.error.message || onlineRes.error)
+      if (stageScheduleRes?.error) console.warn('[PublicQRPage] optional stage-schedule RPC failed:', stageScheduleRes.error.message || stageScheduleRes.error)
       const onlineResults = (!onlineRes?.error && onlineRes?.data) ? { serverNow: onlineRes.data.server_now, exams: asArray(onlineRes.data.exams) } : null
+      // Stage lecture table (migration_062): null = RPC missing/failed → the
+      // whole section hides (same graceful-degradation rule as 052/057).
+      const stageScheduleData = (!stageScheduleRes?.error && stageScheduleRes?.data && typeof stageScheduleRes.data === 'object' && !Array.isArray(stageScheduleRes.data))
+        ? stageScheduleRes.data
+        : null
+      const stageSchedule = stageScheduleData ? buildStageScheduleRows(stageScheduleData.schedule) : null
+      const stageName = stageScheduleData ? asText(stageScheduleData.stage) : null
       const { data: payload, error } = dataRes
       if (error) {
         console.error('[PublicQRPage] RPC error:', error.message || error, 'code:', error.code)
@@ -346,6 +359,8 @@ export default function PublicQRPage() {
         examResults,
         standaloneExams: standaloneResults,
         onlineExams: onlineResults,
+        stageSchedule,
+        stageName,
         streak,
         tokenSource: payload.token_source || 'db',
         accessStatus,
@@ -906,7 +921,7 @@ export default function PublicQRPage() {
       </Shell>
     )
   }
-  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, standaloneExams, onlineExams, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
+  const { student, ranks, sessionToday, lessonSessions, lessonAttendance, upcomingSessions, announcements, activity, homework, examResults, standaloneExams, onlineExams, stageSchedule, stageName, streak, whatsappNumber, paymentSummary, lessonPrice, notifications: portalNotifications, unreadNotificationCount, branding, accessStatus, teacherName } = portal
   const rank = getStudentRank(student.points, ranks)
   const lessonTimeline = buildLessonTimeline(lessonSessions, sessionToday, upcomingSessions, lessonAttendance)
 
@@ -1081,6 +1096,35 @@ export default function PublicQRPage() {
           </div>
         )) : <EmptyLine text="لا يوجد سجل حصة حتى الآن" />}
       </SectionCard>
+
+      {/* Stage lecture table (062): كل محاضرات المستر لمرحلة الطالب — الأيام والمجموعات.
+          نهارده يطفو أولًا وبيتعلّم بشارة ذهبية؛ الباقي بترتيب الأسبوع (الأحد → السبت). */}
+      {stageSchedule && stageSchedule.length > 0 && (
+        <SectionCard title={stageName ? `جدول محاضرات ${stageName}` : 'جدول محاضرات مرحلتك'}>
+          <table style={scheduleTable}>
+            <thead>
+              <tr>
+                <th style={scheduleTh}>اليوم</th>
+                <th style={scheduleTh}>المجموعة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stageSchedule.map((row, i) => {
+                const isToday = row.weekday === new Date().getDay()
+                return (
+                  <tr key={`${row.weekday}-${row.group_name}-${i}`} style={isToday ? scheduleTodayRow : undefined}>
+                    <td style={scheduleTd}>
+                      {WEEKDAY_NAMES[row.weekday] || String(row.weekday)}
+                      {isToday && <span style={scheduleTodayBadge}>النهاردة</span>}
+                    </td>
+                    <td style={scheduleTd}>{row.group_name || '—'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </SectionCard>
+      )}
 
       {/* Announcements */}
       <SectionCard title={`الإعلانات${announcements.length ? ` (${announcements.length})` : ''}`}>
@@ -1433,6 +1477,22 @@ function buildActivityFeed(attendance, behavior) {
   return items.slice(0, 10)
 }
 
+// Stage lecture table (migration 062): raw schedule rows from the RPC —
+// [{ group_name, weekday }]. Today's lectures float to the top so
+// «محاضرات النهاردة» are the first thing the parent sees; the rest keep the
+// week order (الأحد → السبت، 0..6 — same numbering as getDay()). Rows that
+// are not well-formed are dropped instead of crashing the portal render.
+function buildStageScheduleRows(raw) {
+  const today = new Date().getDay()
+  return asArray(raw)
+    .filter((r) => r && typeof r === 'object' && Number.isInteger(r.weekday) && r.weekday >= 0 && r.weekday <= 6)
+    .map((r) => ({ group_name: asText(r.group_name || ''), weekday: r.weekday }))
+    .sort((a, b) =>
+      ((a.weekday === today) ? 0 : 1) - ((b.weekday === today) ? 0 : 1)
+      || a.weekday - b.weekday
+      || a.group_name.localeCompare(b.group_name, 'ar'))
+}
+
 function buildUpcomingSessions(weekdays, count) {
   if (!weekdays || weekdays.length === 0) return []
   const result = []
@@ -1729,6 +1789,12 @@ const emptyText = { fontSize: '13px', color: GRAY_400, margin: 0, textAlign: 'ce
 // cards — practically invisible. Switched to a readable slate gray, and the
 // dividers used a white alpha that was invisible on the light background.
 const feedItem = { paddingBottom: 10, borderBottom: '1px solid rgba(148,163,184,0.25)' }
+// Stage lecture table (062) — جدول يوم/مجموعة بسيط بنفس لغة كروت البوابة
+const scheduleTable = { width: '100%', borderCollapse: 'collapse', fontSize: '13px' }
+const scheduleTh = { textAlign: 'right', color: GRAY_400, fontWeight: 700, fontSize: '11.5px', padding: '4px 8px 6px', borderBottom: '2px solid rgba(148,163,184,0.35)' }
+const scheduleTd = { padding: '8px', borderBottom: '1px solid rgba(148,163,184,0.2)', color: NAVY, fontWeight: 600 }
+const scheduleTodayRow = { background: 'rgba(251,156,27,0.12)' }
+const scheduleTodayBadge = { display: 'inline-block', marginRight: 6, background: 'rgba(251,156,27,0.18)', color: GOLD, fontWeight: 800, fontSize: '10px', padding: '1px 7px', borderRadius: 999 }
 const feedTitle = { fontSize: '13px', fontWeight: 800, color: NAVY, margin: '0 0 2px 0' }
 const feedMsg = { fontSize: '13px', color: '#475569', margin: '0 0 4px 0', lineHeight: 1.5 }
 const feedDate = { fontSize: '10.5px', color: GRAY_400, margin: 0 }

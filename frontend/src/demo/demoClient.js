@@ -1050,6 +1050,37 @@ function rpcCall(db, name, args) {
         })
       return { data: { server_now: iso(0), exams }, error: null }
     }
+    case 'get_student_stage_schedule': {
+      // Mirrors migration_062: the weekly lecture table for the student's
+      // stage — every group of the teacher whose stage CATEGORY matches the
+      // student's (same stageCategoryOf semantics as lib/helpers.js: «الأول
+      // الثانوي» / «ثانوي» / hamza-less free text all collapse to one
+      // category). Demo stage source: students.stage → group_meta fallback
+      // (group_meta plays the role of production groups.stage).
+      const student = demoStudentFromToken(db, args.p_token)
+      if (!student) return { data: null, error: null }
+      const demoStageCategory = (s) => {
+        const v = String(s || '').trim()
+        if (!v) return ''
+        if (v.includes('ابتدائي')) return 'ابتدائي'
+        if (v.includes('إعدادي') || v.includes('اعدادي')) return 'إعدادي'
+        if (v.includes('ثانوي')) return 'ثانوي'
+        return ''
+      }
+      // Demo stage source: students.stage → teacher_settings.group_meta
+      // (group_meta inside teacher_settings plays the role of production
+      // groups.stage — same place the workspace UI reads it from).
+      const gm = (db.teacher_settings && db.teacher_settings[0] && db.teacher_settings[0].group_meta) || {}
+      const stage = String(student.stage || '').trim() || String(gm[student.group_name]?.stage || '').trim()
+      const category = demoStageCategory(stage)
+      if (!category) return { data: { stage: '', category: '', schedule: [] }, error: null }
+      const schedule = (db.group_schedule || [])
+        .filter((g) => g.teacher_id === student.teacher_id
+          && demoStageCategory(gm[g.group_name]?.stage) === category)
+        .map((g) => ({ group_name: g.group_name, weekday: g.weekday }))
+        .sort((a, b) => a.weekday - b.weekday || a.group_name.localeCompare(b.group_name, 'ar'))
+      return { data: { stage, category, schedule }, error: null }
+    }
     case 'start_online_exam': {
       const student = demoStudentFromToken(db, args.p_token)
       if (!student) return fail('invalid_token')
