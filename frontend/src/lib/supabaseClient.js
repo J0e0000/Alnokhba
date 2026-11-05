@@ -29,29 +29,59 @@ if (IS_DEMO) {
     return null
   })
 } else {
-  // PERF (performance round, dev-only): in dev builds the client gets a tiny
-  // instrumented fetch that counts every REST/RPC call and flags slow ones
-  // into __NK_PERF (see src/lib/devPerf.js). Production keeps the stock
-  // client — zero instrumentation cost, zero behavior change.
+  // PROD/DEV fetch guard (see watchdog note below): production wraps every
+  // supabase fetch in a hard timeout so a stalled mobile connection can
+  // never freeze the app on an infinite «جاري التحميل...» screen. The old
+  // dev-only perf instrumentation (devPerf markQuery) was removed here when
+  // the watchdog landed — devPerf.js stays for any other dev tooling.
   const baseFetch = (...args) => globalThis.fetch(...args)
-  const instrumentedFetch = import.meta.env.DEV
-    ? async (url, options = {}) => {
-        const t0 = performance.now()
-        try {
-          return await baseFetch(url, options)
-        } finally {
-          try {
-            const u = String(url)
-            const label = u.includes('/rest/v1/rpc/')
-              ? `rpc:${u.split('/rest/v1/rpc/')[1].split('?')[0]}`
-              : `table:${u.split('/rest/v1/')[1]?.split('?')[0] || 'auth'}`
-            const { markQuery } = await import('./devPerf')
-            markQuery(label, performance.now() - t0)
-          } catch { /* diagnostics never break the app */ }
-        }
+  /* PROD FETCH WATCHDOG (stuck-boot fix, 2026-11-05).
+     WHY: on real mobile networks a TCP connection sometimes STALLS — the
+     request never completes AND never fails, so every await hangs FOREVER.
+     Every «جاري التحميل...» screen in the app (Gate, portal Promise.all,
+     WorkspaceStore, areas) sits on top of a fetch, so ONE stalled fetch =
+     the app looks permanently broken to that user. The profile chain
+     already had per-attempt timeouts; the portal/areas/workspace queries
+     did NOT.
+     FIX: hard 20s cap on EVERY production supabase fetch + one silent
+     automatic retry for idempotent GETs (retried GET is always safe; POSTs
+     surface their error to the existing per-screen retry UIs instead of
+     hanging). Storage endpoints get a 120s cap instead of 20s — a real
+     multi-MB upload on slow mobile data is LEGITIMATELY slower than 20s.
+     ES2019-safe: no AbortSignal.timeout(). */
+  const WATCHDOG_MS = 20000
+  const WATCHDOG_STORAGE_MS = 120000
+  const prodFetch = (...args) => {
+    const url = String(args[0] || '')
+    const options = args[1] || {}
+    const cap = url.includes('/storage/v1/') ? WATCHDOG_STORAGE_MS : WATCHDOG_MS
+    const method = String(options.method || 'GET').toUpperCase()
+    const idempotent = method === 'GET' || method === 'HEAD'
+    const runOnce = () => new Promise((resolve, reject) => {
+      // Abort the underlying request on timeout so a stalled socket is
+      // actually released — EXCEPT when the caller supplied its own signal
+      // (then we leave their request untouched and only stop waiting).
+      const ownsSignal = !options.signal
+      const ctrl = ownsSignal ? new AbortController() : null
+      const timer = setTimeout(() => {
+        if (ctrl) { try { ctrl.abort() } catch { /* already aborted */ } }
+        reject(new Error('nokhba-fetch-watchdog-timeout'))
+      }, cap)
+      Promise.resolve(baseFetch(url, ctrl ? { ...options, signal: ctrl.signal } : options)).then(
+        (v) => { clearTimeout(timer); resolve(v) },
+        (e) => { clearTimeout(timer); reject(e) },
+      )
+    })
+    if (!idempotent) return runOnce()
+    return runOnce().catch((e) => {
+      if (`${e?.message || ''}`.includes('nokhba-fetch-watchdog-timeout')) {
+        console.warn('[supabaseClient] stalled GET retried after watchdog:', url.split('?')[0])
+        return runOnce()
       }
-    : undefined
-  resolved = createClient(supabaseUrl, supabaseAnonKey, instrumentedFetch ? { global: { fetch: instrumentedFetch } } : undefined)
+      throw e
+    })
+  }
+  resolved = createClient(supabaseUrl, supabaseAnonKey, { global: { fetch: prodFetch } })
 }
 
 /* Deep-queueing placeholder (preview-panel crash fix, 2026-09-17).

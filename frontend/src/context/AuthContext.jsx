@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { initUndoManager, resetUndoManager } from '../lib/undoManager'
 import { clearQueue } from '../lib/offlineQueue'
@@ -73,6 +73,25 @@ export function AuthProvider({ children }) {
   // صحيح لو فشل تحميل البروفايل نهائيًا بعد كل المحاولات — بيفعّل حلقة الإصلاح الذاتي تحت
   const [profileError, setProfileError] = useState(false)
 
+  // LOADING WATCHDOG (stuck-boot fix, 2026-11-05) — defense-in-depth over the
+  // supabaseClient fetch watchdog. Every legitimate path that keeps `loading`
+  // true is bounded (profile chain ≤ ~62s per leg worst case). If loading is
+  // STILL true after 75s something is truly stuck; flipping it false renders
+  // a RECOVERABLE screen instead of an eternal spinner:
+  //   session && !profile → the network status screen (manual retry + the
+  //   background self-heal loop keeps running; a late-arriving profile still
+  //   renders the app normally).  !session → login/landing. No data loss.
+  const loadingWatchRef = useRef(null)
+  useEffect(() => {
+    clearTimeout(loadingWatchRef.current)
+    if (!loading) return undefined
+    loadingWatchRef.current = setTimeout(() => {
+      console.error('[AuthContext] loading watchdog fired after 75s — forcing loading=false')
+      setLoading(false)
+    }, 75000)
+    return () => clearTimeout(loadingWatchRef.current)
+  }, [loading])
+
   // تسجيل خروج تلقائي بعد فترة عدم نشاط طويلة، لحماية الحساب لو الجهاز اتسيب مفتوح
   useEffect(() => {
     if (!session) return
@@ -121,6 +140,7 @@ export function AuthProvider({ children }) {
       setProfile(null)
       setOwnerProfile(null)
       setProfileError(true)
+      setLoading(false)
       throw loadError
     }
     setProfile(data)

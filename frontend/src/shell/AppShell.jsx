@@ -29,14 +29,25 @@ import AreaErrorBoundary from '../components/AreaErrorBoundary'
 // ANALYTICS RESTRUCTURE: the old "التحليلات" dashboard area was merged into
 // فريق التحليل, which now lives INSIDE Settings (owner request) — one simple
 // infographic report, no standalone area, no account-menu entry.
-const StudentsArea = lazy(() => import('../areas/StudentsArea'))
-const HistoryArea = lazy(() => import('../areas/HistoryArea'))
-const ReportsArea = lazy(() => import('../areas/ReportsArea'))
-const SettingsArea = lazy(() => import('../areas/SettingsArea'))
-const HomeworkArea = lazy(() => import('../areas/HomeworkArea'))
+const StudentsArea = lazySafe(() => import('../areas/StudentsArea'))
+const HistoryArea = lazySafe(() => import('../areas/HistoryArea'))
+const ReportsArea = lazySafe(() => import('../areas/ReportsArea'))
+const SettingsArea = lazySafe(() => import('../areas/SettingsArea'))
+const HomeworkArea = lazySafe(() => import('../areas/HomeworkArea'))
 
 const AREA_FALLBACK_AR = 'جاري التحميل...'
 const AREA_FALLBACK_EN = 'Loading...'
+
+/* LAZY STALL BUSTER (stuck-boot fix, 2026-11-05) — same contract as App.jsx:
+   an import() that silently stalls on mobile networks would otherwise pin
+   the area fallback «جاري التحميل...» forever. The 30s rejection reaches
+   the AreaErrorBoundary around each area and shows the recovery card. */
+function lazySafe(loader) {
+  return lazy(() => Promise.race([
+    Promise.resolve().then(loader),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('lazy-chunk-stall-timeout')), 30000)),
+  ]))
+}
 import useIsMobile from './useIsMobile'
 
 

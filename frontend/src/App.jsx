@@ -22,19 +22,35 @@ import WhatsAppHandoffBar from './components/WhatsAppHandoffBar'
    and html2canvas-pro. Login and the landing page stay eager (they are the
    anonymous entry points); everything else is code-split and streams in on
    demand over the existing branded boot splash. */
-const ResetPassword = lazy(() => import('./pages/ResetPassword'))
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
-const SubscriptionGate = lazy(() => import('./pages/SubscriptionGate'))
-const PublicQRPage = lazy(() => import('./pages/PublicQRPage'))
+
+/* LAZY STALL BUSTER (stuck-boot fix, 2026-11-05): a dynamic import() whose
+   TCP connection STALLS on a mobile network never settles — the Suspense
+   fallback («جاري التحميل...») would sit there FOREVER with no timeout and
+   no error. Race every lazy chunk against a 30s timer: on a stall the
+   rejection reaches the surrounding error boundary (AreaErrorBoundary /
+   ProductionErrorBoundary) which shows the RECOVERY card (reload + hard
+   reset). A slow-but-progressing download still wins the race — only a
+   fully silent stall trips this. */
+function lazySafe(loader) {
+  return lazy(() => Promise.race([
+    Promise.resolve().then(loader),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('lazy-chunk-stall-timeout')), 30000)),
+  ]))
+}
+
+const ResetPassword = lazySafe(() => import('./pages/ResetPassword'))
+const AdminDashboard = lazySafe(() => import('./pages/AdminDashboard'))
+const SubscriptionGate = lazySafe(() => import('./pages/SubscriptionGate'))
+const PublicQRPage = lazySafe(() => import('./pages/PublicQRPage'))
 // /hw/:token — صفحة الواجبات المخصصة (Task 44d): عامة بالتوكن بدون تسجيل دخول
-const PublicHomeworkPage = lazy(() => import('./pages/PublicHomeworkPage'))
-const Onboarding = lazy(() => import('./pages/Onboarding'))
-const StatusPage = lazy(() => import('./pages/StatusPage'))
-const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
-const AuthAction = lazy(() => import('./pages/AuthAction'))
-const Signup = lazy(() => import('./pages/Signup'))
-const MarketingRouter = lazy(() => import('./marketing/MarketingRouter'))
-const CentersApp = lazy(() => import('./centers/CentersApp'))
+const PublicHomeworkPage = lazySafe(() => import('./pages/PublicHomeworkPage'))
+const Onboarding = lazySafe(() => import('./pages/Onboarding'))
+const StatusPage = lazySafe(() => import('./pages/StatusPage'))
+const PrivacyPage = lazySafe(() => import('./pages/PrivacyPage'))
+const AuthAction = lazySafe(() => import('./pages/AuthAction'))
+const Signup = lazySafe(() => import('./pages/Signup'))
+const MarketingRouter = lazySafe(() => import('./marketing/MarketingRouter'))
+const CentersApp = lazySafe(() => import('./centers/CentersApp'))
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center bg-brand-bg text-fg-subtle text-sm">
