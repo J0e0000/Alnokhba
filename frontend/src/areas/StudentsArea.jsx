@@ -390,6 +390,7 @@ export default function StudentsArea() {
         groups={ws.groups}
         groupMeta={ws.groupMeta}
         students={ws.students}
+        multiGroup={ws.multiGroupEnabled}
         onClose={() => setStudentModal({ open: false, student: null })}
         onSave={async (form) => {
           const result = await ws.saveStudent(form, studentModal.student)

@@ -28,6 +28,7 @@
 import { weekStart, weekEnd, localISODate, attendanceDateOf } from './week.js'
 import { INSIGHT_CONFIG } from './insights/engine.js'
 import { getStudentRank, getStudentRankPosition } from './helpers.js'
+import { studentInGroup } from '../lib/helpers'
 
 const HW_DONE = new Set(['مكتمل', 'تم'])
 const HW_APPLICABLE = new Set(['مكتمل', 'تم', 'ناقص', 'لم يتم'])
@@ -229,7 +230,7 @@ export function followUpStudents({ groupName, students = [], allAttendance = [],
 export function groupWeekStats({ groupName, students = [], allAttendance = [], lessonSessions = [], examScoresByStudent = {}, startISO, endISO, warningsThreshold, now = new Date() }) {
   const sessions = completedSessionsInWindow(lessonSessions, groupName, startISO, endISO)
   const sessionIds = new Set(sessions.map((l) => l.id))
-  const groupStudents = (students || []).filter((s) => s.group_name === groupName)
+  const groupStudents = (students || []).filter((s) => studentInGroup(s, groupName))
   const groupIds = new Set(groupStudents.map((s) => s.id))
   const rows = latestRecordPerStudentSession(
     (allAttendance || []).filter((r) => sessionIds.has(r.lesson_session_id) && groupIds.has(r.student_id)),

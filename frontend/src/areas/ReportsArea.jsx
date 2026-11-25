@@ -7,7 +7,7 @@ import RecipientPickerModal from '../components/RecipientPickerModal'
 import ReportStudioModal from '../components/ReportStudioModal'
 import CustomMessageModal from '../components/CustomMessageModal'
 import { buildAttendanceMessage, getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateLessonSummaryPDF } from '../lib/qrPdfWhatsApp'
-import { isValidPhone } from '../lib/helpers'
+import { isValidPhone, studentInGroup } from '../lib/helpers'
 import { normalizeEgyptianPhone } from '../lib/helpers'
 import { friendlySaveErrorText } from '../lib/friendlyError'
 import { track } from '../lib/posthog'
@@ -45,7 +45,7 @@ export default function ReportsArea() {
     try {
       const { data: rows } = await supabaseLessonAttendance(lesson.id)
       const attendanceMap = Object.fromEntries((rows || []).map((r) => [r.student_id, r]))
-      const groupStudents = ws.students.filter((s) => s.group_name === group)
+      const groupStudents = ws.students.filter((s) => studentInGroup(s, group))
       const candidates = groupStudents.map((s) => {
         const row = attendanceMap[s.id]
         const status = row?.status || 'لم يرصد'
@@ -80,7 +80,7 @@ export default function ReportsArea() {
   const buildQRQueue = async () => {
     setBusy('qr')
     try {
-      const groupStudents = ws.students.filter((s) => s.group_name === group)
+      const groupStudents = ws.students.filter((s) => studentInGroup(s, group))
       const template = ws.settings?.qr_message_template || ''
       const results = await Promise.all(groupStudents.map(async (s) => {
         const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
@@ -125,7 +125,7 @@ export default function ReportsArea() {
   }
 
   const bulkWelcome = () => {
-    const groupStudents = ws.students.filter((s) => s.group_name === group)
+    const groupStudents = ws.students.filter((s) => studentInGroup(s, group))
     const candidates = groupStudents.map((s) => {
       const hasPhone = Boolean(s.phone && isValidPhone(s.phone))
       return {
@@ -148,7 +148,7 @@ export default function ReportsArea() {
   // select above), pick the exact students, write the text once, and the
   // send queue personalizes it per student ({studentName} {group} {date}).
   const openCustomMessagePicker = () => {
-    const groupStudents = ws.students.filter((s) => s.group_name === group)
+    const groupStudents = ws.students.filter((s) => studentInGroup(s, group))
     if (!groupStudents.length) { ws.showToast?.(isArabic ? 'مفيش طلاب في المجموعة دي' : 'No students in this group', 'error'); return }
     const candidates = groupStudents.map((s) => {
       const hasPhone = Boolean(s.phone && isValidPhone(s.phone))

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { HOMEWORK_PRESETS } from '../lib/hwQuiz'
+import { studentInGroup } from '../lib/helpers'
 import TourOverlay from '../components/TourOverlay'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -42,7 +43,7 @@ export default function HomeworkArea() {
     const m = {}
     tasks.forEach((t) => {
       const rows = subs.filter((s) => s.task_id === t.id)
-      const pool = t.group_name ? ws.students.filter((s) => s.group_name === t.group_name) : ws.students
+      const pool = t.group_name ? ws.students.filter((s) => studentInGroup(s, t.group_name)) : ws.students
       const vals = rows.map((r) => (Number(t.max_score) > 0 ? (Number(r.score) || 0) / Number(t.max_score) * 100 : 0))
       m[t.id] = {
         solved: rows.length,

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useMemo, useState, useEffect } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../../store/WorkspaceStore'
+import { studentInGroup } from '../../lib/helpers'
 import Modal from '../../components/Modal'
 
 // PERF (performance round): html5-qrcode (~230 KB minified) streams in the
@@ -51,7 +52,7 @@ export default function AttendanceTab({ groupId, lessonOpen, editingPast, onComp
   const editOpts = lessonOpen ? undefined : { allowCompleted: true }
 
   const students = ws.sessionStudentsFor(groupId)
-  const archivedForGroup = useMemo(() => (ws.archivedStudents || []).filter((s) => s.group_name === groupId), [ws.archivedStudents, groupId])
+  const archivedForGroup = useMemo(() => (ws.archivedStudents || []).filter((s) => studentInGroup(s, groupId)), [ws.archivedStudents, groupId])
   const attendanceMap = ws.lessonAttendanceByStudent
   const counts = ws.countsForLesson(groupId)
 

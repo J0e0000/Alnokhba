@@ -1,4 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
+import { studentInGroup } from '../../lib/helpers'
 // SMART INSIGHTS ENGINE (فريق التحليل)
 //
 // Core philosophy (product spec): a detected pattern is only a FINDING.
@@ -166,7 +167,7 @@ export function runInsightAnalysis(input = {}) {
 
   for (const group of groups) {
     const gSessions = completed.filter((s) => s.group_name === group)
-    const gStudents = students.filter((s) => s.group_name === group)
+    const gStudents = students.filter((s) => studentInGroup(s, group))
     const res = { group, sessions: gSessions, students: gStudents, cur: [], prev: [] }
     for (const s of gSessions) {
       const recs = recordsBySession.get(s.id) || []
@@ -365,7 +366,7 @@ export function runInsightAnalysis(input = {}) {
   }
 
   for (const [group, list] of declinedByGroup) {
-    const groupStudents = students.filter((s) => s.group_name === group)
+    const groupStudents = students.filter((s) => studentInGroup(s, group))
     const withScores = groupStudents.filter((s) => (scoresByStudent[s.id] || []).length >= cfg.examMinExams)
     if (withScores.length < cfg.minPopulation) continue
     findingsTotal += 1

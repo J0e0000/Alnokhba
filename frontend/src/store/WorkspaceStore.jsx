@@ -8,7 +8,7 @@ import useOfflineSync from '../hooks/useOfflineSync'
 import { pushAction, undoLast, redoLast, undoById, getRedoCount } from '../lib/undoManager'
 import { addToQueue, syncQueue } from '../lib/offlineQueue'
 import { pingPortalRefresh, disposeOtherPortalRefreshSenders } from '../lib/portalRealtime'
-import { generateStudentCode, checkAcademicWarning, normalizeGradeScale } from '../lib/helpers'
+import { generateStudentCode, checkAcademicWarning, normalizeGradeScale, studentAllGroups, studentInGroup } from '../lib/helpers'
 import { markRender } from '../lib/devPerf'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -115,6 +115,23 @@ export function WorkspaceProvider({ children }) {
   const isOnlineRef = useRef(isOnline); isOnlineRef.current = isOnline
   const isArabicRef = useRef(isArabic); isArabicRef.current = isArabic
   const isSavingRef = useRef(isSaving); isSavingRef.current = isSaving
+
+  // Multi-group enrollment — enabled only when the students.extra_groups
+  // column exists in the database (migration 064). The probe is one cheap
+  // head request; a missing column → PostgREST 400 → single-group UI exactly
+  // as before, so this build deploys safely ahead of the DB change.
+  const [multiGroupEnabled, setMultiGroupEnabled] = useState(false)
+  const multiGroupRef = useRef(false); multiGroupRef.current = multiGroupEnabled
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const { error } = await supabase.from('students').select('extra_groups', { head: true })
+        if (alive) setMultiGroupEnabled(!error)
+      } catch { if (alive) setMultiGroupEnabled(false) }
+    })()
+    return () => { alive = false }
+  }, [])
   const teacherIdRef = useRef(effectiveTeacherId); teacherIdRef.current = effectiveTeacherId
   const updateSettingsRef = useRef(updateSettings); updateSettingsRef.current = updateSettings
   const tRef = useRef(t); tRef.current = t
@@ -661,7 +678,7 @@ export function WorkspaceProvider({ children }) {
     if (cache.map.has(groupName)) return cache.map.get(groupName)
     // المؤرشفون خارج مسار العمل اليومي (حضور/درجات/تقارير) — سجلاتهم كاملة،
     // والاسترجاع من صفحة الطلاب أو شريط «المؤرشفون» هنا في تاب الحضور.
-    const result = studentsRef.current.filter((s) => s.group_name === groupName && !s.archived).map((s) => ({
+    const result = studentsRef.current.filter((s) => studentInGroup(s, groupName) && !s.archived).map((s) => ({
       ...s,
       attendance_status: activeLessonIdRef.current ? (lessonAttendanceRef.current[s.id]?.status || 'لم يرصد') : s.attendance_status,
       hw_status: activeLessonIdRef.current ? (lessonAttendanceRef.current[s.id]?.homework_status || 'لم يرصد') : s.hw_status,
@@ -756,7 +773,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonIdOverride || null
     } else {
       const today = todayISO()
-      lessonId = lessonSessions.find((lesson) => lesson.group_name === s.group_name && lesson.session_date === today && lesson.status === 'open')?.id || null
+      lessonId = lessonSessions.find((lesson) => lesson.session_date === today && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
     if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
@@ -860,7 +877,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonIdOverride || null
     } else {
       const today = todayISO()
-      lessonId = lessonSessions.find((lesson) => lesson.group_name === s.group_name && lesson.session_date === today && lesson.status === 'open')?.id || null
+      lessonId = lessonSessions.find((lesson) => lesson.session_date === today && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
     if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
@@ -1066,7 +1083,7 @@ export function WorkspaceProvider({ children }) {
         .eq('teacher_id', effectiveTeacherId).eq('lesson_session_id', lessonId).order('recorded_at', { ascending: false }).limit(5000)
       if (rowsError) throw rowsError
       const finalMap = (finalRows || []).reduce((map, row) => { if (!map[row.student_id] || new Date(row.recorded_at) > new Date(map[row.student_id].recorded_at)) map[row.student_id] = row; return map }, {})
-      const groupStudents = students.filter((s) => s.group_name === targetGroup)
+      const groupStudents = students.filter((s) => studentInGroup(s, targetGroup))
       const missingFinalState = groupStudents.some((student) => !finalMap[student.id] || !['حاضر', 'غائب'].includes(finalMap[student.id].status))
       if (missingFinalState) throw new Error(isArabic ? 'لم يكتمل سجل الحضور لكل طلاب المجموعة. لم يتم إرسال التحديث.' : 'The final attendance state is incomplete. The portal update was not sent.')
       setLessonAttendanceByStudent(finalMap)
@@ -1133,7 +1150,7 @@ export function WorkspaceProvider({ children }) {
   const markGroupAbsences = async (groupName, lessonIdOverride, opts = {}) => {
     const isArabic = isArabicRef.current
     if (!groupName) return 0
-    const list = studentsRef.current.filter((s) => s.group_name === groupName)
+    const list = studentsRef.current.filter((s) => studentInGroup(s, groupName))
     const attendance = lessonAttendanceRef.current
     const pending = list.filter((s) => {
       const current = lessonIdOverride ? attendance[s.id]?.status : s.attendance_status
@@ -1152,7 +1169,7 @@ export function WorkspaceProvider({ children }) {
   // write is fully independent (per-student RPC + per-student points row),
   // so they now run in parallel: wall-clock ≈ 1 round-trip.
   const markAllPresent = async (groupName, lessonIdOverride, opts = {}) => {
-    const list = studentsRef.current.filter((s) => s.group_name === groupName)
+    const list = studentsRef.current.filter((s) => studentInGroup(s, groupName))
     const lessonAttendanceByStudent = lessonAttendanceRef.current
     const pending = list.filter((s) => {
       const current = lessonIdOverride ? lessonAttendanceByStudent[s.id]?.status : s.attendance_status
@@ -1180,6 +1197,7 @@ export function WorkspaceProvider({ children }) {
         const id = editing.id
         const prev = students.find((s) => s.id === id)
         const patch = { name: form.name, phone: form.phone, stage: form.stage, group_name: form.group }
+        if (multiGroupRef.current && Array.isArray(form.extra_groups)) patch.extra_groups = form.extra_groups
         patchStudent(id, patch, { type: 'student_update', description: `تعديل: ${form.name}` })
         const { error } = await supabase.from('students').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id)
         if (error) throw error
@@ -1187,7 +1205,9 @@ export function WorkspaceProvider({ children }) {
           type: 'student_update', description: `تعديل: ${form.name}`,
           undoFn: async () => {
             if (!prev) return
-            await supabase.from('students').update({ name: prev.name, phone: prev.phone, stage: prev.stage, group_name: prev.group_name, updated_at: new Date().toISOString() }).eq('id', id)
+            const prevRow = { name: prev.name, phone: prev.phone, stage: prev.stage, group_name: prev.group_name, updated_at: new Date().toISOString() }
+            if (multiGroupRef.current && Array.isArray(prev.extra_groups)) prevRow.extra_groups = prev.extra_groups
+            await supabase.from('students').update(prevRow).eq('id', id)
             setStudents((p) => p.map((s) => (s.id === id ? prev : s)))
           },
         })
@@ -1215,6 +1235,7 @@ export function WorkspaceProvider({ children }) {
         )
       }
       const payload = { teacher_id: effectiveTeacherId, code: generateStudentCode(), name: cleanName, phone: String(form.phone || '').trim(), stage: form.stage || null, group_name: form.group || null, points: 0, warnings: 0, attendance_status: 'لم يرصد', hw_status: 'لم يرصد' }
+      if (multiGroupRef.current) payload.extra_groups = Array.isArray(form.extra_groups) ? form.extra_groups : []
       const { data, error } = await supabase.from('students').insert(payload).select().single()
       if (error) throw error
       setStudents((prev) => [...prev, data])
@@ -2067,12 +2088,32 @@ export function WorkspaceProvider({ children }) {
       showToast(isArabic ? 'فشل تحديث مواعيد المجموعة، تم التراجع' : 'Could not update the schedule; rename rolled back', 'error')
       return false
     }
+    // Multi-group students may hold the old name inside extra_groups — the
+    // rename must reach those arrays too (per-row, arrays can't be bulk-updated).
+    const renamedExtras = []
+    let extrasError = null
+    if (multiGroupRef.current) {
+      const affected = studentsRef.current.filter((s) => Array.isArray(s.extra_groups) && s.extra_groups.includes(oldName))
+      for (const st of affected) {
+        const nextExtra = st.extra_groups.map((g) => (g === oldName ? name : g))
+        const { error } = await supabase.from('students').update({ extra_groups: nextExtra, updated_at: new Date().toISOString() }).eq('id', st.id)
+        if (error) { extrasError = error; break }
+        renamedExtras.push({ id: st.id, extra_groups: st.extra_groups })
+      }
+    }
+    if (extrasError) {
+      await updateSettingsRef.current(previousSettings)
+      await supabase.from('group_schedule').update({ group_name: oldName }).eq('teacher_id', teacherIdRef.current).eq('group_name', name)
+      showToast(isArabic ? `فشل تحديث مجموعات الطلاب الإضافية، تم التراجع: ${extrasError.message || ''}` : 'Could not update students extra groups; rename rolled back', 'error')
+      return false
+    }
     const { error: studentsError } = await supabase.from('students')
       .update({ group_name: name, updated_at: new Date().toISOString() })
       .eq('teacher_id', teacherIdRef.current).eq('group_name', oldName)
     if (studentsError) {
       await updateSettingsRef.current(previousSettings)
       await supabase.from('group_schedule').update({ group_name: oldName }).eq('teacher_id', teacherIdRef.current).eq('group_name', name)
+      for (const row of renamedExtras) await supabase.from('students').update({ extra_groups: row.extra_groups }).eq('id', row.id)
       showToast(isArabic ? 'فشل تحديث طلاب المجموعة، تم التراجع' : 'Could not update the students; rename rolled back', 'error')
       return false
     }
@@ -2096,6 +2137,16 @@ export function WorkspaceProvider({ children }) {
       showToast(isArabic ? 'فشل حذف موعد المجموعة، تم التراجع عن الحذف' : 'Could not delete the schedule; deletion was rolled back', 'error')
       return false
     }
+    // Multi-group students lose the deleted group from their extra list
+    // (best-effort; primary group_name keeps the legacy orphan behavior).
+    try {
+      if (multiGroupRef.current) {
+        const affected = studentsRef.current.filter((s) => Array.isArray(s.extra_groups) && s.extra_groups.includes(groupName))
+        for (const st of affected) {
+          await supabase.from('students').update({ extra_groups: st.extra_groups.filter((g) => g !== groupName), updated_at: new Date().toISOString() }).eq('id', st.id)
+        }
+      }
+    } catch (err) { console.warn('deleteGroup extra_groups cleanup:', err) }
     await loadAll()
     refreshTodayGroups()
     showToast(isArabic ? 'تم حذف المجموعة من الحصص' : 'Group removed from sessions', 'success')
@@ -2126,7 +2177,7 @@ export function WorkspaceProvider({ children }) {
     // server state — students هنا النشطون فقط (المؤرشفون في archivedStudents)
     loading, students: activeStudents, archivedStudents, allStudents: students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
-    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
+    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId, multiGroupEnabled,
     standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     // actions (stable — read refs internally)
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData, setActiveLessonId,
@@ -2146,7 +2197,7 @@ export function WorkspaceProvider({ children }) {
     isOnline,
   }), [loading, students, activeStudents, archivedStudents, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
     absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
-    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId,
+    lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId, multiGroupEnabled,
     standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,
     openLessonForGroup, finishLesson, markGroupAbsences, validateBulkRows,

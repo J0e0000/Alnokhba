@@ -44,6 +44,33 @@ export function isStageCompatible(studentStage, groupStage) {
 /** Canonical grade list (ordered) for selects; falls back safely. */
 export const ALL_GRADE_OPTIONS = CORE_GRADE_OPTIONS
 
+// ─── Multi-group enrollment (students.extra_groups text[]) ───────────────────
+// group_name stays the PRIMARY group; extra_groups holds additional names.
+// Every student-membership check in the app goes through these helpers so a
+// student appears in all their groups (sessions, homework, exams, reports)
+// even when the column itself is absent (undefined → primary group only).
+
+/** Additional group names of a student (tolerates a missing/dirty column). */
+export function studentExtraGroups(student) {
+  if (!Array.isArray(student?.extra_groups)) return []
+  return student.extra_groups.filter((g) => typeof g === 'string' && g.trim())
+}
+
+/** All group names of a student — primary first, deduped, order-stable. */
+export function studentAllGroups(student) {
+  const primary = student?.group_name || ''
+  const out = primary ? [primary] : []
+  for (const g of studentExtraGroups(student)) {
+    if (!out.includes(g)) out.push(g)
+  }
+  return out
+}
+
+/** Does this student belong to the given group? (any of their groups) */
+export function studentInGroup(student, groupName) {
+  return !!groupName && studentAllGroups(student).includes(groupName)
+}
+
 /** First canonical grade of a category, or '' when unknown. */
 export function firstGradeOfCategory(category) {
   return GRADES_BY_STAGE[category]?.[0] || ''

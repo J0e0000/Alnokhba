@@ -3,6 +3,7 @@ import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { parseQuestionsText, mapAiQuestions, buildQuizAnalytics, newQuestion, presetQuestions } from '../lib/hwQuiz'
 import { sendHomeworkNotifications } from '../lib/notifyStudents'
+import { studentInGroup } from '../lib/helpers'
 import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -157,7 +158,7 @@ function HomeworkBuilder({ onCreated, onCancel, editTask, onUpdated, preset }) {
     // فوري بلينك يفتح الواجب نفسه (/hw/token/taskId) لطلاب المجموعة أو الكل.
     if (notify) {
       setNotifying(true)
-      const pool = (groupName ? (ws.students || []).filter((s) => s.group_name === groupName) : (ws.students || []))
+      const pool = (groupName ? (ws.students || []).filter((s) => studentInGroup(s, groupName)) : (ws.students || []))
       const res = await sendHomeworkNotifications({ teacherId: ws.effectiveTeacherId, task: saved, students: pool })
       setNotifying(false)
       ws.showToast?.(
@@ -305,7 +306,7 @@ function HomeworkResults({ task }) {
   const [sendingNotif, setSendingNotif] = useState(false)
 
   const pool = useMemo(
-    () => (task.group_name ? ws.students.filter((s) => s.group_name === task.group_name) : ws.students),
+    () => (task.group_name ? ws.students.filter((s) => studentInGroup(s, task.group_name)) : ws.students),
     [ws.students, task.group_name],
   )
   const subsByStudent = useMemo(() => {

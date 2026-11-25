@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import useIsMobile from '../shell/useIsMobile'
-import { DEFAULT_GRADE_SCALE, normalizeGradeScale, gradeOf, isValidPhone, normalizeEgyptianPhone } from '../lib/helpers'
+import { DEFAULT_GRADE_SCALE, normalizeGradeScale, gradeOf, isValidPhone, normalizeEgyptianPhone, studentInGroup } from '../lib/helpers'
 import { DEFAULT_TEMPLATES, interpolateTemplate, pctOf } from '../lib/reportBuilders'
 import RecipientPickerModal from '../components/RecipientPickerModal'
 import { printExamReport } from './printExam'
@@ -96,7 +96,7 @@ function ExamSetup({ onCreated, onCancel }) {
 
   const groupsList = ws.groups || []
   const groupStudents = useMemo(
-    () => (groupName ? ws.students.filter((s) => s.group_name === groupName) : ws.students),
+    () => (groupName ? ws.students.filter((s) => studentInGroup(s, groupName)) : ws.students),
     [ws.students, groupName],
   )
   const cleanSections = sections.map((s) => ({ name: String(s.name || '').trim(), max: Number(s.max) || 0 })).filter((s) => s.name && s.max > 0)
@@ -202,7 +202,7 @@ function ExamSetup({ onCreated, onCancel }) {
             <select className="glass-input rounded-xl px-3.5 py-2.5 text-sm w-full" value={groupName} onChange={(e) => setGroupName(e.target.value)}>
               <option value="">{isArabic ? `كل الطلاب (${ws.students.length})` : `All students (${ws.students.length})`}</option>
               {groupsList.map((g) => (
-                <option key={g} value={g}>{g} ({ws.students.filter((s) => s.group_name === g).length})</option>
+                <option key={g} value={g}>{g} ({ws.students.filter((s) => studentInGroup(s, g)).length})</option>
               ))}
             </select>
             <small className="block text-[.68rem] text-fg-muted mt-1">
@@ -306,7 +306,7 @@ function ExamGrading({ exam }) {
   useEffect(() => { setTitleDraft(exam.title); setMaxDraft(String(exam.max_score)) }, [exam.title, exam.max_score])
 
   const pool = useMemo(
-    () => (exam.group_name ? ws.students.filter((s) => s.group_name === exam.group_name) : ws.students),
+    () => (exam.group_name ? ws.students.filter((s) => studentInGroup(s, exam.group_name)) : ws.students),
     [ws.students, exam.group_name],
   )
   const scoresByStudent = useMemo(() => {

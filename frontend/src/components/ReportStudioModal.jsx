@@ -5,7 +5,7 @@ import {
   buildAttendanceMessage, DEFAULT_PRESENT_TEMPLATE, DEFAULT_ABSENT_TEMPLATE,
   generateTextReportPDF,
 } from '../lib/qrPdfWhatsApp'
-import { isValidPhone, normalizeEgyptianPhone } from '../lib/helpers'
+import { isValidPhone, normalizeEgyptianPhone, studentInGroup } from '../lib/helpers'
 import {
   REPORT_KINDS, DEFAULT_TEMPLATES, BRICKS_BY_KIND,
   weekWindow, studentWeekStats, groupWeekStats, sessionStats, followUpStudents,
@@ -63,7 +63,7 @@ export default function ReportStudioModal({
   const [previewStudentId, setPreviewStudentId] = useState('')
 
   const groupStudents = useMemo(
-    () => ws.students.filter((s) => s.group_name === group),
+    () => ws.students.filter((s) => studentInGroup(s, group)),
     [ws.students, group],
   )
   const completedLessons = useMemo(

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
 import Modal from './Modal'
-import { sanitizePhone, isValidPhone, GRADES_BY_STAGE, formatWhatsAppPhone, isStageCompatible } from '../lib/helpers'
+import { sanitizePhone, isValidPhone, GRADES_BY_STAGE, formatWhatsAppPhone, isStageCompatible, studentExtraGroups } from '../lib/helpers'
 
 const FIRST_STAGE = Object.values(GRADES_BY_STAGE)[0][0]
 
@@ -12,9 +12,14 @@ const FIRST_STAGE = Object.values(GRADES_BY_STAGE)[0][0]
 //    an invalid stage/group combination cannot be created.
 //  • Legacy dirty stage values (bare category / free text) still render
 //    instead of breaking the select; compatibility is CATEGORY-based.
+//  • Multi-group (extra_groups): when `multiGroup` is on (DB column exists)
+//    the teacher can attach the SAME student to additional groups via chips.
+//    The primary group stays authoritative for the student's stage; extra
+//    groups never change it. With the flag off the modal renders exactly
+//    like the single-group version.
 // ═══════════════════════════════════════════════════════════════════════════
-export default function StudentModal({ open, onClose, onSave, student, groups, groupMeta, students, isSaving: externalSaving }) {
-  const [form, setForm] = useState({ name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '' })
+export default function StudentModal({ open, onClose, onSave, student, groups, groupMeta, students, multiGroup = false, isSaving: externalSaving }) {
+  const [form, setForm] = useState({ name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '', extra: [] })
   const [errors, setErrors] = useState({})
   const [hasChanged, setHasChanged] = useState(false)
   const [stageInherited, setStageInherited] = useState(false)
@@ -26,11 +31,11 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
 
   useEffect(() => {
     if (student) {
-      const f = { name: student.name || '', phone: student.phone || '', stage: student.stage || FIRST_STAGE, group: student.group_name || student.group || groups?.[0] || '' }
+      const f = { name: student.name || '', phone: student.phone || '', stage: student.stage || FIRST_STAGE, group: student.group_name || student.group || groups?.[0] || '', extra: studentExtraGroups(student) }
       setForm(f)
       originalRef.current = f
     } else {
-      const f = { name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '' }
+      const f = { name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '', extra: [] }
       setForm(f)
       originalRef.current = f
     }
@@ -49,6 +54,15 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
     [groups, meta, form.stage],
   )
 
+  const diffFromOriginal = (next) => {
+    if (!originalRef.current) return Object.values(next).some((v) => (Array.isArray(v) ? v.length > 0 : v !== ''))
+    return Object.keys(next).some((k) => {
+      const a = next[k], b = originalRef.current[k]
+      if (Array.isArray(a) || Array.isArray(b)) return JSON.stringify(a) !== JSON.stringify(b)
+      return a !== b
+    })
+  }
+
   // 44k: live guardian-phone duplicate notice — informational only. The
   // edited student itself is excluded so editing without changing the phone
   // doesn't self-flag. Never affects canSave or validation.
@@ -61,11 +75,7 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
   const handleChange = (field, value) => {
     setForm((prev) => {
       const next = { ...prev, [field]: value }
-      if (originalRef.current) {
-        setHasChanged(Object.keys(next).some((k) => next[k] !== originalRef.current[k]))
-      } else {
-        setHasChanged(Object.values(next).some((v) => v !== ''))
-      }
+      setHasChanged(diffFromOriginal(next))
       return next
     })
     // Clear error for this field
@@ -85,6 +95,11 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
       setStageClearedGroup(false)
     }
     handleChange('stage', value)
+    // Extra groups must also survive the stage check — incompatible ones are
+    // dropped the same way the primary group is (visible: their chips vanish).
+    if (multiGroup && form.extra.some((g) => !isStageCompatible(value, meta[g]?.stage))) {
+      handleChange('extra', form.extra.filter((g) => isStageCompatible(value, meta[g]?.stage)))
+    }
   }
 
   // Group chosen → stage is INHERITED from the group (authoritative context).
@@ -95,17 +110,37 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
       setStageInherited(true)
       setStageClearedGroup(false)
       setForm((prev) => {
-        const next = { ...prev, group: groupName, stage: groupStage }
-        if (originalRef.current) setHasChanged(Object.keys(next).some((k) => next[k] !== originalRef.current[k]))
-        else setHasChanged(Object.values(next).some((v) => v !== ''))
+        const next = { ...prev, group: groupName, stage: groupStage, extra: prev.extra.filter((g) => g !== groupName) }
+        setHasChanged(diffFromOriginal(next))
         return next
       })
       if (errors.stage) setErrors((prev) => { const n = { ...prev }; delete n.stage; return n })
       return
     }
     if (groupStage && groupStage !== form.stage) setStageInherited(true)
-    handleChange('group', groupName)
+    setForm((prev) => {
+      const next = { ...prev, group: groupName, extra: prev.extra.filter((g) => g !== groupName) }
+      setHasChanged(diffFromOriginal(next))
+      return next
+    })
   }
+
+  // Extra-group chips: adding/removing never touches the primary group or the
+  // inherited stage — it only extends where else this student appears.
+  const toggleExtra = (groupName) => {
+    setForm((prev) => {
+      const extra = prev.extra.includes(groupName) ? prev.extra.filter((g) => g !== groupName) : [...prev.extra, groupName]
+      const next = { ...prev, extra }
+      setHasChanged(diffFromOriginal(next))
+      return next
+    })
+  }
+
+  // Candidates for the «add group» select: compatible, not primary, not already added.
+  const extraCandidates = useMemo(
+    () => compatibleGroups.filter((g) => g !== form.group && !form.extra.includes(g)),
+    [compatibleGroups, form.group, form.extra],
+  )
 
   const validate = () => {
     const errs = {}
@@ -121,7 +156,11 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
   const submit = (e) => {
     e.preventDefault()
     if (!validate()) return
-    onSave({ ...form, phone: sanitizePhone(form.phone) })
+    onSave({
+      ...form,
+      phone: sanitizePhone(form.phone),
+      extra_groups: multiGroup ? form.extra.filter((g) => g !== form.group) : undefined,
+    })
   }
 
   const saving = externalSaving || false
@@ -175,7 +214,7 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
             </select>
           </div>
           <div>
-            <label className='block text-sm text-fg-subtle mb-1'>المجموعة</label>
+            <label className='block text-sm text-fg-subtle mb-1'>المجموعة الأساسية</label>
             <select
               value={form.group} onChange={(e) => handleGroupChange(e.target.value)}
               className='w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-gold'
@@ -201,6 +240,38 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
             ⚠ بيانات قديمة: مرحلة الطالب ({form.stage}) لا تطابق مرحلة مجموعته ({meta[form.group]?.stage || 'غير محددة'}).
           </p>
         )}
+
+        {multiGroup && (
+          <div>
+            <label className='block text-sm text-fg-subtle mb-1'>مجموعات إضافية</label>
+            {!!form.extra.length && (
+              <div className='flex flex-wrap gap-2 mb-2'>
+                {form.extra.map((g) => (
+                  <button
+                    key={g} type='button' onClick={() => toggleExtra(g)}
+                    className='inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold border border-brand-gold/60 bg-brand-gold/10 text-fg hover:bg-brand-gold/20 transition-colors'
+                    title='إزالة من المجموعات الإضافية'
+                  >
+                    {g} <span aria-hidden>✕</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!!extraCandidates.length && (
+              <select
+                value='' onChange={(e) => e.target.value && toggleExtra(e.target.value)}
+                className='w-full glass-input border border-subtle rounded-lg px-3 py-2 text-sm outline-none focus:border-brand-gold'
+              >
+                <option value=''>+ أضف الطالب لمجموعة أخرى…</option>
+                {extraCandidates.map((g) => <option key={g} value={g}>{g}{meta[g]?.stage ? ` — ${meta[g].stage}` : ''}</option>)}
+              </select>
+            )}
+            <p className='text-[11px] m-0 mt-1' style={{ color: 'var(--fg-muted, #94A3B8)' }}>
+              ⓘ نفس الطالب يظهر في الحصص والواجبات والامتحانات لكل مجموعة موجودة فيها (الأساسية + الإضافية).
+            </p>
+          </div>
+        )}
+
         <div className='flex gap-2'>
           <button
             type='button'

@@ -3,6 +3,7 @@ import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import { useLanguage } from '../context/LanguageContext'
 import { SkeletonList } from '../components/Skeleton'
+import { studentInGroup } from '../lib/helpers'
 import DayTimeline from '../components/DayTimeline'
 
 const AR_TIME = (t) => {
@@ -84,7 +85,7 @@ export default function HomePage() {
       const lesson = lessonSessions.find((l) => l.group_name === groupName && l.session_date === selectedDay)
       const scheduled = todayGroups.find((g) => g.group_name === groupName)
       const meta = groupMeta?.[groupName] || {}
-      const groupStudents = students.filter((s) => s.group_name === groupName)
+      const groupStudents = students.filter((s) => studentInGroup(s, groupName))
       const counts = lesson ? countsForSession(lesson, groupName) : { present: 0, absent: 0, unrecorded: groupStudents.length, total: groupStudents.length, hwDone: 0, hwApplicable: 0 }
       let status = 'not_started'
       if (lesson?.status === 'open') status = 'in_progress'
@@ -125,14 +126,14 @@ export default function HomePage() {
   // الواجبات التفاعلية (056) — أحدث 3 واجبات مع عدّاد الحل
   const homeworkTasks = ws.homeworkTasks || []
   const hwCards = useMemo(() => homeworkTasks.slice(0, 3).map((task) => {
-    const pool = task.group_name ? (ws.students || []).filter((s) => s.group_name === task.group_name) : (ws.students || [])
+    const pool = task.group_name ? (ws.students || []).filter((s) => studentInGroup(s, task.group_name)) : (ws.students || [])
     const solved = (ws.homeworkSubmissions || []).filter((x) => x.task_id === task.id).length
     return { task, solved, pool: pool.length }
   }), [homeworkTasks, ws.students, ws.homeworkSubmissions])
   // الامتحانات الأونلاين (057) — أحدث 3 امتحانات مع عدّاد المحاولات
   const onlineExams = ws.onlineExams || []
   const oeCards = useMemo(() => onlineExams.slice(0, 3).map((exam) => {
-    const pool = exam.group_name ? (ws.students || []).filter((s) => s.group_name === exam.group_name) : (ws.students || [])
+    const pool = exam.group_name ? (ws.students || []).filter((s) => studentInGroup(s, exam.group_name)) : (ws.students || [])
     const attempts = (ws.onlineExamAttempts || []).filter((x) => x.exam_id === exam.id)
     const finished = attempts.filter((a) => a.status === 'submitted' || a.status === 'expired').length
     return { exam, finished, started: attempts.length, pool: pool.length }
@@ -140,7 +141,7 @@ export default function HomePage() {
   const standaloneScores = ws.standaloneExamScores || []
   const examCards = useMemo(() => standaloneExams.slice(0, 4).map((exam) => {
     const graded = standaloneScores.filter((r) => r.exam_id === exam.id).length
-    const pool = exam.group_name ? students.filter((s) => s.group_name === exam.group_name).length : students.length
+    const pool = exam.group_name ? students.filter((s) => studentInGroup(s, exam.group_name)).length : students.length
     return { exam, graded, pool }
   }), [standaloneExams, standaloneScores, students])
 

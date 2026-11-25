@@ -4,6 +4,7 @@ import { useUI } from '../shell/UIContext'
 import { supabase } from '../lib/supabaseClient'
 import { newQuestion } from '../lib/hwQuiz'
 import { sendExamNotifications } from '../lib/notifyStudents'
+import { studentInGroup } from '../lib/helpers'
 import QuizQuestionsEditor from '../components/QuizQuestionsEditor'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -309,7 +310,7 @@ function OnlineExamMonitor({ exam }) {
   }, [exam.id])
 
   const pool = useMemo(
-    () => (exam.group_name ? ws.students.filter((s) => s.group_name === exam.group_name) : ws.students),
+    () => (exam.group_name ? ws.students.filter((s) => studentInGroup(s, exam.group_name)) : ws.students),
     [ws.students, exam.group_name],
   )
   const attemptsByStudent = useMemo(() => {
