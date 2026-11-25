@@ -12,6 +12,7 @@ import { IS_DEMO } from '../lib/supabaseClient'
 import { friendlySaveErrorText } from '../lib/friendlyError'
 import { track } from '../lib/posthog'
 import { GRADES_BY_STAGE } from '../lib/helpers'
+import useContextMenu from '../hooks/useContextMenu'
 
 // PERF: the insights report stays its own lazy chunk — it loads only when
 // Settings (its new home) renders, never at startup.
@@ -47,6 +48,25 @@ export default function SettingsArea() {
   const [editingGroup, setEditingGroup] = useState(null) // group name being edited
   const [editForm, setEditForm] = useState({ name: '', stage: '', day: 0, time: '' })
   const [busyGroup, setBusyGroup] = useState(false)
+  // Task 65 (دمج المجموعات): المجموعة المصدر المفتوحة في مودال الدمج.
+  const [mergeSource, setMergeSource] = useState(null)
+
+  // Task 65 — right-click / long-press على صف المجموعة: تعديل / دمج / حذف.
+  const { triggerProps, contextMenu } = useContextMenu()
+  const groupMenuItems = (g) => [
+    { icon: '✎', label: isArabic ? 'تعديل الاسم والموعد' : 'Edit name & schedule', onClick: () => startGroupEdit(g) },
+    { icon: '⇄', label: isArabic ? 'دمج مع مجموعة أخرى' : 'Merge into another group', disabled: (ws.groups || []).length < 2, onClick: () => setMergeSource(g) },
+    'sep',
+    {
+      icon: '🗑',
+      label: isArabic ? 'حذف المجموعة' : 'Delete group',
+      danger: true,
+      onClick: async () => {
+        const ok = await ui.askConfirm(`${isArabic ? 'حذف المجموعة' : 'Delete group'} ${g}؟`, { danger: true, confirmLabel: isArabic ? 'حذف' : 'Delete' })
+        if (ok) ws.deleteGroup(g)
+      },
+    },
+  ]
 
   const startGroupEdit = (g) => {
     const meta = ws.groupMeta[g] || {}
@@ -205,7 +225,7 @@ export default function SettingsArea() {
               )
             }
             return (
-              <div key={g} className="nk-row">
+              <div key={g} className="nk-row nk-ctx-target" {...triggerProps(() => groupMenuItems(g), g)}>
                 <span className="min-w-0">
                   <b className="truncate">{g}</b>
                   <small>{meta.stage || '—'} · {meta.day !== undefined && meta.day !== '' ? WEEKDAYS[Number(meta.day)] : '—'} · {meta.time || '—'}</small>
@@ -216,6 +236,12 @@ export default function SettingsArea() {
                     onClick={() => startGroupEdit(g)}
                     title={isArabic ? 'تعديل الاسم والمرحلة والموعد' : 'Edit name, stage & schedule'}
                   >✎</button>
+                  <button
+                    className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
+                    onClick={() => setMergeSource(g)}
+                    disabled={(ws.groups || []).length < 2}
+                    title={isArabic ? 'دمج هذه المجموعة في مجموعة أخرى مع كل بياناتها' : 'Merge this group into another one with all its data'}
+                  >⇄</button>
                   <button
                     className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                     onClick={async () => {
@@ -366,6 +392,12 @@ export default function SettingsArea() {
         }}
       />
       <BrandingModal open={brandingOpen} onClose={() => setBrandingOpen(false)} />
+
+      {/* Task 65 — مودال دمج المجموعات (يُفتح من زر ⇄ أو القائمة السياقية) */}
+      {mergeSource && <MergeGroupModal source={mergeSource} onClose={() => setMergeSource(null)} />}
+
+      {/* Task 65 — قائمة السياق لصفوف المجموعات */}
+      {contextMenu}
       <HelpSupportModal open={helpOpen} onClose={() => setHelpOpen(false)} onStartTour={() => {
         // The tour is a walkthrough of the HOME working screen — jump there
         // first so every step's target element actually exists in the DOM.
@@ -373,6 +405,71 @@ export default function SettingsArea() {
         ui.setArea('home')
         ui.setTourActive(true)
       }} />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MERGE GROUPS (Task 65): المجموعة المصدر تذوب بالكامل في المجموعة الهدف —
+// الطلاب والحصص والواجبات والامتحانات تنتقل عبر RPC ذري على السيرفر
+// (migration_065)، ومواعيد المصدر تنضم لمواعيد الهدف، ثم يختفي اسم المصدر
+// من القوائم. العملية نهائية — لذلك العدّاد يظهر قبل التأكيد.
+// ─────────────────────────────────────────────────────────────────────────────
+function MergeGroupModal({ source, onClose }) {
+  const ws = useWorkspace()
+  const ui = useUI()
+  const { isArabic } = ws
+  const [target, setTarget] = useState('')
+  const [busy, setBusy] = useState(false)
+  const groups = (ws.groups || []).filter((g) => g !== source)
+  const byGroup = (list, name) => (list || []).filter((x) => x.group_name === name).length
+  const students = (ws.students || []).filter((s) => s.group_name === source
+    || (Array.isArray(s.extra_groups) && s.extra_groups.includes(source))).length
+  const sessions = byGroup(ws.lessonSessions, source)
+  const hw = byGroup(ws.homeworkTasks, source)
+  const exams = byGroup(ws.standaloneExams, source) + byGroup(ws.onlineExams, source)
+
+  const doMerge = async () => {
+    if (!target || busy) return
+    setBusy(true)
+    const ok = await ws.mergeGroups(source, target)
+    setBusy(false)
+    if (ok) onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/50 p-4" onClick={busy ? undefined : onClose} role="dialog" aria-modal="true">
+      <div className="glass-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-extrabold m-0 mb-1">
+          {isArabic ? `دمج «${source}» في مجموعة أخرى` : `Merge "${source}" into another group`}
+        </h3>
+        <p className="text-[.72rem] text-fg-muted mt-0 mb-3">
+          {isArabic
+            ? 'كل بيانات المجموعة المصدر تنتقل للمجموعة الهدف ثم يختفي اسمها من القوائم. العملية نهائية ولا يمكن التراجع عنها.'
+            : 'All source-group data moves to the target group, then the source name disappears. This is final and cannot be undone.'}
+        </p>
+        <div className="nk-notice mb-3 !text-[.7rem]">
+          <b className="block mb-1">{isArabic ? 'سيتم نقل:' : 'Will be moved:'}</b>
+          {isArabic
+            ? `${students} طالب · ${sessions} حصة (بحضورها ودرجاتها) · ${hw} واجب تفاعلي · ${exams} امتحان — ومواعيد «${source}» الأسبوعية تنضم لمواعيد الهدف.`
+            : `${students} students · ${sessions} sessions (with attendance & grades) · ${hw} homework tasks · ${exams} exams — the source weekly schedule joins the target's.`}
+        </div>
+        <select className="glass-input rounded-xl px-3 py-2.5 text-sm w-full mb-3" value={target} onChange={(e) => setTarget(e.target.value)} autoFocus>
+          <option value="">{isArabic ? 'اختر المجموعة الهدف...' : 'Pick the target group...'}</option>
+          {groups.map((g) => <option key={g} value={g}>{g}{ws.groupMeta[g]?.stage ? ` — ${ws.groupMeta[g].stage}` : ''}</option>)}
+        </select>
+        {groups.length === 0 && (
+          <p className="text-[.72rem] text-fg-muted mb-3">{isArabic ? 'لا توجد مجموعة أخرى للدمج معها.' : 'No other group to merge into.'}</p>
+        )}
+        <div className="flex gap-2">
+          <button className="btn-ghost flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={onClose} disabled={busy}>
+            {isArabic ? 'إلغاء' : 'Cancel'}
+          </button>
+          <button className="btn-gold flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={!target || busy} onClick={doMerge}>
+            {busy ? (isArabic ? 'جاري الدمج…' : 'Merging…') : (isArabic ? 'دمج نهائي' : 'Merge now')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

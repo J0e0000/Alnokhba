@@ -8,6 +8,7 @@ import CustomMessageModal from '../components/CustomMessageModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import useContextMenu from '../hooks/useContextMenu'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — student-management round (spec 3–8, 21–26):
@@ -180,6 +181,57 @@ export default function StudentsArea() {
   // deliberately NOT available from this table (neither per-row nor bulk),
   // per teacher request. This table is identity/contact management only.
 
+  // ── Task 65 — right-click / long-press على صف الطالب: قائمة سياقية بكل
+  //    الإجراءات المتاحة لنفس الطالب (نفس مسارات الأزرار الموجودة بالفعل).
+  const { triggerProps, contextMenu } = useContextMenu()
+  const studentMenuItems = (s, archivedView) => {
+    if (archivedView) {
+      return [
+        { icon: '↩', label: isArabic ? 'استرجاع الطالب' : 'Restore student', onClick: () => ws.restoreStudents?.([s.id]) },
+        { icon: '📜', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
+      ]
+    }
+    const items = [
+      { icon: '📜', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
+      { icon: '✎', label: isArabic ? 'تعديل بيانات الطالب' : 'Edit student', onClick: () => setStudentModal({ open: true, student: s }) },
+      {
+        icon: '✆',
+        label: isArabic ? 'واتساب الطالب' : 'WhatsApp student',
+        disabled: !s.phone || !isValidPhone(s.phone),
+        onClick: () => sendWhatsApp(s, (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name)),
+      },
+      { icon: '⛶', label: isArabic ? 'رابط البوابة (QR)' : 'Portal link (QR)', onClick: () => openStudentQR(s) },
+      selected.has(s.id)
+        ? { icon: '☑', label: isArabic ? 'إلغاء تحديد الطالب' : 'Unselect student', onClick: () => toggleSelect(s.id) }
+        : { icon: '☐', label: isArabic ? 'تحديد الطالب' : 'Select student', onClick: () => toggleSelect(s.id) },
+      'sep',
+      {
+        icon: '🗑',
+        label: isArabic ? 'حذف الطالب' : 'Delete student',
+        danger: true,
+        onClick: async () => {
+          const ok = await ui.askConfirm(`حذف الطالب ${s.name}؟ لا يمكن التراجع عن حذف سجلاته من السيرفر.`, { danger: true, confirmLabel: 'حذف' })
+          if (ok) ws.deleteStudent(s)
+        },
+      },
+    ]
+    return items
+  }
+
+  // Bulkbar إثراء (Task 65): نسخ أرقام المحددين (الاسم TAB الرقم) للصقها
+  // في أي مكان — واتساب ويب، إكسل، رسائل جماعية.
+  const bulkCopyPhones = async () => {
+    setMoreOpen(false)
+    const targets = selectedStudents.filter((s) => s.phone && isValidPhone(s.phone))
+    if (!targets.length) { ws.showToast?.(isArabic ? 'لا يوجد أرقام صحيحة بين المحددين' : 'No valid phones among the selection', 'error'); return }
+    const text = targets.map((s) => `${s.name}\t+${normalizeEgyptianPhone(s.phone)}`).join('\n')
+    const ok = await copyText(text)
+    ws.showToast?.(
+      ok ? (isArabic ? `تم نسخ أرقام ${targets.length} طالب` : `Copied ${targets.length} phone numbers`) : (isArabic ? 'تعذر النسخ' : 'Copy failed'),
+      ok ? 'success' : 'error',
+    )
+  }
+
   if (ws.loading) return <SkeletonTableRows rows={6} cols={5} />
 
   return (
@@ -277,8 +329,9 @@ export default function StudentsArea() {
           return (
             <div
               key={s.id}
-              className={`nk-row !flex-wrap select-none ${archivedView ? 'opacity-80' : 'cursor-pointer'}`}
+              className={`nk-row !flex-wrap select-none nk-ctx-target ${archivedView ? 'opacity-80' : 'cursor-pointer'}`}
               style={isSel && !archivedView ? { borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' } : undefined}
+              {...triggerProps(() => studentMenuItems(s, archivedView), s.name)}
               onClick={archivedView ? undefined : (e) => {
                 // Name → profile; anything else on the row → select.
                 // Buttons/checkbox/links keep their own behavior.
@@ -366,6 +419,7 @@ export default function StudentsArea() {
             ♦ {isArabic ? 'تعيين مجموعة' : 'Assign group'}
           </button>
           <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkMessage}>✆ {isArabic ? 'رسالة' : 'Message'}</button>
+          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkCopyPhones}>⧉ {isArabic ? 'نسخ الأرقام' : 'Copy phones'}</button>
           <div className="nk-menu-wrap ms-auto">
             <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
               {isArabic ? 'المزيد' : 'More'} ▾
@@ -432,6 +486,9 @@ export default function StudentsArea() {
           onSend={(items) => { setCustomComposer(null); ui.startQueue(items) }}
         />
       )}
+
+      {/* Task 65 — قائمة السياق (right-click / long-press) لصفوف الطلاب */}
+      {contextMenu}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { SkeletonList } from '../components/Skeleton'
 import { studentInGroup } from '../lib/helpers'
 import DayTimeline from '../components/DayTimeline'
+import useContextMenu from '../hooks/useContextMenu'
 
 const AR_TIME = (t) => {
   if (!t) return ''
@@ -75,14 +76,18 @@ export default function HomePage() {
 
   const sessions = useMemo(() => {
     const names = new Set()
+    // Task 65 (معادين): الحصة تنتمي لليوم المحدد بمعادها الأساسي أو بأحد
+    // المواعيد الإضافية — نفس الدرس بيتلقى في أكثر من موعد.
+    const coversDay = (l) => l.session_date === selectedDay
+      || (Array.isArray(l.extra_dates) && l.extra_dates.includes(selectedDay))
     // Groups scheduled on the selected weekday (group_meta.day) always show.
     Object.entries(groupMeta || {}).forEach(([g, m]) => {
       if (m && m.day !== undefined && m.day !== '' && Number(m.day) === selectedWeekday) names.add(g)
     })
     // Groups with a lesson on that date but no schedule entry still show.
-    lessonSessions.forEach((l) => { if (l.session_date === selectedDay) names.add(l.group_name) })
+    lessonSessions.forEach((l) => { if (coversDay(l)) names.add(l.group_name) })
     return [...names].map((groupName) => {
-      const lesson = lessonSessions.find((l) => l.group_name === groupName && l.session_date === selectedDay)
+      const lesson = lessonSessions.find((l) => l.group_name === groupName && coversDay(l))
       const scheduled = todayGroups.find((g) => g.group_name === groupName)
       const meta = groupMeta?.[groupName] || {}
       const groupStudents = students.filter((s) => studentInGroup(s, groupName))
@@ -168,6 +173,28 @@ export default function HomePage() {
   // CTA targets (inline, non-covering): the first session that actually needs
   // the teacher right now — used by the pending-actions stat and the notice.
   const pendingSession = sessions.find((s) => s.status === 'in_progress' && s.counts.unrecorded > 0)
+
+  // Task 65 — right-click / long-press على بطاقة الحصة: فتح + نسخ الموضوع.
+  const { triggerProps, contextMenu } = useContextMenu()
+  const sessionMenuItems = (s) => {
+    const items = [{
+      icon: '▶',
+      label: ar ? (s.status === 'in_progress' ? 'متابعة الحصة' : 'فتح الحصة') : 'Open session',
+      disabled: !(dayIsToday || s.lessonId),
+      onClick: () => openDaySession(s),
+    }]
+    if (s.lesson?.lesson_topic) {
+      items.push({
+        icon: '⧉',
+        label: ar ? 'نسخ موضوع الحصة' : 'Copy lesson topic',
+        onClick: async () => {
+          try { await navigator.clipboard.writeText(s.lesson.lesson_topic); ws.showToast?.(ar ? 'تم نسخ الموضوع ✓' : 'Topic copied', 'success') }
+          catch { ws.showToast?.(ar ? 'تعذر النسخ' : 'Copy failed', 'error') }
+        },
+      })
+    }
+    return items
+  }
 
   if (loading) {
     return (
@@ -275,11 +302,12 @@ export default function HomePage() {
             return (
               <button
                 key={s.groupName}
-                className={`nk-session-card ${isNext ? 'nk-session-card--next' : ''}`}
+                className={`nk-session-card nk-ctx-target ${isNext ? 'nk-session-card--next' : ''}`}
                 onClick={() => clickable && openDaySession(s)}
                 disabled={!clickable}
                 style={noLessonPast ? { opacity: 0.55 } : undefined}
                 aria-label={`${ar ? 'فتح' : 'Open'} ${s.groupName}`}
+                {...triggerProps(() => sessionMenuItems(s), s.groupName)}
               >
                 <span className="flex items-center gap-3 min-w-0">
                   <span className="nk-session-icon" aria-hidden="true">⌂</span>
@@ -304,6 +332,11 @@ export default function HomePage() {
                   </span>
                 </span>
                 <span className="flex flex-col items-end gap-1.5 shrink-0">
+                  {(s.lesson?.extra_dates || []).length > 0 && (
+                    <span className="nk-pill nk-pill-pending" title={ar ? 'الحصة ليها معاد إضافي — تظهر في كل المواعيد' : 'This session has an extra date'}>
+                      📅 {ar ? 'مواعيد' : 'Dates'}: {s.lesson.extra_dates.length + 1}
+                    </span>
+                  )}
                   {statusPill(s.status)}
                   <span className="text-[.66rem] font-extrabold" style={{ color: 'var(--brand-gold)' }}>
                     {noLessonPast
@@ -332,6 +365,9 @@ export default function HomePage() {
           )}
         </div>
       )}
+
+      {/* Task 65 — قائمة السياق (right-click / long-press) لبطاقات الحصص */}
+      {contextMenu}
 
       {/* ══ الامتحانات المنفصلة — نفس شكل بطاقات الحصص ══ */}
       {students.length > 0 && (

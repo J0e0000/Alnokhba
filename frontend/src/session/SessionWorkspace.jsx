@@ -44,6 +44,11 @@ export default function SessionWorkspace({ params }) {
   // per-lesson: opening another session resets it.
   const [editingPast, setEditingPast] = useState(false)
 
+  // Task 65 (معادين للحصة): إضافة/إزالة مواعيد إضافية تظهر فيها نفس الحصة
+  // على الشاشة الرئيسية — الحضور والدرجات مشتركة بين كل المواعيد.
+  const [dateAddOpen, setDateAddOpen] = useState(false)
+  const [newDate, setNewDate] = useState('')
+
   // TASK STATE (spec 13 + reload-resilience): which stage the teacher
   // EXPLICITLY completed and which tab they were on — persisted per lesson so
   // a reload/backgrounding returns them exactly where they were. Server data
@@ -63,6 +68,8 @@ export default function SessionWorkspace({ params }) {
     setEditingPast(false)
     const saved = readStageState(ws.activeLessonId).tab
     setTab(saved && VALID_TABS.includes(saved) ? saved : 'attendance')
+    setDateAddOpen(false)
+    setNewDate('')
   }
   const skipPublishRef = useRef(true)
   useEffect(() => {
@@ -297,6 +304,70 @@ export default function SessionWorkspace({ params }) {
           <div className="nk-mini nk-mini--gold"><small>{isArabic ? 'الواجب' : 'Homework'}</small><b>{counts.hwDone} / {counts.hwApplicable}</b></div>
           <div className="nk-mini nk-mini--info"><small>{isArabic ? 'الدرجات' : 'Graded'}</small><b>{gradedStudents ? `${gradedStudents} / ${counts.present}` : '—'}</b></div>
         </div>
+
+        {/* ── المواعيد (Task 65 — معادين للحصة): المعاد الأساسي + معادون
+            إضافيون؛ الحصة تظهر في كل المواعيد والحضور مشترك. التعديل متاح
+            للحصة الجارية أو في وضع تعديل الحصة المنتهية. ── */}
+        {lesson && (
+          <div className="mt-3 pt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5" style={{ borderTop: '1px dashed var(--surface-border)' }}>
+            <small className="nk-ws-muted font-black text-[.66rem]">{isArabic ? 'المواعيد:' : 'Dates:'}</small>
+            <span className="nk-pill nk-pill-gold" title={isArabic ? 'المعاد الأساسي للحصة' : 'Primary session date'}>
+              📅 {lesson.session_date}{isArabic ? ' · أساسي' : ' · primary'}
+            </span>
+            {(Array.isArray(lesson.extra_dates) ? lesson.extra_dates : []).map((d) => (
+              <span key={d} className="nk-pill nk-pill-pending !inline-flex items-center gap-1.5">
+                📅 {d}
+                {(lessonOpen || editingPast) && (
+                  <button
+                    className="bg-transparent border-0 p-0 m-0 cursor-pointer font-black leading-none"
+                    style={{ color: 'var(--danger-strong)' }}
+                    title={isArabic ? 'إزالة المعاد' : 'Remove date'}
+                    aria-label={`${isArabic ? 'إزالة المعاد' : 'Remove date'} ${d}`}
+                    onClick={() => ws.updateLessonExtraDates(lesson.id, (lesson.extra_dates || []).filter((x) => x !== d))}
+                  >✕</button>
+                )}
+              </span>
+            ))}
+            {(lessonOpen || editingPast) && !dateAddOpen && (
+              <button
+                className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold"
+                onClick={() => { setDateAddOpen(true); setNewDate('') }}
+              >
+                ＋ {isArabic ? 'معاد إضافي' : 'Extra date'}
+              </button>
+            )}
+            {(lessonOpen || editingPast) && dateAddOpen && (
+              <span className="inline-flex items-center gap-1.5">
+                <input
+                  type="date"
+                  className="glass-input rounded-lg px-2 py-1 text-[.7rem]"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  aria-label={isArabic ? 'المعاد الإضافي' : 'Extra date'}
+                  autoFocus
+                />
+                <button
+                  className="btn-navy !min-h-0 rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold"
+                  disabled={!newDate}
+                  onClick={async () => {
+                    if (!newDate || newDate === lesson.session_date || (lesson.extra_dates || []).includes(newDate)) {
+                      ws.showToast?.(isArabic ? 'المعاد مكرر أو نفس المعاد الأساسي' : 'Duplicate or primary date', 'error')
+                      return
+                    }
+                    const ok = await ws.updateLessonExtraDates(lesson.id, [...(lesson.extra_dates || []), newDate])
+                    if (ok) { setDateAddOpen(false); setNewDate('') }
+                  }}
+                >✓</button>
+                <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1 text-[.66rem] font-extrabold" onClick={() => setDateAddOpen(false)}>✕</button>
+              </span>
+            )}
+            <small className="nk-ws-muted text-[.64rem] w-full">
+              {isArabic
+                ? 'نفس الحصة تظهر في كل المواعيد دي على الشاشة الرئيسية — الحضور والدرجات مشتركة بينها.'
+                : 'The same session appears on every date on Home — attendance and grades are shared.'}
+            </small>
+          </div>
+        )}
       </section>
 
       {/* ── Pipeline tabs (not a wizard — free movement) ──────────────── */}

@@ -1377,3 +1377,52 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
   .nk-lb-pod-name { font-size: .7rem; }
   .nk-lb-row-rank { display: none; }
 }
+
+/* ═══ Task 65 — context menu (right-click / long-press) ═══ */
+.nk-ctxmenu {
+  position: fixed;
+  z-index: 93;
+  min-width: 220px;
+  max-width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .35);
+  padding: .4rem;
+  display: grid;
+  gap: 2px;
+  animation: nk-ctx-in .12s ease-out;
+}
+@keyframes nk-ctx-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
+.nk-ctxmenu__title {
+  font-size: .66rem;
+  color: var(--fg-muted);
+  padding: .35rem .6rem .25rem;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: .25rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nk-ctxmenu__sep { height: 1px; background: var(--surface-border); margin: .25rem .2rem; }
+.nk-ctxmenu button {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  width: 100%;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: .55rem .6rem;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 800;
+  color: var(--fg);
+  cursor: pointer;
+}
+.nk-ctxmenu button:hover:not(:disabled) { background: var(--surface-container-high); }
+.nk-ctxmenu button:disabled { opacity: .4; cursor: not-allowed; }
+.nk-ctxmenu button.nk-ctxmenu-danger { color: var(--danger-strong); }
+.nk-ctxmenu__icon { width: 1.3rem; text-align: center; flex-shrink: 0; }
+/* long-press targets: قمع استدعاء تحديد النص في iOS عشان الضغط المطوّل يفتح
+   القائمة بدل ورقة النسخ الخاصة بالنظام */
+.nk-ctx-target { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

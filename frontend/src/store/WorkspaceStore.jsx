@@ -50,6 +50,11 @@ export const normalizeArabicSearch = (value) => String(value || '').toLowerCase(
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
+// Task 65 (معادين للحصة): الحصة تنتمي لليوم إما بمعادها الأساسي أو بأحد
+// المواعيد الإضافية — نفس الدرس بيتلقى في أكثر من موعد والحضور مشترك.
+const lessonCoversDay = (lesson, day) => !!lesson && !!day && (lesson.session_date === day
+  || (Array.isArray(lesson.extra_dates) && lesson.extra_dates.includes(day)))
+
 export function WorkspaceProvider({ children }) {
   markRender('WorkspaceProvider')
   const { effectiveTeacherId } = useAuth()
@@ -773,7 +778,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonIdOverride || null
     } else {
       const today = todayISO()
-      lessonId = lessonSessions.find((lesson) => lesson.session_date === today && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
+      lessonId = lessonSessions.find((lesson) => lessonCoversDay(lesson, today) && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
     if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
@@ -877,7 +882,7 @@ export function WorkspaceProvider({ children }) {
       lessonId = lessonIdOverride || null
     } else {
       const today = todayISO()
-      lessonId = lessonSessions.find((lesson) => lesson.session_date === today && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
+      lessonId = lessonSessions.find((lesson) => lessonCoversDay(lesson, today) && lesson.status === 'open' && studentAllGroups(s).includes(lesson.group_name))?.id || null
     }
     const targetLesson = lessonId ? lessonSessions.find((lesson) => lesson.id === lessonId) : null
     if (lessonId && targetLesson?.status === 'completed' && !opts?.allowCompleted) {
@@ -952,7 +957,8 @@ export function WorkspaceProvider({ children }) {
     const today = todayISO()
     const reviewDay = date && date !== today ? date : null
     if (reviewDay) {
-      const existing = lessonSessions.find((lesson) => lesson.group_name === groupName && lesson.session_date === reviewDay)
+      // Task 65: مراجعة يوم تقع بمعاد إضافي للحصة كذلك تفتح (extra_dates)
+      const existing = lessonSessions.find((lesson) => lesson.group_name === groupName && lessonCoversDay(lesson, reviewDay))
       if (existing) {
         setActiveLessonId(existing.id)
         return existing
@@ -2153,6 +2159,88 @@ export function WorkspaceProvider({ children }) {
     return true
   }
 
+  // ══════════════════ LESSON EXTRA DATES (065 — معادين للحصة) ══════════════════
+  // نفس الدرس بيتلقى في أكثر من موعد: extra_dates قائمة تواريخ إضافية تظهر فيها
+  // الحصة نفسها على الشاشة الرئيسية — الحضور والدرجات مشتركة (صف واحد لكل
+  // طالب × حصة). ترتيب القائمة تصاعدي، ومفيش تكرار ولا معاد = المعاد الأساسي.
+  const updateLessonExtraDates = async (lessonId, extraDates) => {
+    const lesson = lessonSessionsRef.current.find((l) => l.id === lessonId)
+    if (!lesson) return false
+    const isArabic = isArabicRef.current
+    const clean = [...new Set((Array.isArray(extraDates) ? extraDates : [])
+      .map((d) => String(d).trim()).filter(Boolean))].sort()
+    if (clean.includes(lesson.session_date)) {
+      showToast(isArabic ? 'المعاد الأساسي لا يمكن أن يكون معادًا إضافيًا' : 'The primary date cannot be an extra date', 'error')
+      return false
+    }
+    const prev = Array.isArray(lesson.extra_dates) ? [...lesson.extra_dates] : []
+    const apply = async (dates) => {
+      const { error } = await supabase.from('lesson_sessions')
+        .update({ extra_dates: dates, updated_at: new Date().toISOString() })
+        .eq('id', lessonId).eq('teacher_id', teacherIdRef.current)
+      if (error) throw error
+      setLessonSessions((items) => items.map((l) => (l.id === lessonId ? { ...l, extra_dates: dates } : l)))
+    }
+    setLessonSessions((items) => items.map((l) => (l.id === lessonId ? { ...l, extra_dates: clean } : l)))
+    try {
+      await apply(clean)
+      pushAction({
+        type: 'lesson_dates', description: 'تعديل معادين الحصة',
+        undoFn: async () => { await apply(prev) },
+        redoFn: async () => { await apply(clean) },
+      })
+      showToast(isArabic ? 'تم تحديث معادين الحصة ✓' : 'Session dates updated', 'success')
+      return true
+    } catch (error) {
+      setLessonSessions((items) => items.map((l) => (l.id === lessonId ? { ...l, extra_dates: prev } : l)))
+      console.error('Update lesson extra dates error:', error)
+      showToast(isArabic ? `تعذر تحديث المواعيد: ${error?.message || ''}` : `Could not update dates: ${error?.message || ''}`, 'error')
+      return false
+    }
+  }
+
+  // ══════════════════ MERGE GROUPS (065 — دمج مجموعتين) ══════════════════
+  // ذريًا عبر RPC على السيرفر: حصص/واجبات/امتحانات/طلاب المصدر تنتقل للمجموعة
+  // الهدف، ومواعيد المصدر تُنقل (أو تُحذف لو للهدف مواعيد)، وextra_groups تُنظّف.
+  // بعدها تُحذف المجموعة المصدر من قائمة المجموعات + group_meta في الإعدادات.
+  const mergeGroups = async (sourceName, targetName) => {
+    const isArabic = isArabicRef.current
+    const tid = teacherIdRef.current
+    if (!tid || !sourceName || !targetName || sourceName === targetName) return false
+    setIsSaving(true)
+    try {
+      const { data, error } = await supabase.rpc('merge_groups', {
+        p_teacher_id: tid,
+        p_source: sourceName,
+        p_target: targetName,
+        p_stage: settingsRef.current?.group_meta?.[targetName]?.stage || null,
+      })
+      if (error) throw error
+      const nextGroups = (settingsRef.current?.groups || []).filter((g) => g !== sourceName)
+      const nextMeta = { ...(settingsRef.current?.group_meta || {}) }
+      delete nextMeta[sourceName]
+      const settingsResult = await updateSettingsRef.current({ groups: nextGroups, group_meta: nextMeta })
+      if (settingsResult?.error) {
+        // الدمج نفسه نجح — بس اسم المصدر لسه في القائمة؛ حذفه يدويًا آمن الآن
+        showToast(isArabic
+          ? `تم الدمج، لكن تعذر حذف «${sourceName}» من قائمة المجموعات — احذفها من الإعدادات يدويًا.`
+          : 'Merged, but removing the old group from settings failed — delete it manually.', 'warning', 9000)
+      }
+      await loadAll()
+      refreshTodayGroups()
+      const r = data || {}
+      const examsMoved = (r.standalone_exams ?? 0) + (r.online_exams ?? 0)
+      showToast(isArabic
+        ? `تم دمج «${sourceName}» في «${targetName}»: ${r.students ?? 0} طالب · ${r.sessions ?? 0} حصة · ${r.homework ?? 0} واجب · ${examsMoved} امتحان.`
+        : `Merged "${sourceName}" into "${targetName}": ${r.students ?? 0} students · ${r.sessions ?? 0} sessions · ${r.homework ?? 0} homework · ${examsMoved} exams.`, 'success', 8000)
+      return true
+    } catch (error) {
+      console.error('Merge groups error:', error)
+      showToast(isArabic ? `تعذر الدمج: ${error?.message || ''}` : `Merge failed: ${error?.message || ''}`, 'error')
+      return false
+    } finally { setIsSaving(false) }
+  }
+
   // ══════════════════════════ CONTEXT VALUES ═══════════════════════════════
   // PERF: the giant value object used to be recreated on EVERY provider
   // render — any of ~20 state atoms re-rendered every useWorkspace()
@@ -2185,7 +2273,7 @@ export function WorkspaceProvider({ children }) {
     openLessonForGroup, saveSessionContent, finishLesson, markAllPresent, markGroupAbsences,
     saveStudent, bulkAddStudents, validateBulkRows, deleteStudent, addWarning, removeWarning,
     bulkAssignGroup, bulkDeleteStudents, restoreStudents,
-    saveExam, addGroup, updateGroup, renameGroup, deleteGroup,
+    saveExam, addGroup, updateGroup, renameGroup, deleteGroup, mergeGroups, updateLessonExtraDates,
     createStandaloneExam, saveStandaloneScore, updateStandaloneExam, deleteStandaloneExam, refreshStandaloneExams, ungradeStandaloneStudent,
     refreshHomework, createHomeworkTask, updateHomeworkTask, setHomeworkTaskStatus, deleteHomeworkTask,
     refreshOnlineExams, createOnlineExam, setOnlineExamStatus, deleteOnlineExam, resetOnlineExamAttempt,
