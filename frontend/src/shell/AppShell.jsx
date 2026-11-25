@@ -78,6 +78,11 @@ const TOUR_STEPS_AR = [
   { target: '[data-tour="nav-homework"]', title: 'الواجبات التفاعلية', body: 'تبويب كامل للواجبات: قوالب جاهزة (واجب 10 اختيارات، صح وغلط...) تفتح البناء بعدد أسئلة فورًا، Enter بينقلك بين الاختيارات، ومفتاح إجابات تلصقه مرة واحدة — والتصحيح تلقائي والدرجة تتسجل في الحصة الجاية.' },
   { target: '[data-tour="nav-reports"]', title: 'التقارير الجماعية', body: 'تقارير الحصص المنتهية لكل المجموعة، روابط البوابة (QR)، والقوالب — مع اختيار المستلمين في كل إرسال.' },
   { target: '[data-tour="account"]', title: 'حسابك وإعداداتك', body: 'الإعدادات والمساعدة والخروج موجودة هنا ومن صفحة الإعدادات — عشان تفضل شاشة العمل نظيفة أثناء الحصص.' },
+  // Task 66 — الميزات الجديدة (معادين للمجموعة، الدمج الذكي، القائمة السياقية، شريط التحديد)
+  { target: '.nk-session-card', title: 'قائمة سريعة بالضغط المطول', body: 'Right-click على الكمبيوتر أو ضغطة مطولة على الموبايل على أي بطاقة حصة أو صف طالب أو مجموعة — تظهر لك كل الإجراءات المتاحة فورًا.' },
+  { title: 'مجموعة بمعادين', body: 'من الإعدادات → المجموعات: عدّل أي مجموعة واضف «معاد إضافي» ليوم وميعاد مختلفين — المجموعة تظهر في كل أيام مواعيدها على الشاشة الرئيسية، وكل موعد حصته المستقلة بحضورها ودرجاتها.' },
+  { title: 'دمج مجموعتين بذكاء', body: 'اضغط ⇄ جنب أي مجموعة في الإعدادات: تختار المجموعة الهدف، ونسألك — نفس الوقت ولا كل مجموعة بموعدها؟ والطالب المكرر (نفس الرقم أو نفس الاسم) يتوحد تلقائيًا في سجل واحد بنفس درجاته وحضوره وواجباته، بدون تكرار.' },
+  { title: 'حدّد طلاب وشوف الخيارات', body: 'في شاشة الطلاب، حدد أي عدد من الطلاب — شريط الإجراءات يظهر فورًا: تعيين مجموعة، رسالة جماعية، نسخ الأرقام، روابط البوابة، والحذف.' },
 ]
 const TOUR_STEPS_EN = [
   { target: '[data-tour="today-sessions"]', title: "Today's sessions start here", body: 'Every scheduled session is a card. Tap "Open session" to launch the workspace: attendance, interaction, homework, exams and the report — all in one screen.' },
@@ -86,6 +91,11 @@ const TOUR_STEPS_EN = [
   { target: '[data-tour="nav-homework"]', title: 'Interactive homework', body: 'A full homework tab: ready templates (10 MCQs, true/false...) generate questions instantly, Enter jumps between choices, and you can paste a whole answer key at once — grading is automatic and grades flow into the next session.' },
   { target: '[data-tour="nav-reports"]', title: 'Batch reports', body: 'Reports for completed sessions, portal (QR) links, and templates — with recipient selection on every send.' },
   { target: '[data-tour="account"]', title: 'Account & settings', body: 'Settings, help and sign-out live here and in the Settings page — keeping the working screen clean during sessions.' },
+  // Task 66 — new features (multi-slot groups, smart merge, context menu, bulk bar)
+  { target: '.nk-session-card', title: 'Quick actions on long-press', body: 'Right-click on PC or long-press on mobile on any session card, student row or group — every available action appears instantly.' },
+  { title: 'One group, two slots', body: 'Settings → Groups: edit any group and add an extra weekly slot on a different day and time — the group shows on Home on every scheduled day, each slot is its own session.' },
+  { title: 'Smart group merge', body: 'Press ⇄ next to any group in Settings: pick the target group, and choose — same time, or each keeps its slot? Duplicate students (same phone or same name) are automatically unified into one record keeping all grades, attendance and homework.' },
+  { title: 'Select students, see actions', body: 'In the Students screen, select any number of students — the action bar appears instantly: assign group, batch message, copy phone numbers, portal links, and delete.' },
 ]
 
 export default function AppShell({ onOpenAdmin }) {

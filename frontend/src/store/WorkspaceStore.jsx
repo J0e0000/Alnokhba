@@ -71,6 +71,10 @@ export function WorkspaceProvider({ children }) {
   const [allAttendance, setAllAttendance] = useState([]) // recent records (streaks + history)
   const [absenceStreaks, setAbsenceStreaks] = useState({})
   const [todayGroups, setTodayGroups] = useState([])
+  // Task 66 (مجموعة بمعادين): كل صفوف الجدول الأسبوعي للمعلم — المجموعة
+  // الواحدة قد يكون لها أكثر من موعد (أيام مختلفة). المزامنة عبر نفس
+  // refreshTodayGroups (realtime على group_schedule يعيد استدعاءها).
+  const [groupSchedule, setGroupSchedule] = useState([])
   const [broadcasts, setBroadcasts] = useState([])
   const [examsList, setExamsList] = useState([])
   // الامتحانات المنفصلة (خارج نظام الحصص): exam = امتحان بتاريخ وسلم تقديرات،
@@ -467,9 +471,15 @@ export function WorkspaceProvider({ children }) {
 
   const refreshTodayGroups = useCallback(() => {
     if (!effectiveTeacherId) return
-    const todayWeekday = new Date().getDay()
-    supabase.from('group_schedule').select('group_name, lesson_time').eq('teacher_id', effectiveTeacherId).eq('weekday', todayWeekday)
-      .then(({ data }) => setTodayGroups(data ?? [])).catch(() => {})
+    // استعلام واحد لكل الصفوف: groupSchedule الكامل (معادين للمجموعة الواحدة)
+    // + todayGroups مشتق منه ليوم اليوم.
+    supabase.from('group_schedule').select('group_name, weekday, lesson_time').eq('teacher_id', effectiveTeacherId)
+      .then(({ data }) => {
+        const rows = data ?? []
+        setGroupSchedule(rows)
+        const todayWeekday = new Date().getDay()
+        setTodayGroups(rows.filter((r) => Number(r.weekday) === todayWeekday))
+      }).catch(() => {})
   }, [effectiveTeacherId])
 
   useEffect(() => { refreshTodayGroups() }, [refreshTodayGroups])
@@ -2024,46 +2034,68 @@ export function WorkspaceProvider({ children }) {
   }
 
   // ══════════════════════════ GROUPS CRUD ═════════════════════════════════════
-  const addGroup = async ({ name, stage, day, time }) => {
+  // Task 66 (مجموعة بمعادين): slots = قائمة مواعيد [{ day, time }] بأيام
+  // مختلفة — التوقيع القديم (day/time مفرد) يتحول تلقائيًا لموعد واحد.
+  // group_meta يخزن الموعد الأساسي (الأول) للتوافق، وgroup_schedule يحمل الكل.
+  const normalizeSlots = (slots, day, time) => (Array.isArray(slots) && slots.length ? slots : [{ day, time }])
+    .map((s) => ({ day: Number(s?.day), time: String(s?.time || '').trim() }))
+    .filter((s) => Number.isInteger(s.day) && s.day >= 0 && s.day <= 6 && s.time)
+
+  const addGroup = async ({ name, stage, day, time, slots }) => {
     const groups = settingsRef.current?.groups || []
     const groupMeta = settingsRef.current?.group_meta || {}
     const isArabic = isArabicRef.current
-    if (!name || !stage || day === '' || !time) { showToast(isArabic ? 'أدخل اسم المجموعة والمرحلة واليوم والميعاد' : 'Enter group name, stage, day, and time', 'error'); return false }
+    const normalized = normalizeSlots(slots, day, time)
+    if (!name || !stage || !normalized.length) { showToast(isArabic ? 'أدخل اسم المجموعة والمرحلة وموعدًا واحدًا على الأقل' : 'Enter group name, stage and at least one slot', 'error'); return false }
+    const weekDays = normalized.map((s) => s.day)
+    if (new Set(weekDays).size !== weekDays.length) { showToast(isArabic ? 'كل موعد لازم يكون في يوم مختلف للمجموعة الواحدة' : 'Each slot needs a different weekday', 'error'); return false }
     if (groups.includes(name)) { showToast(isArabic ? 'المجموعة موجودة بالفعل' : 'Group already exists', 'error'); return false }
     const previousSettings = { groups: [...groups], group_meta: { ...groupMeta } }
-    const nextSettings = { groups: [...groups, name], group_meta: { ...groupMeta, [name]: { stage, day: Number(day), time } } }
+    const nextSettings = { groups: [...groups, name], group_meta: { ...groupMeta, [name]: { stage, day: normalized[0].day, time: normalized[0].time } } }
     const settingsResult = await updateSettingsRef.current(nextSettings)
     if (settingsResult?.error) { showToast(`${isArabic ? 'فشل حفظ المجموعة: ' : 'Could not save group: '}${settingsResult.error.message || ''}`, 'error'); return false }
-    const { data: scheduleRow, error: scheduleError } = await supabase.from('group_schedule')
-      .insert({ teacher_id: teacherIdRef.current, group_name: name, weekday: Number(day), lesson_time: time })
-      .select('id, group_name, weekday, lesson_time').single()
-    if (scheduleError || !scheduleRow) {
+    const { data: scheduleRows, error: scheduleError } = await supabase.from('group_schedule')
+      .insert(normalized.map((s) => ({ teacher_id: teacherIdRef.current, group_name: name, weekday: s.day, lesson_time: s.time })))
+      .select('id, group_name, weekday, lesson_time')
+    if (scheduleError || !scheduleRows || scheduleRows.length !== normalized.length) {
       await updateSettingsRef.current(previousSettings)
-      showToast(isArabic ? 'فشل حفظ موعد المجموعة، تم التراجع عن الإضافة' : 'Could not save the schedule; group addition was rolled back', 'error')
+      showToast(isArabic ? 'فشل حفظ مواعيد المجموعة، تم التراجع عن الإضافة' : 'Could not save the schedule; group addition was rolled back', 'error')
       return false
     }
     await loadAll()
     refreshTodayGroups()
-    showToast(isArabic ? 'تمت إضافة المجموعة وحفظ موعدها' : 'Group and schedule saved', 'success')
+    showToast(isArabic ? `تمت إضافة المجموعة وحفظ ${normalized.length > 1 ? `${normalized.length} مواعيدها` : 'موعدها'}` : 'Group and schedule saved', 'success')
     return true
   }
 
-  const updateGroup = async (groupName, { stage, day, time }) => {
+  const updateGroup = async (groupName, { stage, day, time, slots }) => {
     const groupMeta = settingsRef.current?.group_meta || {}
     const isArabic = isArabicRef.current
-    if (!stage || day === '' || !time) { showToast(isArabic ? 'أكمل بيانات المجموعة' : 'Complete the group details', 'error'); return false }
-    const nextMeta = { ...groupMeta, [groupName]: { stage, day: Number(day), time } }
+    const normalized = normalizeSlots(slots, day, time)
+    if (!stage || !normalized.length) { showToast(isArabic ? 'أكمل بيانات المجموعة' : 'Complete the group details', 'error'); return false }
+    const weekDays = normalized.map((s) => s.day)
+    if (new Set(weekDays).size !== weekDays.length) { showToast(isArabic ? 'كل موعد لازم يكون في يوم مختلف للمجموعة الواحدة' : 'Each slot needs a different weekday', 'error'); return false }
+    const previousMeta = { ...groupMeta }
+    const nextMeta = { ...groupMeta, [groupName]: { stage, day: normalized[0].day, time: normalized[0].time } }
     try {
       const settingsResult = await updateSettingsRef.current({ group_meta: nextMeta })
       if (settingsResult?.error) throw settingsResult.error
-      const { error } = await supabase.from('group_schedule').upsert(
-        { teacher_id: teacherIdRef.current, group_name: groupName, weekday: Number(day), lesson_time: time },
-        { onConflict: 'teacher_id,group_name,weekday' },
-      )
-      if (error) throw error
-      showToast(isArabic ? 'تم تحديث المجموعة والميعاد' : 'Group schedule updated', 'success')
+      const { data: existing } = await supabase.from('group_schedule')
+        .select('weekday, lesson_time').eq('teacher_id', teacherIdRef.current).eq('group_name', groupName)
+      const del = await supabase.from('group_schedule').delete().eq('teacher_id', teacherIdRef.current).eq('group_name', groupName)
+      if (del.error) throw del.error
+      const ins = await supabase.from('group_schedule')
+        .insert(normalized.map((s) => ({ teacher_id: teacherIdRef.current, group_name: groupName, weekday: s.day, lesson_time: s.time })))
+      if (ins.error) {
+        // تراجع كامل: أعِد الصفوف القديمة ثم الميتا القديمة
+        if (existing?.length) await supabase.from('group_schedule')
+          .insert(existing.map((r) => ({ teacher_id: teacherIdRef.current, group_name: groupName, weekday: r.weekday, lesson_time: r.lesson_time })))
+        throw ins.error
+      }
+      showToast(isArabic ? `تم تحديث المجموعة و${normalized.length > 1 ? `${normalized.length} مواعيدها` : 'موعدها'}` : 'Group schedule updated', 'success')
       return true
     } catch (error) {
+      await updateSettingsRef.current({ group_meta: previousMeta })
       showToast(isArabic ? `تعذر تحديث المجموعة: ${error.message || ''}` : `Could not update group: ${error.message || ''}`, 'error')
       return false
     }
@@ -2199,11 +2231,13 @@ export function WorkspaceProvider({ children }) {
     }
   }
 
-  // ══════════════════ MERGE GROUPS (065 — دمج مجموعتين) ══════════════════
-  // ذريًا عبر RPC على السيرفر: حصص/واجبات/امتحانات/طلاب المصدر تنتقل للمجموعة
-  // الهدف، ومواعيد المصدر تُنقل (أو تُحذف لو للهدف مواعيد)، وextra_groups تُنظّف.
-  // بعدها تُحذف المجموعة المصدر من قائمة المجموعات + group_meta في الإعدادات.
-  const mergeGroups = async (sourceName, targetName) => {
+  // ══════════════════ MERGE GROUPS (066 — دمج مجموعتين v2) ══════════════════
+  // ذريًا عبر RPC على السيرفر: حصص/واجبات/امتحانات المصدر تنتقل للمجموعة
+  // الهدف، والطلاب المكررين (تليفون/اسم مطابق) يتوحدون في سجل واحد بنقل كل
+  // سجلاتهم (حضور، درجات، واجبات، سلوك، مدفوعات) قبل حذف الصف المكرر.
+  // scheduleMode: 'separate_times' → مواعيد المصدر تنضم لمواعيد الهدف
+  // (المجموعة تبقى بمعادين) | 'same_time' → مواعيد المصدر تُحذف.
+  const mergeGroups = async (sourceName, targetName, scheduleMode = 'separate_times') => {
     const isArabic = isArabicRef.current
     const tid = teacherIdRef.current
     if (!tid || !sourceName || !targetName || sourceName === targetName) return false
@@ -2214,6 +2248,7 @@ export function WorkspaceProvider({ children }) {
         p_source: sourceName,
         p_target: targetName,
         p_stage: settingsRef.current?.group_meta?.[targetName]?.stage || null,
+        p_schedule_mode: scheduleMode === 'same_time' ? 'same_time' : 'separate_times',
       })
       if (error) throw error
       const nextGroups = (settingsRef.current?.groups || []).filter((g) => g !== sourceName)
@@ -2230,9 +2265,12 @@ export function WorkspaceProvider({ children }) {
       refreshTodayGroups()
       const r = data || {}
       const examsMoved = (r.standalone_exams ?? 0) + (r.online_exams ?? 0)
+      const dupNote = (r.merged_duplicates ?? 0) > 0
+        ? (isArabic ? ` · توحد ${r.merged_duplicates} طالب مكرر بنفس درجاته وحضوره` : ` · ${r.merged_duplicates} duplicate students unified with their grades`)
+        : ''
       showToast(isArabic
-        ? `تم دمج «${sourceName}» في «${targetName}»: ${r.students ?? 0} طالب · ${r.sessions ?? 0} حصة · ${r.homework ?? 0} واجب · ${examsMoved} امتحان.`
-        : `Merged "${sourceName}" into "${targetName}": ${r.students ?? 0} students · ${r.sessions ?? 0} sessions · ${r.homework ?? 0} homework · ${examsMoved} exams.`, 'success', 8000)
+        ? `تم دمج «${sourceName}» في «${targetName}»: ${r.students ?? 0} طالب · ${r.sessions ?? 0} حصة · ${r.homework ?? 0} واجب · ${examsMoved} امتحان${dupNote}.`
+        : `Merged "${sourceName}" into "${targetName}": ${r.students ?? 0} students · ${r.sessions ?? 0} sessions · ${r.homework ?? 0} homework · ${examsMoved} exams${dupNote}.`, 'success', 8000)
       return true
     } catch (error) {
       console.error('Merge groups error:', error)
@@ -2264,7 +2302,7 @@ export function WorkspaceProvider({ children }) {
   const value = useMemo(() => ({
     // server state — students هنا النشطون فقط (المؤرشفون في archivedStudents)
     loading, students: activeStudents, archivedStudents, allStudents: students, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
-    absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
+    absenceStreaks, todayGroups, groupSchedule, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId, multiGroupEnabled,
     standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     // actions (stable — read refs internally)
@@ -2284,7 +2322,7 @@ export function WorkspaceProvider({ children }) {
     isArabic, t,
     isOnline,
   }), [loading, students, activeStudents, archivedStudents, examScoresByStudent, todayLogsByStudent, lessonSessions, allAttendance,
-    absenceStreaks, todayGroups, broadcasts, examsList, activeLessonId, activeLesson,
+    absenceStreaks, todayGroups, groupSchedule, broadcasts, examsList, activeLessonId, activeLesson,
     lessonAttendanceByStudent, groups, groupMeta, ranks, settings, effectiveTeacherId, multiGroupEnabled,
     standaloneExams, standaloneExamScores, standaloneExamAudit, homeworkTasks, homeworkSubmissions, onlineExams, onlineExamAttempts,
     loadAll, refreshTodayGroups, refreshSettings, refreshExamData,

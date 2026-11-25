@@ -41,12 +41,16 @@ export default function SettingsArea() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [brandingOpen, setBrandingOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [newGroup, setNewGroup] = useState({ name: '', stage: '', day: String(new Date().getDay()), time: '16:30' })
+  const [newGroup, setNewGroup] = useState({ name: '', stage: '' })
+  // Task 66 (مجموعة بمعادين): المجموعة الواحدة قد يكون لها أكثر من موعد
+  // أسبوعي (أيام مختلفة) — صفوف المواعيد في فورم الإضافة والتعديل.
+  const [newSlots, setNewSlots] = useState([{ day: String(new Date().getDay()), time: '16:30' }])
   // Group EDITING (teacher request): each group row can be renamed and its
   // stage/day/time changed. Rename propagates everywhere (students, schedule,
   // settings) through ws.renameGroup; meta changes go through ws.updateGroup.
   const [editingGroup, setEditingGroup] = useState(null) // group name being edited
-  const [editForm, setEditForm] = useState({ name: '', stage: '', day: 0, time: '' })
+  const [editForm, setEditForm] = useState({ name: '', stage: '' })
+  const [editSlots, setEditSlots] = useState([{ day: '0', time: '16:30' }])
   const [busyGroup, setBusyGroup] = useState(false)
   // Task 65 (دمج المجموعات): المجموعة المصدر المفتوحة في مودال الدمج.
   const [mergeSource, setMergeSource] = useState(null)
@@ -70,8 +74,15 @@ export default function SettingsArea() {
 
   const startGroupEdit = (g) => {
     const meta = ws.groupMeta[g] || {}
+    // الموعدون الحاليون من group_schedule (المصدر الكامل) — الميتا فقط احتياط
+    const rows = (ws.groupSchedule || []).filter((r) => r.group_name === g)
+      .sort((a, b) => Number(a.weekday) - Number(b.weekday))
+      .map((r) => ({ day: String(r.weekday), time: r.lesson_time || '16:30' }))
     setEditingGroup(g)
-    setEditForm({ name: g, stage: meta.stage || '', day: meta.day !== undefined && meta.day !== '' ? Number(meta.day) : 0, time: meta.time || '16:30' })
+    setEditForm({ name: g, stage: meta.stage || '' })
+    setEditSlots(rows.length
+      ? rows
+      : [{ day: meta.day !== undefined && meta.day !== '' ? String(meta.day) : '0', time: meta.time || '16:30' }])
   }
 
   // Bell notification intent: a pending "open insights" request from the
@@ -96,11 +107,13 @@ export default function SettingsArea() {
         if (!okRename) { setBusyGroup(false); return }
         current = name
       }
-      const meta = ws.groupMeta[editingGroup] || {}
-      const metaChanged = editForm.stage !== (meta.stage || '')
-        || Number(editForm.day) !== Number(meta.day)
-        || editForm.time !== (meta.time || '')
-      if (metaChanged) await ws.updateGroup(current, { stage: editForm.stage, day: editForm.day, time: editForm.time })
+      const stageChanged = editForm.stage !== (ws.groupMeta[editingGroup]?.stage || '')
+      // توقيع المواعيد: قارن مع صفوف group_schedule الحالية — عدّل عند أي فرق
+      const sig = (arr) => arr.map((s) => `${Number(s.day)}@${String(s.time || '')}`).sort().join('|')
+      const slotsChanged = sig(editSlots.map((s) => ({ day: Number(s.day), time: s.time })))
+        !== sig((ws.groupSchedule || []).filter((r) => r.group_name === current)
+          .map((r) => ({ day: Number(r.weekday), time: r.lesson_time || '' })))
+      if (stageChanged || slotsChanged) await ws.updateGroup(current, { stage: editForm.stage, slots: editSlots })
       setEditingGroup(null)
     } finally { setBusyGroup(false) }
   }
@@ -199,7 +212,7 @@ export default function SettingsArea() {
             if (editing) {
               return (
                 <div key={g} className="nk-row !flex-wrap" style={{ borderColor: 'var(--brand-gold)', background: 'var(--brand-gold-surface)' }}>
-                  <div className="grid grid-cols-2 sm:grid-cols-[1.3fr_1.2fr_0.9fr_0.8fr] gap-2 w-full">
+                  <div className="grid grid-cols-2 gap-2 w-full">
                     <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'اسم المجموعة' : 'Group name'} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} aria-label={isArabic ? 'اسم المجموعة' : 'Group name'} />
                     <select className="glass-input rounded-xl px-2 py-2 text-[.78rem]" value={editForm.stage} onChange={(e) => setEditForm({ ...editForm, stage: e.target.value })} aria-label={isArabic ? 'المرحلة' : 'Stage'}>
                       <option value="">{isArabic ? 'المرحلة...' : 'Stage...'}</option>
@@ -209,10 +222,10 @@ export default function SettingsArea() {
                         </optgroup>
                       ))}
                     </select>
-                    <select className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={editForm.day} onChange={(e) => setEditForm({ ...editForm, day: Number(e.target.value) })} aria-label={isArabic ? 'اليوم' : 'Day'}>
-                      {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-                    </select>
-                    <input type="time" className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={editForm.time} onChange={(e) => setEditForm({ ...editForm, time: e.target.value })} aria-label={isArabic ? 'الميعاد' : 'Time'} />
+                    {/* Task 66 — مجموعة بمعادين: مواعيد أسبوعية متعددة بأيام مختلفة */}
+                    <div className="col-span-2">
+                      <SlotEditor slots={editSlots} setSlots={setEditSlots} isArabic={isArabic} />
+                    </div>
                   </div>
                   <div className="flex gap-1.5 w-full justify-end">
                     <button className="btn-ghost !min-h-0 rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" onClick={() => setEditingGroup(null)}>{isArabic ? 'إلغاء' : 'Cancel'}</button>
@@ -228,7 +241,12 @@ export default function SettingsArea() {
               <div key={g} className="nk-row nk-ctx-target" {...triggerProps(() => groupMenuItems(g), g)}>
                 <span className="min-w-0">
                   <b className="truncate">{g}</b>
-                  <small>{meta.stage || '—'} · {meta.day !== undefined && meta.day !== '' ? WEEKDAYS[Number(meta.day)] : '—'} · {meta.time || '—'}</small>
+                  <small>
+                    {meta.stage || '—'} · {(ws.groupSchedule || []).filter((r) => r.group_name === g)
+                      .sort((a, b) => Number(a.weekday) - Number(b.weekday))
+                      .map((r) => `${WEEKDAYS[Number(r.weekday)]} ${r.lesson_time || ''}`.trim()).join(' · ')
+                      || (meta.day !== undefined && meta.day !== '' ? `${WEEKDAYS[Number(meta.day)]} ${meta.time || ''}` : '—')}
+                  </small>
                 </span>
                 <span className="flex gap-1.5">
                   <button
@@ -257,28 +275,31 @@ export default function SettingsArea() {
         </div>
 
         {!isAssistant && (
-          <div className="grid sm:grid-cols-[1.3fr_1fr_0.8fr_0.8fr_auto] grid-cols-2 gap-2 items-center">
-            <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'اسم المجموعة' : 'Group name'} value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} />
-            {/* Controlled stage selector (student-creation round): the group's
-                stage is the authoritative source for its students' stage — it
-                must be a standardized value, never free text. */}
-            <select className="glass-input rounded-xl px-2 py-2 text-[.78rem]" value={newGroup.stage} onChange={(e) => setNewGroup({ ...newGroup, stage: e.target.value })} aria-label={isArabic ? 'المرحلة' : 'Stage'}>
-              <option value="">{isArabic ? 'المرحلة...' : 'Stage...'}</option>
-              {Object.entries(GRADES_BY_STAGE).map(([category, grades]) => (
-                <optgroup key={category} label={category}>
-                  {grades.map((g) => <option key={g} value={g}>{g}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            <select className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={newGroup.day} onChange={(e) => setNewGroup({ ...newGroup, day: e.target.value })} aria-label={isArabic ? 'اليوم' : 'Day'}>
-              {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-            </select>
-            <input type="time" className="glass-input rounded-xl px-2 py-2 text-[.74rem]" value={newGroup.time} onChange={(e) => setNewGroup({ ...newGroup, time: e.target.value })} aria-label={isArabic ? 'الميعاد' : 'Time'} />
+          <div className="grid gap-2">
+            <div className="grid grid-cols-2 gap-2 items-center">
+              <input className="glass-input rounded-xl px-3 py-2 text-sm" placeholder={isArabic ? 'اسم المجموعة' : 'Group name'} value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} />
+              {/* Controlled stage selector (student-creation round): the group's
+                  stage is the authoritative source for its students' stage — it
+                  must be a standardized value, never free text. */}
+              <select className="glass-input rounded-xl px-2 py-2 text-[.78rem]" value={newGroup.stage} onChange={(e) => setNewGroup({ ...newGroup, stage: e.target.value })} aria-label={isArabic ? 'المرحلة' : 'Stage'}>
+                <option value="">{isArabic ? 'المرحلة...' : 'Stage...'}</option>
+                {Object.entries(GRADES_BY_STAGE).map(([category, grades]) => (
+                  <optgroup key={category} label={category}>
+                    {grades.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            {/* Task 66 — مجموعة بمعادين: موعد واحد على الأقل، وأضف ما تشاء */}
+            <SlotEditor slots={newSlots} setSlots={setNewSlots} isArabic={isArabic} />
             <button
-              className="btn-navy rounded-xl px-4 py-2 text-[.74rem] font-extrabold"
+              className="btn-navy rounded-xl px-4 py-2 text-[.74rem] font-extrabold w-fit"
               onClick={async () => {
-                const ok = await ws.addGroup(newGroup)
-                if (ok) setNewGroup({ name: '', stage: '', day: String(new Date().getDay()), time: '16:30' })
+                const ok = await ws.addGroup({ name: newGroup.name, stage: newGroup.stage, slots: newSlots })
+                if (ok) {
+                  setNewGroup({ name: '', stage: '' })
+                  setNewSlots([{ day: String(new Date().getDay()), time: '16:30' }])
+                }
               }}
             >
               ＋ {isArabic ? 'إضافة' : 'Add'}
@@ -421,6 +442,8 @@ function MergeGroupModal({ source, onClose }) {
   const { isArabic } = ws
   const [target, setTarget] = useState('')
   const [busy, setBusy] = useState(false)
+  // Task 66 — سؤال الوقت: 'separate_times' (افتراضي) أو 'same_time'
+  const [scheduleMode, setScheduleMode] = useState('separate_times')
   const groups = (ws.groups || []).filter((g) => g !== source)
   const byGroup = (list, name) => (list || []).filter((x) => x.group_name === name).length
   const students = (ws.students || []).filter((s) => s.group_name === source
@@ -432,7 +455,7 @@ function MergeGroupModal({ source, onClose }) {
   const doMerge = async () => {
     if (!target || busy) return
     setBusy(true)
-    const ok = await ws.mergeGroups(source, target)
+    const ok = await ws.mergeGroups(source, target, scheduleMode)
     setBusy(false)
     if (ok) onClose()
   }
@@ -461,6 +484,33 @@ function MergeGroupModal({ source, onClose }) {
         {groups.length === 0 && (
           <p className="text-[.72rem] text-fg-muted mb-3">{isArabic ? 'لا توجد مجموعة أخرى للدمج معها.' : 'No other group to merge into.'}</p>
         )}
+
+        {/* Task 66 — سؤال الدمج الزمني (طلب المالك): نفس الوقت ولا كل مجموعة
+            بموعدها؟ النقل الذكي للطلاب المكررين يحدث في الحالتين. */}
+        <div className="mb-3 rounded-xl p-3" style={{ background: 'var(--surface-container)' }}>
+          <b className="block text-[.76rem] mb-2">{isArabic ? '⏰ ماذا يحدث للمواعيد الأسبوعية؟' : 'What happens to the weekly slots?'}</b>
+          <label className="flex items-start gap-2.5 mb-2 cursor-pointer">
+            <input type="radio" name="schedmode" className="mt-1 accent-[var(--brand-gold)]" checked={scheduleMode === 'same_time'} onChange={() => setScheduleMode('same_time')} />
+            <span className="text-[.72rem] leading-5">
+              <b className="block">{isArabic ? 'نفس الوقت — مواعيد المصدر تُحذف' : 'Same time — source slots are removed'}</b>
+              <small className="text-fg-muted">{isArabic ? 'المجموعة الموحدة تلتقي على موعد المجموعة الهدف فقط.' : 'The merged group meets only at the target group’s slot.'}</small>
+            </span>
+          </label>
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input type="radio" name="schedmode" className="mt-1 accent-[var(--brand-gold)]" checked={scheduleMode === 'separate_times'} onChange={() => setScheduleMode('separate_times')} />
+            <span className="text-[.72rem] leading-5">
+              <b className="block">{isArabic ? 'كل مجموعة بموعدها — المواعيد تتجميع مع بعض' : 'Each keeps its slot — slots combine'}</b>
+              <small className="text-fg-muted">{isArabic ? 'مواعيد المصدر تنضم لمواعيد الهدف: المجموعة الموحدة بمعادين (أو أكثر).' : 'Source slots join the target’s: the merged group has two (or more) weekly slots.'}</small>
+            </span>
+          </label>
+        </div>
+
+        <div className="nk-notice mb-3 !text-[.7rem]">
+          {isArabic
+            ? 'الطالب الموجود في المجموعتين (بنفس الرقم أو نفس الاسم) يتوحد في سجل واحد — بنفس درجاته وحضوره وواجباته، بدون تكرار.'
+            : 'A student present in both groups (same phone or same name) is unified into one record — keeping all grades, attendance and homework, with no duplicates.'}
+        </div>
+
         <div className="flex gap-2">
           <button className="btn-ghost flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={onClose} disabled={busy}>
             {isArabic ? 'إلغاء' : 'Cancel'}
@@ -470,6 +520,66 @@ function MergeGroupModal({ source, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SLOT EDITOR (Task 66 — مجموعة بمعادين): صفوف مواعيد أسبوعية — يوم + ميعاد.
+// كل يوم مرة واحدة للمجموعة الواحدة (فهرس فريد على teacher+group+weekday).
+// ─────────────────────────────────────────────────────────────────────────────
+function SlotEditor({ slots, setSlots, isArabic }) {
+  const used = new Set(slots.map((s) => Number(s.day)))
+  return (
+    <div className="grid gap-2">
+      {slots.map((s, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-[.64rem] text-fg-muted w-16 shrink-0 font-extrabold">
+            {isArabic ? `معاد ${i + 1}` : `Slot ${i + 1}`}
+            {i === 0 && <span className="block text-[.58rem] opacity-70">{isArabic ? '(الأساسي)' : '(primary)'}</span>}
+          </span>
+          <select
+            className="glass-input rounded-xl px-2 py-1.5 text-[.74rem] flex-1 min-w-0"
+            value={s.day}
+            aria-label={isArabic ? 'يوم الموعد' : 'Slot weekday'}
+            onChange={(e) => setSlots(slots.map((x, j) => (j === i ? { ...x, day: e.target.value } : x)))}
+          >
+            {WEEKDAYS.map((d, di) => (
+              <option key={d} value={di} disabled={used.has(di) && Number(s.day) !== di}>{d}</option>
+            ))}
+          </select>
+          <input
+            type="time"
+            className="glass-input rounded-xl px-2 py-1.5 text-[.74rem] w-[7.5rem] shrink-0"
+            value={s.time}
+            aria-label={isArabic ? 'ميعاد الموعد' : 'Slot time'}
+            onChange={(e) => setSlots(slots.map((x, j) => (j === i ? { ...x, time: e.target.value } : x)))}
+          />
+          {slots.length > 1 && (
+            <button
+              className="btn-ghost !min-h-0 rounded-lg px-2 py-1.5 text-[.66rem] font-black shrink-0"
+              style={{ color: 'var(--danger-strong)' }}
+              title={isArabic ? 'إزالة الموعد' : 'Remove slot'}
+              aria-label={isArabic ? 'إزالة الموعد' : 'Remove slot'}
+              onClick={() => setSlots(slots.filter((_, j) => j !== i))}
+            >✕</button>
+          )}
+        </div>
+      ))}
+      {slots.length < WEEKDAYS.length && (
+        <button
+          className="btn-ghost !min-h-0 rounded-lg px-3 py-1.5 text-[.66rem] font-extrabold w-fit"
+          onClick={() => {
+            const free = WEEKDAYS.map((_, di) => di).find((di) => !used.has(di))
+            setSlots([...slots, { day: String(free ?? 0), time: '16:30' }])
+          }}
+        >＋ {isArabic ? 'معاد إضافي للمجموعة' : 'Extra weekly slot'}</button>
+      )}
+      <small className="text-fg-muted">
+        {isArabic
+          ? 'المجموعة تظهر في كل أيام مواعيدها على الشاشة الرئيسية، وكل موعد حصته المستقلة.'
+          : 'The group appears on Home on every scheduled day; each slot is its own session.'}
+      </small>
     </div>
   )
 }

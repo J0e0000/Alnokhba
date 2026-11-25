@@ -31,7 +31,7 @@ const EN_WD_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Fri
 // ═══════════════════════════════════════════════════════════════════════════
 export default function HomePage() {
   const ws = useWorkspace()
-  const { loading, students, lessonSessions, todayGroups, groupMeta, allAttendance, isArabic } = ws
+  const { loading, students, lessonSessions, todayGroups, groupSchedule, groupMeta, allAttendance, isArabic } = ws
   const ui = useUI()
   const { isArabic: ar } = useLanguage()
   void isArabic
@@ -80,7 +80,9 @@ export default function HomePage() {
     // المواعيد الإضافية — نفس الدرس بيتلقى في أكثر من موعد.
     const coversDay = (l) => l.session_date === selectedDay
       || (Array.isArray(l.extra_dates) && l.extra_dates.includes(selectedDay))
-    // Groups scheduled on the selected weekday (group_meta.day) always show.
+    // Task 66 (مجموعة بمعادين): مجموعة قد يكون لها أكثر من موعد أسبوعي —
+    // تظهر في كل أيام مواعيدها (group_schedule) وكذلك في يوم group_meta.day.
+    ;(groupSchedule || []).forEach((r) => { if (Number(r.weekday) === selectedWeekday) names.add(r.group_name) })
     Object.entries(groupMeta || {}).forEach(([g, m]) => {
       if (m && m.day !== undefined && m.day !== '' && Number(m.day) === selectedWeekday) names.add(g)
     })
@@ -88,7 +90,9 @@ export default function HomePage() {
     lessonSessions.forEach((l) => { if (coversDay(l)) names.add(l.group_name) })
     return [...names].map((groupName) => {
       const lesson = lessonSessions.find((l) => l.group_name === groupName && coversDay(l))
-      const scheduled = todayGroups.find((g) => g.group_name === groupName)
+      // وقت الموعد = سلوك اليوم المحدد من الجدول الكامل، وإلا موعد اليوم الحالي، وإلا الميتا
+      const scheduled = (groupSchedule || []).find((g) => g.group_name === groupName && Number(g.weekday) === selectedWeekday)
+        || todayGroups.find((g) => g.group_name === groupName)
       const meta = groupMeta?.[groupName] || {}
       const groupStudents = students.filter((s) => studentInGroup(s, groupName))
       const counts = lesson ? countsForSession(lesson, groupName) : { present: 0, absent: 0, unrecorded: groupStudents.length, total: groupStudents.length, hwDone: 0, hwApplicable: 0 }
@@ -113,7 +117,7 @@ export default function HomePage() {
       if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status]
       return String(a.time || '').localeCompare(String(b.time || ''))
     })
-  }, [todayGroups, lessonSessions, groupMeta, students, countsForSession, selectedDay, selectedWeekday])
+  }, [todayGroups, groupSchedule, lessonSessions, groupMeta, students, countsForSession, selectedDay, selectedWeekday])
 
   const stats = useMemo(() => {
     const sessionsToday = sessions.length
