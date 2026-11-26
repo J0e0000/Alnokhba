@@ -1209,31 +1209,25 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
 /* ═══════════════════════════════════════════════════════════════════════════
    LANDING (lp-*) — premium SaaS landing layer, scoped to LandingPage only.
    Dark navy + gold identity shared with the app tokens (brand-navy/gold).
+   Visual system (landing-page-design skill): flat backgrounds, motion on the
+   base curve cubic-bezier(0.22,1,0.36,1), Tailwind scale steps only.
    ═══════════════════════════════════════════════════════════════════════════ */
 .lp-dark {
-  background: linear-gradient(180deg, #0c1631 0%, #14213f 46%, #101c3a 100%);
+  background: #0D1C3D;
   color: #eef2fb;
 }
-/* Hero backdrop: layered gold/cyan glow mesh + faint grid + vignette */
+/* Hero backdrop: faint flat grid only — no gradient glows (B4: backgrounds are flat) */
 .lp-hero-bg {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
-}
-.lp-hero-bg::before {
-  content: ""; position: absolute; inset: 0;
-  background:
-    radial-gradient(42rem 26rem at 82% -8%, rgba(224, 173, 75, 0.20), transparent 62%),
-    radial-gradient(36rem 24rem at 6% 8%, rgba(43, 108, 176, 0.22), transparent 60%),
-    radial-gradient(30rem 22rem at 55% 108%, rgba(14, 127, 116, 0.16), transparent 62%);
 }
 .lp-hero-bg::after {
   content: ""; position: absolute; inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
   background-size: 44px 44px;
-  mask-image: radial-gradient(75% 60% at 50% 30%, #000 35%, transparent 100%);
 }
-/* Floating accent chips on the hero mockup */
+/* Floating accent chips on the hero mockup (B7: decelerating curve, never ease-in-out) */
 @keyframes lp-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-9px); }
@@ -1242,49 +1236,77 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: .55; transform: scale(.82); }
 }
-.lp-float { animation: lp-float 5.2s ease-in-out infinite; }
-.lp-float-slow { animation: lp-float 7.4s ease-in-out 0.8s infinite; }
-.lp-pulse-dot { animation: lp-pulse-dot 2.1s ease-in-out infinite; }
-/* Bento cards: gold edge glow on hover */
+.lp-float { animation: lp-float 5.2s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+.lp-float-slow { animation: lp-float 7.4s cubic-bezier(0.22, 1, 0.36, 1) .8s infinite; }
+.lp-pulse-dot { animation: lp-pulse-dot 2.1s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+/* Bento cards: gold edge on hover — transform on the base curve, color at 300ms */
 .lp-glow-card {
   position: relative;
-  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+  transition: transform .5s cubic-bezier(0.22, 1, 0.36, 1), border-color .3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow .3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .lp-glow-card:hover {
   transform: translateY(-4px);
   border-color: rgba(224, 173, 75, 0.55);
   box-shadow: 0 18px 44px rgba(224, 173, 75, 0.12);
 }
-/* Section eyebrow chip */
+/* Section eyebrow chip — Caption 3 (12/16, bold) */
 .lp-eyebrow {
   display: inline-flex; align-items: center; gap: .5rem;
   border-radius: 999px; border: 1px solid rgba(224, 173, 75, 0.38);
   background: rgba(224, 173, 75, 0.10);
-  color: #ecc06a; font-size: .72rem; font-weight: 800;
-  padding: .45rem 1rem;
+  color: #ecc06a; font-size: .75rem; line-height: 1rem; font-weight: 700;
+  padding: 4px 16px;
 }
-/* Timeline connector for how-it-works */
-.lp-timeline { position: relative; }
-.lp-timeline::before {
-  content: ""; position: absolute; top: 2.4rem; bottom: 2.4rem;
-  inset-inline-start: 1.35rem; width: 2px;
-  background: linear-gradient(180deg, rgba(251,156,27,.55), rgba(251,156,27,.06));
+/* B5: hero heading gradient — the one allowed gradient, on text only */
+.lp-hero-title {
+  background: linear-gradient(90deg, #FFFFFF 20%, #9B9B9B 100%);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
 }
-/* Gold gradient display text (on dark surfaces only) */
+/* Gold display text (on dark surfaces only) — brand accent line inside the hero h1 */
 .lp-gold-text {
   background: linear-gradient(105deg, #FDD49A 8%, #FB9C1B 48%, #E07F00 92%);
   -webkit-background-clip: text; background-clip: text;
   color: transparent;
 }
-/* Final CTA band sheen */
+/* Final CTA band — flat */
 .lp-cta-band {
-  background:
-    radial-gradient(38rem 18rem at 18% 0%, rgba(224, 173, 75, 0.22), transparent 60%),
-    radial-gradient(30rem 16rem at 88% 100%, rgba(14, 127, 116, 0.20), transparent 62%),
-    linear-gradient(160deg, #101c3a, #14213f 70%);
+  background: #101C3A;
 }
+/* B7 links/buttons: base curve, 500ms (min 200ms rule kept for color hovers) */
+.lp-dark a, .lp-dark button {
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* B9: visible focus ring */
+.lp-dark a:focus-visible, .lp-dark button:focus-visible, .lp-dark input:focus-visible {
+  outline: 2px solid #FB9C1B; outline-offset: 2px; border-radius: 8px;
+}
+/* B1 copy rules: no orphaned words */
+.lp-dark h1, .lp-dark h2, .lp-dark h3 { text-wrap: balance; }
+.lp-dark p { text-wrap: pretty; }
+/* B10: skip to content — hidden until keyboard focus */
+.lp-skip {
+  position: fixed; top: 8px; inset-inline-start: 8px; z-index: 60;
+  transform: translateY(-200%); transition: transform .3s cubic-bezier(0.22, 1, 0.36, 1);
+  background: #FB9C1B; color: #1D0E03; font-weight: 700; font-size: .875rem;
+  padding: 8px 16px; border-radius: 12px;
+}
+.lp-skip:focus-visible { transform: translateY(0); }
+/* B7 scroll reveals: rise 24px + fade, once, on the base curve (IO adds .lp-in) */
+.lp-io {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity .7s cubic-bezier(0.22, 1, 0.36, 1), transform .7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lp-io.lp-in { opacity: 1; transform: none; }
+/* B11 tagline reveal: words start muted (~30%) and activate one by one */
+.lp-word {
+  opacity: .3;
+  transition: opacity .6s cubic-bezier(0.22, 1, 0.36, 1), color .6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lp-word.lp-word-on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   .lp-float, .lp-float-slow, .lp-pulse-dot { animation: none; }
+  .lp-io, .lp-word { opacity: 1; transform: none; transition: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
