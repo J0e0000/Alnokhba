@@ -8,6 +8,7 @@ import CustomMessageModal from '../components/CustomMessageModal'
 import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
+import { printStudentsCardsPdf, printPlaceholderCardsPdf } from '../lib/studentCardPdf'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — student-management round (spec 3–8, 21–26):
@@ -38,6 +39,8 @@ export default function StudentsArea() {
   const [customComposer, setCustomComposer] = useState(null) // selected students → CustomMessageModal
   const [moreOpen, setMoreOpen] = useState(false)
   const [busyBulk, setBusyBulk] = useState('')
+  const [cardsPrintOpen, setCardsPrintOpen] = useState(false)
+  const [placeholderCount, setPlaceholderCount] = useState(8)
 
   // Task 42: التبويب «المؤرشفون» يسحب من ws.archivedStudents بدل النشطين —
   // بحث + فلتر المجموعة/المرحلة شغالين، وفلتر الحالة الفرعية لا ينطبق هنا.
@@ -155,6 +158,39 @@ export default function StudentsArea() {
     ui.startQueue(items)
   }
 
+  // 💳 QR cards (Task 68): Visa-style printable cards — one PDF sheet, 8
+  // cards per A4 page with cut guides. Works for the bulk selection, the
+  // whole center, and BLANK stock (placeholders) before any student exists.
+  const printCardsFor = async (targets, { placeholders = 0 } = {}) => {
+    setMoreOpen(false)
+    if (placeholders) {
+      setBusyBulk('placeholders')
+      try {
+        const res = await printPlaceholderCardsPdf(placeholders)
+        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت جاهز PDF ✓ — قص على الخطوط المتقطعة` : `Downloaded ${placeholders} blank cards ✓`, 'success')
+        else ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
+      } finally { setBusyBulk('') }
+      return
+    }
+    if (!targets?.length) { ws.showToast?.(isArabic ? 'لا يوجد طلاب للطباعة' : 'No students to print', 'error'); return }
+    setBusyBulk('cards')
+    ws.showToast?.(isArabic ? `جاري تجهيز كروت ${targets.length} طالب…` : `Preparing ${targets.length} cards…`, 'info')
+    try {
+      const res = await printStudentsCardsPdf(targets)
+      if (res?.success) {
+        ws.showToast?.(
+          isArabic
+            ? `تم تحميل كروت ${res.printed} طالب ✓${res.failed ? ` — تعذر تجهيز ${res.failed}` : ''}`
+            : `Downloaded ${res.printed} cards ✓${res.failed ? ` — ${res.failed} failed` : ''}`,
+          res.failed ? 'info' : 'success',
+        )
+        setCardsPrintOpen(false)
+      } else {
+        ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
+      }
+    } finally { setBusyBulk('') }
+  }
+
   // EXPORT moved to the Admin panel only (owner request): data export is an
   // admin-level action — no CSV button in teacher-facing panes anymore.
 
@@ -192,6 +228,9 @@ export default function StudentsArea() {
           </button>
           <button className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setBulkAddOpen(true)}>
             ＋＋ {isArabic ? 'إضافة عدة طلاب' : 'Bulk add'}
+          </button>
+          <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setCardsPrintOpen(true)} title={isArabic ? 'كرت QR مطبوع لكل طالب — أو كروت فارغة قبل التسجيل' : 'Printable QR card per student — or blank stock before enrollment'}>
+            💳 {isArabic ? 'كروت QR' : 'QR cards'}
           </button>
         </div>
       </div>
@@ -375,6 +414,7 @@ export default function StudentsArea() {
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
                 <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
                   <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
+                  <button role="menuitem" disabled={busyBulk === 'cards'} onClick={() => printCardsFor(selectedStudents)}>💳 {isArabic ? 'طباعة كروت المحددين' : 'Print selected cards'}</button>
                   <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
                   <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}>✕ {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
                 </div>
@@ -420,6 +460,21 @@ export default function StudentsArea() {
 
       {bulkAddOpen && <BulkAddModal onClose={() => setBulkAddOpen(false)} />}
 
+      {/* QR cards print modal (Task 68): works with ZERO students — blank
+          stock cards (placeholders) print before enrollment. */}
+      {cardsPrintOpen && (
+        <CardsPrintModal
+          isArabic={isArabic}
+          studentCount={ws.students.length}
+          placeholderCount={placeholderCount}
+          setPlaceholderCount={setPlaceholderCount}
+          busy={busyBulk === 'cards' || busyBulk === 'placeholders'}
+          onClose={() => setCardsPrintOpen(false)}
+          onPrintAll={() => printCardsFor(ws.students)}
+          onPrintPlaceholders={() => printCardsFor(null, { placeholders: placeholderCount })}
+        />
+      )}
+
       {/* Custom message to the SELECTED students (owner request) */}
       {customComposer && (
         <CustomMessageModal
@@ -430,6 +485,58 @@ export default function StudentsArea() {
           onSend={(items) => { setCustomComposer(null); ui.startQueue(items) }}
         />
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR CARDS PRINT modal (Task 68) — Visa-style student cards: one live card
+// per student (portal QR + F-code), or blank placeholder stock for centers
+// that haven't added students yet. 8 cards per A4 page, dashed cut guides.
+// ─────────────────────────────────────────────────────────────────────────────
+function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlaceholderCount, busy, onClose, onPrintAll, onPrintPlaceholders }) {
+  return (
+    <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/50 p-4" onClick={busy ? undefined : onClose} role="dialog" aria-modal="true">
+      <div className="glass-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-extrabold m-0 mb-1">{isArabic ? '💳 طباعة كروت الطلاب' : 'Print student QR cards'}</h3>
+        <p className="text-[.72rem] text-fg-muted mt-0 mb-3 leading-relaxed">
+          {isArabic
+            ? 'كرت بمقاس فيزا لكل طالب: QR الحضور + كود الطالب. الكاميرا العادية بتفتح صفحة الطالب، وكاميرا النخبة بتسجل حضوره. ٨ كروت في صفحة A4 مع خطوط قص.'
+            : 'Visa-size card per student: attendance QR + student code. A normal camera opens the student page; the Nokhba scanner records attendance. 8 cards per A4 page with cut guides.'}
+        </p>
+        <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
+          <p className="text-[.78rem] font-extrabold m-0 mb-2">
+            {isArabic ? `كروت الطلاب الحاليين (${studentCount})` : `Current students (${studentCount})`}
+          </p>
+          <button className="btn-navy w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy || studentCount === 0} onClick={onPrintAll}>
+            {busy ? '… ' : '🖨️ '}{isArabic ? (studentCount ? `طباعة كروت كل الطلاب (${studentCount})` : 'لا يوجد طلاب بعد') : (studentCount ? `Print all student cards (${studentCount})` : 'No students yet')}
+          </button>
+        </div>
+        <div className="rounded-xl p-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
+          <p className="text-[.78rem] font-extrabold m-0 mb-2">
+            {isArabic ? 'كروت جاهزة (قبل تسجيل الطلاب)' : 'Blank stock (before students exist)'}
+          </p>
+          <select
+            className="glass-input rounded-xl px-3 py-2.5 text-[.78rem] w-full mb-2"
+            value={placeholderCount}
+            onChange={(e) => setPlaceholderCount(Number(e.target.value))}
+            aria-label={isArabic ? 'عدد الكروت الفارغة' : 'Number of blank cards'}
+          >
+            {[8, 16, 24, 32, 40].map((n) => (
+              <option key={n} value={n}>{isArabic ? `${n} كرت (${n / 8} ${n / 8 === 1 ? 'صفحة' : 'صفحات'})` : `${n} cards (${n / 8} page${n / 8 > 1 ? 's' : ''})`}</option>
+            ))}
+          </select>
+          <button className="btn-gold w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy} onClick={onPrintPlaceholders}>
+            {busy ? '… ' : '🖨️ '}{isArabic ? `طباعة ${placeholderCount} كرت جاهز` : `Print ${placeholderCount} blank cards`}
+          </button>
+          <p className="text-[.66rem] text-fg-muted mt-2 mb-0">
+            {isArabic ? 'الكروت الجاهزة تيجي من غير QR واسم فاضي — بعد تسجيل الطالب اطبع كرته الرسمي من صفحة الطلاب وبيتبدل.' : 'Blank cards have no QR/name — after enrolling a student, print their real card from this page to replace it.'}
+          </p>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <button className="btn-ghost flex-1 rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={onClose} disabled={busy}>{isArabic ? 'إغلاق' : 'Close'}</button>
+        </div>
+      </div>
     </div>
   )
 }
