@@ -191,3 +191,17 @@ export async function assignCardToStudent(teacherId, card, studentId) {
   if (updErr) throw new Error(updErr.message)
   return { ok: true }
 }
+
+/**
+ * Map of studentId → { code, token } for every pool card currently assigned
+ * (review round 5, note #27-4: printing is for students that HAVE a card —
+ * the printed 5-digit code IS the assigned card's code).
+ */
+export async function fetchAssignedPoolByStudent(teacherId) {
+  const pool = await fetchCardPool(teacherId)
+  const map = new Map()
+  for (const c of pool) {
+    if (c.assignedStudentId) map.set(c.assignedStudentId, { code: c.code, token: c.token })
+  }
+  return map
+}

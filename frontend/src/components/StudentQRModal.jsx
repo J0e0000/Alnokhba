@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 import { useWorkspace } from '../store/WorkspaceStore'
+import { useAuth } from '../context/AuthContext'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { printStudentCardPdf } from '../lib/studentCardPdf'
+import { findCardByCode, nextFreeCard, assignCardToStudent, fetchAssignedPoolByStudent } from '../lib/cardPool'
 import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,6 +16,7 @@ import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsApp
 export default function StudentQRModal({ open, student, template, onClose, showToast }) {
   const ws = useWorkspace()
   const { isArabic } = ws
+  const { effectiveTeacherId } = useAuth()
   // PERF: qrcode loads on demand (dynamic import) — it used to ship in the
   // first bundle for every teacher even though QR modals are button-driven.
   const makeQR = (url, opts) => import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(url, opts))
@@ -24,7 +27,22 @@ export default function StudentQRModal({ open, student, template, onClose, showT
   const [sending, setSending] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
   const [cardBusy, setCardBusy] = useState(false)
+  // 🎴 pool-card binding (note #27-4): printing is for students ASSIGNED a
+  // pool card — the printed 5-digit code IS that card's code. Attach a card
+  // here (by code or next-free) for students that don't have one yet.
+  const [poolCode, setPoolCode] = useState(null)
+  const [attachCode, setAttachCode] = useState('')
+  const [attachBusy, setAttachBusy] = useState(false)
   const linkRef = useRef(null)
+
+  useEffect(() => {
+    if (!open || !student?.id || !effectiveTeacherId) return
+    let alive = true
+    fetchAssignedPoolByStudent(effectiveTeacherId)
+      .then((map) => { if (alive) setPoolCode(map.get(student.id)?.code || null) })
+      .catch(() => { /* pool invisible — printing shows the guidance toast */ })
+    return () => { alive = false }
+  }, [open, student?.id, effectiveTeacherId])
 
   useEffect(() => {
     if (!open || !student?.id) return
@@ -103,16 +121,65 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     } finally { setPdfBusy(false) }
   }
 
-  // 💳 كرت الطالب المطبوع (مقاس فيزا 85.6×54مم — QR الحضور + كود الطالب):
-  // PDF جاهز للطباعة مع خطوط قص متقطعة، ونفس رابط البوابة المماسي في كل النظام.
+  // 💳 كرت الطالب المطبوع (وجهان — أمام: اللوجو + كود الكرت، خلف: QR الحضور):
+  // PDF جاهز للطباعة مع خطوط قص متقطعة. الطباعة للطلاب المربوطين بكرت جاهز
+  // فقط (note #27-4) — الكود المطبوع هو كود الكرت المرتبط.
   const printVisaCard = async () => {
     if (cardBusy || !student?.id) return
+    if (!poolCode) {
+      showToast?.(
+        isArabic ? 'الطالب مش مربوط بكرت جاهز — اربطه من «🔗 اربط بطاقة جاهزة» تحت واطبع تاني' : 'This student has no assigned card — attach one below first',
+        'error',
+      )
+      return
+    }
     setCardBusy(true)
     try {
-      const res = await printStudentCardPdf(student)
-      if (res?.success) showToast?.(isArabic ? 'تم تحميل كرت الطالب PDF ✓ (مقاس فيزا — قص على الخطوط)' : 'Student card PDF downloaded ✓ (visa size — cut on dashed lines)', 'success')
+      const res = await printStudentCardPdf(student, { poolCode })
+      if (res?.success) showToast?.(isArabic ? `تم تحميل كرت الطالب PDF ✓ (كود الكرت ${poolCode} — وجهان: قص على الخطوط)` : `Student card PDF downloaded ✓ (card code ${poolCode})`, 'success')
       else showToast?.(isArabic ? 'تعذر تجهيز كرت الطالب — حاول تاني' : 'Could not build the student card — try again', 'error')
     } finally { setCardBusy(false) }
+  }
+
+  // 🔗 اربط بطاقة جاهزة لطالب موجود (note #27-4): بالكود أو أول بطاقة حرة —
+  // نفس الـ QR المطبوع يشتغل فورًا للحضور والبوابة.
+  const attachPoolCard = async (card) => {
+    if (attachBusy || !student?.id || !effectiveTeacherId) return
+    setAttachBusy(true)
+    try {
+      await assignCardToStudent(effectiveTeacherId, card, student.id)
+      setPoolCode(card.code)
+      setAttachCode('')
+      showToast?.(isArabic ? `تم ربط البطاقة ${card.code} بالطالب ✓ — نفس الـ QR المطبوع هيشتغل للحضور` : `Card ${card.code} attached ✓ — the same printed QR now works`, 'success')
+    } catch (err) {
+      const msg = String(err?.message || err)
+      showToast?.(
+        msg.includes('card-already-assigned')
+          ? (isArabic ? 'البطاقة دي مربوطة بطالب تاني' : 'That card is assigned to another student')
+          : (isArabic ? 'تعذر الربط — حاول تاني' : 'Could not attach the card — try again'),
+        'error',
+      )
+    } finally { setAttachBusy(false) }
+  }
+
+  const attachByCode = async () => {
+    const clean = String(attachCode || '').trim()
+    if (!/^\d{5}$/.test(clean)) { showToast?.(isArabic ? 'اكتب كود البطاقة (٥ أرقام)' : 'Enter the 5-digit card code', 'error'); return }
+    setAttachBusy(true)
+    try {
+      const card = await findCardByCode(effectiveTeacherId, clean)
+      if (!card) { showToast?.(isArabic ? 'مفيش بطاقة بالكود ده — اتأكد من الكود المطبوع' : 'No card with that code — check the printed card', 'error'); return }
+      await attachPoolCard(card)
+    } finally { setAttachBusy(false) }
+  }
+
+  const attachNextFree = async () => {
+    setAttachBusy(true)
+    try {
+      const card = await nextFreeCard(effectiveTeacherId)
+      if (!card) { showToast?.(isArabic ? 'مفيش بطاقات حرة — اطبع كروت جاهزة الأول من صفحة الطلاب' : 'No free cards — print blank stock first', 'error'); return }
+      await attachPoolCard(card)
+    } finally { setAttachBusy(false) }
   }
 
   return (
@@ -158,9 +225,37 @@ export default function StudentQRModal({ open, student, template, onClose, showT
             <button className="btn-gold rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadStudentPdf} disabled={pdfBusy} title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}>
               {pdfBusy ? '… جاري التجهيز' : '📄 تقرير PDF'}
             </button>
-            <button className="btn-navy rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={printVisaCard} disabled={cardBusy} title={isArabic ? 'كرت مطبوع بمقاس فيزا — QR الحضور + كود الطالب' : 'Printable visa-size card — attendance QR + student code'}>
-              {cardBusy ? '… جاري التجهيز' : '💳 كرت الطالب (فيزا)'}
+            <button className="btn-navy rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={printVisaCard} disabled={cardBusy} title={isArabic ? 'كرت مطبوع بوجهين — اللوجو وكود الكرت أمامًا و QR خلف' : 'Printable two-face card — logo + card code front, QR back'}>
+              {cardBusy ? '… جاري التجهيز' : poolCode ? `💳 كرت الطالب (${poolCode})` : '💳 كرت الطالب (فيزا)'}
             </button>
+          </div>
+          {/* 🎴 اربط بطاقة جاهزة — للطلاب من غير كرت مربوط (note #27-4):
+              بالكود أو أول بطاقة حرة؛ نفس الـ QR المطبوع يشتغل فورًا. */}
+          <div className="rounded-2xl p-3 w-full" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
+            <p className="text-[.72rem] font-extrabold m-0 mb-2">
+              {poolCode
+                ? (isArabic ? `🎴 مربوط بالبطاقة ${poolCode} — الكود ده هو المطبوع على الكرت` : `🎴 Attached to card ${poolCode}`)
+                : (isArabic ? '🎴 الطالب مش مربوط ببطاقة — اربطه بكود البطاقة المطبوعة أو بأول بطاقة حرة' : '🎴 No card attached — attach a printed card by code or auto-assign')}
+            </p>
+            {!poolCode && (
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={attachCode}
+                  onChange={(e) => setAttachCode(e.target.value)}
+                  inputMode="numeric"
+                  placeholder={isArabic ? 'كود البطاقة (٥ أرقام)' : 'Card code (5 digits)'}
+                  aria-label={isArabic ? 'كود البطاقة المطبوعة' : 'Printed card code'}
+                  className="glass-input rounded-xl px-3 py-2 text-[.78rem] w-36"
+                  dir="ltr"
+                />
+                <button className="btn-navy rounded-xl px-3 py-2 text-[.72rem] font-extrabold" onClick={attachByCode} disabled={attachBusy}>
+                  {attachBusy ? '…' : '🔗'} {isArabic ? 'ربط بكود' : 'Attach by code'}
+                </button>
+                <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold" onClick={attachNextFree} disabled={attachBusy}>
+                  {attachBusy ? '…' : '✨'} {isArabic ? 'أول بطاقة حرة' : 'Next free card'}
+                </button>
+              </div>
+            )}
           </div>
           <p className="text-[.68rem] text-fg-muted text-center m-0">
             {isArabic ? 'الطالب يفتح الرابط ده من غير تسجيل دخول — ويقدر ينسخه أو يشاركه من صفحته نفسها.' : 'The student opens this link without login — and can copy/share it from their own page.'}
