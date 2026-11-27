@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
+import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
 import LeaderboardPanel from '../components/LeaderboardPanel'
@@ -9,7 +10,8 @@ import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import useContextMenu from '../hooks/useContextMenu'
-import { printStudentsCardsPdf, printPlaceholderCardsPdf } from '../lib/studentCardPdf'
+import { printStudentsCardsPdf, printBlankCardsPdf } from '../lib/studentCardPdf'
+import { findCardByCode, nextFreeCard, assignCardToStudent } from '../lib/cardPool'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — student-management round (spec 3–8, 21–26):
@@ -27,6 +29,7 @@ export default function StudentsArea() {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const ui = useUI()
+  const { effectiveTeacherId } = useAuth()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('الكل')
@@ -243,8 +246,10 @@ export default function StudentsArea() {
     if (placeholders) {
       setBusyBulk('placeholders')
       try {
-        const res = await printPlaceholderCardsPdf(placeholders)
-        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت جاهز PDF ✓ — قص على الخطوط المتقطعة` : `Downloaded ${placeholders} blank cards ✓`, 'success')
+        // Review round 4: blanks come from the PRE-PRINTED POOL — each card
+        // gets a unique 5-digit code + its own QR token; assign later.
+        const res = await printBlankCardsPdf(effectiveTeacherId, placeholders)
+        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} بطاقة بكود فريد PDF ✓ — اربط كل بطاقة بالطالب بعد التسجيل` : `Downloaded ${placeholders} coded blank cards ✓`, 'success')
         else ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
       } finally { setBusyBulk('') }
       return
@@ -500,8 +505,29 @@ export default function StudentsArea() {
         multiGroup={ws.multiGroupEnabled}
         onClose={() => setStudentModal({ open: false, student: null })}
         onSave={async (form) => {
+          const cardAttach = form.card_attach
           const result = await ws.saveStudent(form, studentModal.student)
-          if (result?.ok) setStudentModal({ open: false, student: null })
+          if (result?.ok) {
+            setStudentModal({ open: false, student: null })
+            // 🎴 review round 4: attach a pre-printed card at creation —
+            // by 5-digit code, or the next free card in the pool.
+            if (cardAttach && result.student?.id && effectiveTeacherId) {
+              try {
+                const card = cardAttach.mode === 'code'
+                  ? await findCardByCode(effectiveTeacherId, cardAttach.code)
+                  : await nextFreeCard(effectiveTeacherId)
+                if (!card) {
+                  ws.showToast?.(isArabic ? (cardAttach.mode === 'code' ? 'مفيش بطاقة بالكود ده — راجع الكود المطبوع' : 'مفيش بطاقات حرة في المخزن — اطبع كروت جديدة') : 'No matching free card', 'error')
+                } else {
+                  await assignCardToStudent(effectiveTeacherId, card, result.student.id)
+                  ws.showToast?.(isArabic ? `تم ربط البطاقة ${card.code} بالطالب ✓ — نفس الـ QR المطبوع هيشتغل للحضور` : `Card ${card.code} assigned ✓`, 'success')
+                }
+              } catch (err) {
+                const msg = String(err?.message || err)
+                ws.showToast?.(isArabic ? (msg === 'card-already-assigned' ? 'البطاقة دي مربوطة بطالب تاني' : 'تعذر ربط البطاقة — حاول تاني') : 'Card assignment failed', 'error')
+              }
+            }
+          }
         }}
         isSaving={wsMeta.isSaving}
       />

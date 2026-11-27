@@ -28,6 +28,14 @@ export const UPDATE_MARKER = '✨'
 /** The shipped-update manifest — newest first. Append-only: NEVER reuse a key. */
 export const PLATFORM_UPDATES = [
   {
+    key: '2026-11-card-assignment',
+    released: '2026-11-27',
+    icon: '🎴',
+    title: 'جديد: كروت مطبوعة مسبقًا بربط تلقائي بالطلاب',
+    body: 'اطبع كروت فارغة بالجملة وكل كرة عليها كود من 5 أرقام و QR خاص بيها. لما تسجل طالب جديد اختار «ربط بكود» أو «أول بطاقة حرة» — ونفس الـ QR المطبوع هيشتغل للحضور وفتح البوابة من غير إعادة طباعة.',
+    hint: 'صفحة الطلاب → «💳 كروت QR» → «كروت جاهزة»، وخانة «🎴 بطاقة مطبوعة» في فورم الطالب الجديد.',
+  },
+  {
     key: '2026-11-qr-cards',
     released: '2026-11-27',
     icon: '💳',

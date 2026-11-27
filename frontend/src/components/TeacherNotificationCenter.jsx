@@ -111,8 +111,9 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
       // حد الجلسة: افتراضيًا الرسايل الواصلة بعد فتح الموقع فقط
       if (!showAll && since) qy = qy.gte('created_at', since)
       const { data } = await qy.order('created_at', { ascending: false }).limit(30)
-      // ✨ platform-update rows render in the pinned section only.
-      const stream = (data || []).filter((e) => !String(e.title || '').startsWith(UPDATE_MARKER))
+      // ✨/🎴 platform-update + card-pool rows render in their own sections
+      // (never in the regular stream).
+      const stream = (data || []).filter((e) => !String(e.title || '').startsWith(UPDATE_MARKER) && !String(e.title || '').startsWith('🎴'))
       setEvents(stream)
       setUnreadCount(stream.filter((e) => !e.is_read).length)
       // عدّاد القديم غير المقروء — يظهر كسطر إرشادي فوق القايمة
@@ -123,6 +124,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           .eq('teacher_id', effectiveTeacherId)
           .eq('is_read', false)
           .not('title', 'like', `${UPDATE_MARKER}%`)
+          .not('title', 'like', '🎴%')
         if (profile?.created_at) cq = cq.gte('created_at', profile.created_at)
         cq = cq.lt('created_at', since)
         const { count } = await cq
@@ -187,12 +189,14 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           table: 'teacher_notification_events',
           filter: `teacher_id=eq.${effectiveTeacherId}`,
         }, (payload) => {
-          // ✨ platform-update rows belong to the pinned section — never
-          // toast/notify for them (seeding must stay silent).
-          if (String(payload.new?.title || '').startsWith(UPDATE_MARKER)) {
+          // ✨/🎴 system bookkeeping rows (updates + card pool) never toast —
+          // updates refresh the pinned section, pool rows are invisible.
+          const t = String(payload.new?.title || '')
+          if (t.startsWith(UPDATE_MARKER)) {
             loadUpdates()
             return
           }
+          if (t.startsWith('🎴')) return
           setEvents((prev) => [payload.new, ...prev].slice(0, 30))
           setUnreadCount((prev) => prev + 1)
           notifyIncoming(payload.new)
