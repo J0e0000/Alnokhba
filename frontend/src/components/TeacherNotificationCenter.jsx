@@ -8,6 +8,7 @@
  * teacher-specific events from teacher_notification_events table.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Icon from './icons'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -152,7 +153,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
       if (AudioCtx) { const ctx = new AudioCtx(); const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.frequency.value = 880; gain.gain.value = 0.045; osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.16) }
     } catch {}
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(event.title || 'تنبيه جديد', { body: event.body || '', icon: '/nokhba-mark.svg' })
-    showToast(`🔔 ${event.title || (isArabic ? 'تنبيه جديد' : 'New notification')}`, 'info', 4500)
+    showToast(`${event.title || (isArabic ? 'تنبيه جديد' : 'New notification')}`, 'info', 4500)
   }
 
   const enableBrowserNotifications = async () => {
@@ -333,9 +334,9 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   }
   const eventIconOf = (e) => {
     const title = String(e.title || '')
-    if (title.includes('تقرير جلسة')) return '📚'
-    if (title.includes('ملخص الأسبوع')) return '📈'
-    if (title.includes('متابعة')) return '⚠️'
+    if (title.includes('تقرير جلسة')) return 'clipboard-list'
+    if (title.includes('ملخص الأسبوع')) return 'bar-chart'
+    if (title.includes('متابعة')) return 'alert-circle'
     return eventIcons[e.event_type] || eventIcons.other
   }
 
@@ -346,12 +347,12 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     : events.filter((e) => categoryOfEvent(e) === categoryFilter)
 
   const eventIcons = {
-    student_submission: '📤',
-    exam_completion: '📝',
-    payment_recorded: '💰',
-    assistant_request: '👤',
-    student_insight: '💡',
-    other: '📌',
+    student_submission: 'send',
+    exam_completion: 'file-text',
+    payment_recorded: 'wallet',
+    assistant_request: 'user',
+    student_insight: 'lightbulb',
+    other: 'bell',
   }
 
   return (
@@ -387,14 +388,14 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               fixed bottom action-sheet (escapes any ancestor clip). */}
           <div className="nk-notif-panel fixed inset-x-2 bottom-2 z-50 sm:static sm:w-full sm:mt-3 glass-card rounded-xl shadow-2xl border border-subtle max-h-[70vh] flex flex-col" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-subtle">
-              <h3 className="text-sm font-bold text-fg">{isArabic ? '🔔 التنبيهات' : '🔔 Notifications'}</h3>
+              <h3 className="text-sm font-bold text-fg"><Icon name="bell" size={16} style={{ verticalAlign: '-0.25em', marginInlineEnd: 6 }} /> {isArabic ? 'التنبيهات' : 'Notifications'}</h3>
               <div className="flex flex-wrap items-center gap-2">
                 {onOpenUpdatePopup && (
                   <button onClick={onOpenUpdatePopup} className="text-brand-gold-hover text-xs font-bold" title={isArabic ? 'شرح تحديث الكروت — يظهر تلقائيًا مرة واحدة' : 'The cards update tutorial — shows once automatically'}>
-                    ✨ {isArabic ? 'شو الجديد' : "What's new"}
+                    <Icon name="sparkles" size={16} style={{ verticalAlign: '-0.3em', marginInlineEnd: 6 }} /> {isArabic ? 'شو الجديد' : "What's new"}
                   </button>
                 )}
-                {pushPermission !== 'unsupported' && !pushReady && <button onClick={enableBrowserNotifications} className="action-button !min-h-10 min-w-0 rounded-xl border border-brand-gold/30 px-3 py-1.5 text-xs font-bold text-brand-gold-hover">🔔 {isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button>}
+                {pushPermission !== 'unsupported' && !pushReady && <button onClick={enableBrowserNotifications} className="action-button !min-h-10 min-w-0 rounded-xl border border-brand-gold/30 px-3 py-1.5 text-xs font-bold text-brand-gold-hover"><Icon name="bell" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button>}
                 <button onClick={() => setShowAll((v) => !v)} className="text-brand-gold-hover text-xs font-bold" title={isArabic ? 'الرسايل الواصلة بعد ما فتحت الموقع بس هي اللي بتظهر افتراضيًا' : 'Only messages that arrived after you opened the site show by default'}>
                   {showAll ? (isArabic ? 'الجديدة فقط' : 'New only') : (isArabic ? 'عرض الكل' : 'Show all')}
                 </button>
@@ -405,8 +406,8 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               {[
                 ['all', isArabic ? 'الكل' : 'All'],
                 ['reports', isArabic ? '📚 تقارير' : '📚 Reports'],
-                ['payment', isArabic ? '💰 مدفوعات' : '💰 Payment'],
-                ['attendance', isArabic ? '📋 حضور' : '📋 Attendance'],
+                ['payment', isArabic ? 'مدفوعات' : 'Payment'],
+                ['attendance', isArabic ? 'حضور' : 'Attendance'],
                 ['performance', isArabic ? '📊 أداء' : '📊 Performance'],
                 ['general', isArabic ? '📌 عام' : '📌 General'],
               ].map(([key, label]) => (
@@ -458,7 +459,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
                     className={`w-full text-right px-4 py-3 border-b border-subtle hover:bg-white/5 transition-colors ${!event.is_read ? 'bg-brand-gold/5' : ''}`}
                   >
                     <div className="flex items-start gap-2">
-                      <span className="text-sm mt-0.5">{eventIconOf(event)}</span>
+                      <span className="mt-0.5"><Icon name={eventIconOf(event)} size={16} /></span>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm ${!event.is_read ? 'text-fg font-bold' : 'text-fg-subtle'}`}>{event.title}</p>
                         {event.body && <p className="text-fg-subtle text-xs mt-0.5 truncate">{event.body}</p>}

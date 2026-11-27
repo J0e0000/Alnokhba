@@ -130,7 +130,7 @@ const loadFonts = (() => {
   return () => {
     if (!done) {
       const faces = [
-        '300 22px Cairo', '400 20px Cairo', '700 18px Cairo',
+        '300 22px Cairo', '400 20px Cairo', '700 18px Cairo', '700 19px Cairo',
         '800 30px Cairo', '900 44px Cairo', '900 60px Cairo', '900 66px Cairo',
       ]
       done = Promise.all(faces.map((f) => document.fonts.load(f, 'النخبة').catch(() => undefined)))
@@ -274,8 +274,87 @@ function drawMark(ctx, cx, cy, s, accent) {
   ctx.restore()
 }
 
+/** Subtle rounded inner frame (note #9-3) — a thin accent line inset from
+ * the card edge, echoing the outer rounded border. */
+function drawInnerFrame(ctx, style, W, H) {
+  ctx.save()
+  ctx.globalAlpha = 0.26
+  ctx.strokeStyle = style.accent
+  ctx.lineWidth = 1.6
+  roundRectPath(ctx, 14, 14, W - 28, H - 28, 34)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** Soft corner shapes inside the gradient (note #9-3): two big translucent
+ * white circles clipped to the card rounding — gentle depth, no banding. */
+function drawCornerShapes(ctx, W, H) {
+  ctx.save()
+  roundRectPath(ctx, 0, 0, W, H, 44)
+  ctx.clip()
+  ctx.globalAlpha = 0.06
+  ctx.fillStyle = '#FFFFFF'
+  ctx.beginPath()
+  ctx.arc(W - 30, 40, 170, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.globalAlpha = 0.045
+  ctx.beginPath()
+  ctx.arc(40, H - 40, 140, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** Chip-like emblem (note #9-3): a bank-card chip drawn with the style's
+ * accent color — rounded body + contact grid. */
+function drawChip(ctx, cx, cy, accent) {
+  ctx.save()
+  ctx.globalAlpha = 0.85
+  ctx.strokeStyle = accent
+  ctx.lineWidth = 2.2
+  roundRectPath(ctx, cx - 28, cy - 21, 56, 42, 9)
+  ctx.stroke()
+  ctx.globalAlpha = 0.5
+  ctx.lineWidth = 1.6
+  ctx.beginPath(); ctx.moveTo(cx - 28, cy - 7); ctx.lineTo(cx + 28, cy - 7); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(cx - 28, cy + 7); ctx.lineTo(cx + 28, cy + 7); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(cx - 9, cy - 21); ctx.lineTo(cx - 9, cy + 21); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(cx + 9, cy - 21); ctx.lineTo(cx + 9, cy + 21); ctx.stroke()
+  ctx.restore()
+}
+
+/** Top ornament band (note #9-3): chip on one corner, bilingual micro-text
+ * (بطاقة طالب / STUDENT CARD) on the other. */
+function drawTopBand(ctx, style, W) {
+  drawChip(ctx, 92, 64, style.accent)
+  ctx.save()
+  ctx.textAlign = 'right'
+  ctx.fillStyle = style.accent
+  ctx.font = `700 19px ${FONT}`
+  ctx.fillText('بطاقة طالب', W - 56, 58)
+  ctx.fillStyle = style.sub
+  ctx.font = `700 15px ${MONO}`
+  setLetterSpacing(ctx, '3px')
+  ctx.fillText('STUDENT CARD', W - 56, 84)
+  setLetterSpacing(ctx, '0px')
+  ctx.restore()
+}
+
+/** Footer micro-line (note #9-3): tiny letterspaced academy wordmark. */
+function drawFooterLine(ctx, style, W, H) {
+  ctx.save()
+  ctx.globalAlpha = 0.55
+  ctx.textAlign = 'center'
+  ctx.fillStyle = style.sub
+  ctx.font = `700 13px ${MONO}`
+  setLetterSpacing(ctx, '5px')
+  ctx.fillText('AL-NOKHBBA · NOKHBA ACADEMY', W / 2, H - 34)
+  setLetterSpacing(ctx, '0px')
+  ctx.restore()
+}
+
 /** Logo lockup (mark + النخبة wordmark) centered at (cx, cy) — drawn on the
- * gradient in the style's accent color (note #8-1: no white box). */
+ * gradient in the style's accent color (note #8-1: no white box); alphabetic
+ * baseline tuned so the wordmark's visual center matches the mark's center. */
 function drawLogoLockup(ctx, style, cx, cy) {
   const markS = 76
   ctx.save()
@@ -308,6 +387,10 @@ export async function paintCardFront({ student, style: styleId } = {}) {
   const W = CARD_W_PX
   const H = CARD_H_PX
   paintFace(ctx, style)
+  drawInnerFrame(ctx, style, W, H)
+  drawCornerShapes(ctx, W, H)
+  drawTopBand(ctx, style, W)
+  drawFooterLine(ctx, style, W, H)
 
   const name = String(student?.name || '').trim()
   const code = String(student?.code || '').trim()
@@ -339,7 +422,8 @@ export async function paintCardFront({ student, style: styleId } = {}) {
   const nameH = name ? (nameLines.length === 1 ? nameSize : nameSize * 2 + 14) : 0
 
   // Vertical centering: every element contributes its real height so the
-  // block sits with even margins whatever the content (note #8-2).
+  // block sits balanced between the ornament band and the footer line
+  // (note #8-2 centering + note #9-3 ornaments).
   const MARK_S = 76
   const CODE_SIZE = 42
   const META_SIZE = 26
@@ -351,7 +435,9 @@ export async function paintCardFront({ student, style: styleId } = {}) {
   const GAP_LINE_META = meta ? 16 : 0
   const META_H = meta ? META_SIZE : 0
   const blockH = MARK_S + GAP_LOGO_NAME + nameH + GAP_NAME_CODE + CODE_H + GAP_CODE_LINE + LINE_H + GAP_LINE_META + META_H
-  let y = (H - blockH) / 2
+  const TOP_BAND = 96
+  const FOOTER_H = 56
+  let y = TOP_BAND + ((H - TOP_BAND - FOOTER_H) - blockH) / 2
 
   drawLogoLockup(ctx, style, W / 2, y + MARK_S / 2)
   y += MARK_S + GAP_LOGO_NAME
@@ -401,11 +487,15 @@ export async function paintCardBack({ link, style: styleId } = {}) {
   const W = CARD_W_PX
   const H = CARD_H_PX
   paintFace(ctx, style)
+  drawInnerFrame(ctx, style, W, H)
+  drawCornerShapes(ctx, W, H)
+  drawTopBand(ctx, style, W)
+  drawFooterLine(ctx, style, W, H)
 
-  const panel = 396
+  const panel = 380
   const taglineH = 26
   const blockH = panel + 30 + taglineH
-  const py = (H - blockH) / 2
+  const py = 96 + ((H - 96 - 56) - blockH) / 2
   const px = W / 2 - panel / 2
   roundRectPath(ctx, px, py, panel, panel, 32)
   ctx.fillStyle = QR_PANEL_BG
@@ -435,13 +525,17 @@ export async function paintBlankFront({ style: styleId } = {}) {
   const W = CARD_W_PX
   const H = CARD_H_PX
   paintFace(ctx, style)
+  drawInnerFrame(ctx, style, W, H)
+  drawCornerShapes(ctx, W, H)
+  drawTopBand(ctx, style, W)
+  drawFooterLine(ctx, style, W, H)
 
   // Same vertical balance as the student front (note #8-2): lockup + three
   // write-in rows (label above a dashed line), block centered top/bottom.
   const ROW_STRIDE = 84 // label-top → next label-top (28 label zone + line + 56 gap)
   const rowsH = 2 * ROW_STRIDE + 28 // last dashed line sits 28 under its label
   const blockH = 76 + 34 + rowsH
-  const y0 = (H - blockH) / 2
+  const y0 = 96 + ((H - 96 - 56) - blockH) / 2
   drawLogoLockup(ctx, style, W / 2, y0 + 38)
 
   ctx.textAlign = 'center'
@@ -471,6 +565,10 @@ export async function paintBlankBack({ style: styleId } = {}) {
   const W = CARD_W_PX
   const H = CARD_H_PX
   paintFace(ctx, style)
+  drawInnerFrame(ctx, style, W, H)
+  drawCornerShapes(ctx, W, H)
+  drawTopBand(ctx, style, W)
+  drawFooterLine(ctx, style, W, H)
   ctx.textAlign = 'center'
   ctx.strokeStyle = style.sub
   ctx.fillStyle = style.sub
@@ -478,7 +576,7 @@ export async function paintBlankBack({ style: styleId } = {}) {
   ctx.setLineDash([14, 11])
   const tile = 380
   const blockH = tile + 30 + 26
-  const py = (H - blockH) / 2
+  const py = 96 + ((H - 96 - 56) - blockH) / 2
   roundRectPath(ctx, W / 2 - tile / 2, py, tile, tile, 32)
   ctx.stroke()
   ctx.setLineDash([])

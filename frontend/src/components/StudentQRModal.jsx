@@ -3,6 +3,7 @@ import Modal from './Modal'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { printStudentCardPdf } from '../lib/studentCardPdf'
+import Icon from './icons'
 import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -157,10 +158,10 @@ export default function StudentQRModal({ open, student, template, onClose, showT
               ⬇ {isArabic ? 'تحميل QR' : 'Download QR'}
             </button>
             <button className="btn-gold rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadStudentPdf} disabled={pdfBusy} title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}>
-              {pdfBusy ? '… جاري التجهيز' : '📄 تقرير PDF'}
+              {pdfBusy ? '… جاري التجهيز' : (<><Icon name="file-text" size={16} style={{ marginInlineEnd: 6, verticalAlign: '-0.25em' }} />تقرير PDF</>)}
             </button>
             <button className="btn-navy rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={printVisaCard} disabled={cardBusy} title={isArabic ? 'كرت مطبوع بوجهين — اللوجو واسم الطالب وكوده أمامًا و QR خلف' : 'Printable two-face card — logo, name and code front, QR back'}>
-              {cardBusy ? '… جاري التجهيز' : '💳 كرت الطالب (فيزا)'}
+              {cardBusy ? '… جاري التجهيز' : (<><Icon name="credit-card" size={16} style={{ marginInlineEnd: 6, verticalAlign: '-0.25em' }} />كرت الطالب (فيزا)</>)}
             </button>
           </div>
           <p className="text-[.68rem] text-fg-muted text-center m-0">

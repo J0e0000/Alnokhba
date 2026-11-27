@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from './icons'
 import { useCallback, useEffect, useState } from 'react'
 import Modal from './Modal'
 import { supabase } from '../lib/supabaseClient'
@@ -91,7 +92,7 @@ export default function EmailConfigModal({ open, onClose, showToast, onSaved }) 
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="⚙️ إعدادات إرسال الإيميل (Resend)">
+    <Modal open={open} onClose={onClose} title="إعدادات إرسال الإيميل (Resend)">
       <div className="space-y-4">
         <div className="bg-surface-container border border-outline rounded-xl p-3 text-sm leading-relaxed text-fg">
           <p className="font-bold text-fg mb-1">ليه الإيميلات بتفشل؟</p>
@@ -181,7 +182,7 @@ export default function EmailConfigModal({ open, onClose, showToast, onSaved }) 
                 disabled={saving || testing}
                 className="bg-[var(--info-bg)] text-[var(--info-strong)] border border-[var(--info-border)] font-bold px-4 py-2 rounded-lg text-sm disabled:opacity-60"
               >
-                {testing ? '… جاري الإرسال' : '✉️ إرسال إيميل تجريبي'}
+                {testing ? '… جاري الإرسال' : 'إرسال إيميل تجريبي'}
               </button>
             </div>
 

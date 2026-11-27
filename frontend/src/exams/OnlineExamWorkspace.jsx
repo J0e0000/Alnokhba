@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -436,7 +437,7 @@ function OnlineExamMonitor({ exam }) {
               <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={toggleStatus}>
                 {open ? (isArabic ? '🔒 إغلاق' : '🔒 Close') : (isArabic ? '🔓 فتح' : '🔓 Open')}
               </button>
-              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" style={{ color: 'var(--danger-strong)' }} onClick={deleteExam} aria-label={isArabic ? 'حذف الامتحان' : 'Delete exam'}>🗑</button>
+              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" style={{ color: 'var(--danger-strong)' }} onClick={deleteExam} aria-label={isArabic ? 'حذف الامتحان' : 'Delete exam'}><Icon name="trash" size={14} /></button>
             </span>
           </div>
         </div>
@@ -500,7 +501,7 @@ function OnlineExamMonitor({ exam }) {
                   {statePill}
                   {a && (
                     <button className="btn-ghost rounded-lg px-2 py-1 text-[.64rem] font-extrabold" onClick={() => resetAttempt(a, s.name)} title={isArabic ? 'إعادة تعيين — يقدر يبدأ من الأول' : 'Reset — student retakes'}>
-                      ↺ {isArabic ? 'إعادة' : 'Reset'}
+                      <Icon name="rotate-ccw" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'إعادة' : 'Reset'}
                     </button>
                   )}
                 </span>

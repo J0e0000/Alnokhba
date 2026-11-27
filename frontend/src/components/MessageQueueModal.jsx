@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from './icons'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Modal from './Modal'
 import { buildWhatsAppUrl } from '../lib/helpers'
@@ -168,7 +169,7 @@ export default function MessageQueueModal({ open, onClose, queue, index, status,
       {canEdit && !editing && (
         <div className="flex items-center justify-between mb-1.5">
           <button type="button" onClick={startEditing} className="text-[11px] font-extrabold underline" style={{ color: 'var(--accent-blue)' }}>
-            ✎ عدّل الرسالة قبل الإرسال
+            <Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />عدّل الرسالة قبل الإرسال
           </button>
           {wasEdited && (
             <button type="button" onClick={revertMessage} className="text-[11px] text-fg-muted underline">

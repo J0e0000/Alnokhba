@@ -16,6 +16,7 @@
  * page also refreshes the moment it becomes visible again after being
  * backgrounded (user switched back to the tab / app).
  */
+import Icon, { hasIcon } from '../components/icons'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { getStudentRank, isIOSBrowser, gradeOf } from '../lib/helpers'
@@ -983,7 +984,7 @@ export default function PublicQRPage() {
             style={{ background: '#101a33', border: '1px solid rgba(251,156,27,.45)', boxShadow: '0 24px 60px rgba(0,0,0,.5)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mx-auto mb-3 grid place-items-center w-14 h-14 rounded-full" style={{ background: 'rgba(251,156,27,.15)', border: '1px solid rgba(251,156,27,.4)', fontSize: '1.6rem' }}>🔔</div>
+            <div className="mx-auto mb-3 grid place-items-center w-14 h-14 rounded-full" style={{ background: 'rgba(251,156,27,.15)', border: '1px solid rgba(251,156,27,.4)', fontSize: '1.6rem' }}><Icon name="bell" size={26} /></div>
             <h3 style={{ color: '#ffffff', fontWeight: 900, fontSize: '1.02rem', margin: '0 0 6px' }}>فعّل إشعارات النتايج</h3>
             <p style={{ color: '#c9d4e8', fontSize: '.78rem', lineHeight: 1.8, margin: '0 0 14px' }}>
               نتايج الواجبات والامتحانات وتغييرات الحصص توصلك فورًا — حتى والموقع مقفول. التفعيل مرة واحدة على الجهاز ده بس.
@@ -995,7 +996,7 @@ export default function PublicQRPage() {
                 onClick={handleEnableFromModal}
                 disabled={parentPushBusy}
               >
-                {parentPushBusy ? 'جاري التفعيل...' : '🔔 تفعيل الإشعارات'}
+                {parentPushBusy ? 'جاري التفعيل...' : 'تفعيل الإشعارات'}
               </button>
               <button
                 className="rounded-xl px-4 py-2.5 font-extrabold text-[.74rem] cursor-pointer"
@@ -1014,7 +1015,7 @@ export default function PublicQRPage() {
       {!parentPushEnabled && !pushBannerDismissed && (
         <div style={pushBanner}>
           <div style={pushBannerBody}>
-            <b style={pushBannerTitle}>🔔 فعّل الإشعارات</b>
+            <b style={pushBannerTitle}><Icon name="bell" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />فعّل الإشعارات</b>
             <span style={pushBannerSub}>نتايج الواجبات والامتحانات والحصص توصلك فورًا — حتى والموقع مقفول.</span>
             {parentPushMessage && <span style={pushBannerMsg}>{parentPushMessage}</span>}
           </div>
@@ -1031,7 +1032,7 @@ export default function PublicQRPage() {
       <div style={studentCard}>
         <div style={avatarCircle}>{(student.name || '؟').trim().charAt(0)}</div>
         <p style={studentNameText}>{student.name}</p>
-        <p style={rankText}>🛡️ {rank || '—'}</p>
+        <p style={rankText}><Icon name="shield" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{rank || '—'}</p>
         <div style={statRow}>
           <StatPill label="النقاط" value={student.points ?? 0} />
           <StatPill label="الحضور" value={student.attendance_status || 'لم يرصد'} />
@@ -1320,7 +1321,7 @@ export default function PublicQRPage() {
             {!parentPushEnabled && (
               <>
                 <button type="button" onClick={handleEnableParentPush} disabled={parentPushBusy} style={{ ...goldBtn, fontSize: 12, padding: '7px 12px', marginTop: 8, marginBottom: 6 }}>
-                  {parentPushBusy ? 'جاري التفعيل...' : '🔔 تفعيل إشعارات ولي الأمر على هذا الجهاز'}
+                  {parentPushBusy ? 'جاري التفعيل...' : 'تفعيل إشعارات ولي الأمر على هذا الجهاز'}
                 </button>
                 {typeof Notification === 'undefined' && (
                   <p style={{ ...feedMsg, color: '#FCA5A5' }}>
@@ -1345,7 +1346,7 @@ export default function PublicQRPage() {
           </button>
         )}
         <button onClick={handleDownloadReport} style={outlineBtn} disabled={downloading}>
-          {downloading ? 'جاري التحضير...' : '📄 تحميل تقرير الشهر'}
+          {downloading ? 'جاري التحضير...' : 'تحميل تقرير الشهر'}
         </button>
       </div>
 

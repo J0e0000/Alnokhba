@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -241,7 +242,7 @@ export default function HomePage() {
             onClick={() => ui.openExam({ examId: 'new' })}
             data-tour="new-standalone-exam"
           >
-            ✎ {ar ? 'إنشاء امتحان منفصل' : 'New standalone exam'}
+            <Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{ar ? 'إنشاء امتحان منفصل' : 'New standalone exam'}
           </button>
         )}
       </div>
@@ -281,7 +282,7 @@ export default function HomePage() {
 
       {sessions.length === 0 ? (
         <div className="nk-content text-center py-10">
-          <div className="text-3xl mb-2" aria-hidden="true">▦</div>
+          <div className="mb-2" aria-hidden="true"><Icon name="layout-dashboard" size={30} /></div>
           <p className="font-extrabold mb-1">
             {dayIsToday ? (ar ? 'لا توجد حصص مجدولة اليوم' : 'No sessions scheduled today') : (ar ? 'لا توجد حصص في هذا اليوم' : 'No sessions on this day')}
           </p>
@@ -338,7 +339,7 @@ export default function HomePage() {
                 <span className="flex flex-col items-end gap-1.5 shrink-0">
                   {(s.lesson?.extra_dates || []).length > 0 && (
                     <span className="nk-pill nk-pill-pending" title={ar ? 'الحصة ليها معاد إضافي — تظهر في كل المواعيد' : 'This session has an extra date'}>
-                      📅 {ar ? 'مواعيد' : 'Dates'}: {s.lesson.extra_dates.length + 1}
+                      <Icon name="calendar" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{ar ? 'مواعيد' : 'Dates'}: {s.lesson.extra_dates.length + 1}
                     </span>
                   )}
                   {statusPill(s.status)}
@@ -396,7 +397,7 @@ export default function HomePage() {
                   aria-label={`${ar ? 'فتح الامتحان' : 'Open exam'} ${exam.title}`}
                 >
                   <span className="flex items-center gap-3 min-w-0">
-                    <span className="nk-session-icon" aria-hidden="true">✎</span>
+                    <span className="nk-session-icon" aria-hidden="true"><Icon name="pencil" size={16} /></span>
                     <span className="min-w-0">
                       <b className="block text-[.88rem] truncate">{exam.title}</b>
                       <small className="block text-[.7rem] text-fg-muted mt-1 truncate">
@@ -446,7 +447,7 @@ export default function HomePage() {
                   aria-label={`${ar ? 'فتح الواجب' : 'Open homework'} ${task.title}`}
                 >
                   <span className="flex items-center gap-3 min-w-0">
-                    <span className="nk-session-icon" aria-hidden="true">✎</span>
+                    <span className="nk-session-icon" aria-hidden="true"><Icon name="pencil" size={16} /></span>
                     <span className="min-w-0">
                       <b className="block text-[.88rem] truncate">{task.title}</b>
                       <small className="block text-[.7rem] text-fg-muted mt-1 truncate">

@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -579,7 +580,7 @@ function ExamGrading({ exam }) {
               {open ? `● ${isArabic ? 'جاري الرصد' : 'Grading'}` : `✓ ${isArabic ? 'منتهي' : 'Completed'}`}
             </span>
             <span className="flex gap-1.5">
-              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={printReport} aria-label={isArabic ? 'طباعة نتيجة الامتحان' : 'Print exam report'}>🖨 {isArabic ? 'طباعة' : 'Print'}</button>
+              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={printReport} aria-label={isArabic ? 'طباعة نتيجة الامتحان' : 'Print exam report'}><Icon name="printer" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'طباعة' : 'Print'}</button>
               <button
                 className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                 onClick={() => setSendOpen(true)}
@@ -587,15 +588,15 @@ function ExamGrading({ exam }) {
                 title={stats.gradedCount === 0 ? (isArabic ? 'سجّل درجات الأول' : 'Grade students first') : undefined}
                 aria-label={isArabic ? 'إرسال التقارير على واتساب' : 'Send reports on WhatsApp'}
               >
-                ↗ {isArabic ? 'إرسال التقارير' : 'Send reports'}
+                <Icon name="arrow-up-right" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'إرسال التقارير' : 'Send reports'}
               </button>
               {!editingMeta && open && (
-                <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setEditingMeta(true)}>✎ {isArabic ? 'العنوان والنهائي' : 'Title & max'}</button>
+                <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setEditingMeta(true)}><Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'العنوان والنهائي' : 'Title & max'}</button>
               )}
               {!open && (
-                <button className="btn-gold rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={reopenExam}>✎ {isArabic ? 'فتح للتعديل' : 'Edit'}</button>
+                <button className="btn-gold rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={reopenExam}><Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'فتح للتعديل' : 'Edit'}</button>
               )}
-              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" style={{ color: 'var(--danger-strong)' }} onClick={deleteExam} aria-label={isArabic ? 'حذف الامتحان' : 'Delete exam'}>🗑</button>
+              <button className="btn-ghost rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" style={{ color: 'var(--danger-strong)' }} onClick={deleteExam} aria-label={isArabic ? 'حذف الامتحان' : 'Delete exam'}><Icon name="trash" size={14} /></button>
             </span>
           </div>
         </div>
@@ -624,7 +625,7 @@ function ExamGrading({ exam }) {
           </div>
           {open && (
             <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.7rem] font-extrabold" onClick={() => setScaleOpen((o) => !o)} aria-expanded={scaleOpen}>
-              {scaleOpen ? (isArabic ? 'إغلاق التعديل' : 'Close editor') : `✎ ${isArabic ? 'تعديل التقديرات' : 'Edit grades'}`}
+              {scaleOpen ? (isArabic ? 'إغلاق التعديل' : 'Close editor') : `${isArabic ? 'تعديل التقديرات' : 'Edit grades'}`}
             </button>
           )}
         </div>
@@ -776,7 +777,7 @@ function ExamGrading({ exam }) {
               <small className="text-fg-muted block mt-1">{isArabic ? 'رسالة واتساب لكل طالب بدرجته وتقديره — بتتفتح واحدة واحدة وتقدر تعدّل أي رسالة قبل إرسالها.' : 'One WhatsApp message per student with score and grade — editable before sending.'}</small>
             </div>
             <button className="btn-gold action-button !min-h-[3rem]" onClick={() => setSendOpen(true)}>
-              ↗ {isArabic ? 'إرسال التقارير' : 'Send reports'}
+              <Icon name="arrow-up-right" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'إرسال التقارير' : 'Send reports'}
             </button>
           </div>
         </section>

@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useMemo, useState } from 'react'
 import { useEffect } from 'react'
 import { useWorkspace, normalizeArabicSearch } from '../store/WorkspaceStore'
@@ -139,7 +140,7 @@ export default function HistoryArea() {
           <div className="flex flex-wrap gap-2">
             {waUrl && (
               <a className="action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" style={{ background: '#0c6b50', borderColor: '#0c6b50', color: '#fff' }} href={waUrl} target="_blank" rel="noreferrer">
-                ✆ WhatsApp
+                <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />WhatsApp
               </a>
             )}
             {phone && (
@@ -159,10 +160,10 @@ export default function HistoryArea() {
               disabled={pdfBusy}
               title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}
             >
-              {pdfBusy ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `📄 ${isArabic ? 'تقرير PDF' : 'PDF report'}`}
+              {pdfBusy ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `${isArabic ? 'تقرير PDF' : 'PDF report'}`}
             </button>
             <button className="btn-ghost action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" onClick={() => setEditOpen(true)}>
-              ✎ {isArabic ? 'تعديل البيانات' : 'Edit details'}
+              <Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تعديل البيانات' : 'Edit details'}
             </button>
           </div>
         </div>

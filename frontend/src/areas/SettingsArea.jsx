@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -58,11 +59,11 @@ export default function SettingsArea() {
   // Task 65 — right-click / long-press على صف المجموعة: تعديل / دمج / حذف.
   const { triggerProps, contextMenu } = useContextMenu()
   const groupMenuItems = (g) => [
-    { icon: '✎', label: isArabic ? 'تعديل الاسم والموعد' : 'Edit name & schedule', onClick: () => startGroupEdit(g) },
-    { icon: '⇄', label: isArabic ? 'دمج مع مجموعة أخرى' : 'Merge into another group', disabled: (ws.groups || []).length < 2, onClick: () => setMergeSource(g) },
+    { icon: 'pencil', label: isArabic ? 'تعديل الاسم والموعد' : 'Edit name & schedule', onClick: () => startGroupEdit(g) },
+    { icon: 'refresh', label: isArabic ? 'دمج مع مجموعة أخرى' : 'Merge into another group', disabled: (ws.groups || []).length < 2, onClick: () => setMergeSource(g) },
     'sep',
     {
-      icon: '🗑',
+      icon: 'trash',
       label: isArabic ? 'حذف المجموعة' : 'Delete group',
       danger: true,
       onClick: async () => {
@@ -128,7 +129,7 @@ export default function SettingsArea() {
       <div className="flex gap-1.5 mb-4" role="tablist" aria-label={isArabic ? 'أقسام الإعدادات' : 'Settings sections'}>
         {([
           ['general', isArabic ? 'الإعدادات' : 'Settings'],
-          ['insights', `✦ ${isArabic ? 'فريق التحليل' : 'Insights Team'}`],
+          ['insights', isArabic ? 'فريق التحليل' : 'Insights Team'],
         ]).map(([key, label]) => (
           <button
             key={key}
@@ -156,7 +157,7 @@ export default function SettingsArea() {
             style={{ background: 'var(--brand-gold-surface)', color: 'var(--brand-gold)', border: '1px solid var(--brand-gold)' }}
             aria-hidden="true"
           >
-            ✦
+            <Icon name="sparkles" size={18} />
           </span>
           <div className="min-w-0">
             <h2 className="text-[.95rem] font-black m-0" style={{ color: '#fff' }}>
@@ -191,10 +192,10 @@ export default function SettingsArea() {
             {lang === 'ar' ? 'English' : 'العربية'}
           </button>
           <button className="nk-wf-ghost" onClick={() => ws.handleUndo()} title={isArabic ? 'تراجع عن آخر عملية' : 'Undo the last action'}>
-            ↺ {isArabic ? 'تراجع' : 'Undo'}
+            <Icon name="rotate-ccw" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تراجع' : 'Undo'}
           </button>
           <button className="nk-wf-ghost" onClick={() => ui.setHistoryOpen(true)} title={isArabic ? 'سجل العمليات' : 'Action history'}>
-            ⧖ {isArabic ? 'سجل العمليات' : 'History'}
+            <Icon name="hourglass" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'سجل العمليات' : 'History'}
           </button>
         </div>
       </section>
@@ -253,20 +254,20 @@ export default function SettingsArea() {
                     className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                     onClick={() => startGroupEdit(g)}
                     title={isArabic ? 'تعديل الاسم والمرحلة والموعد' : 'Edit name, stage & schedule'}
-                  >✎</button>
+                  ><Icon name="pencil" size={14} /></button>
                   <button
                     className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                     onClick={() => setMergeSource(g)}
                     disabled={(ws.groups || []).length < 2}
                     title={isArabic ? 'دمج هذه المجموعة في مجموعة أخرى مع كل بياناتها' : 'Merge this group into another one with all its data'}
-                  >⇄</button>
+                  ><Icon name="refresh" size={14} /></button>
                   <button
                     className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                     onClick={async () => {
                       const ok = await ui.askConfirm(`${isArabic ? 'حذف المجموعة' : 'Delete group'} ${g}؟`, { danger: true, confirmLabel: isArabic ? 'حذف' : 'Delete' })
                       if (ok) ws.deleteGroup(g)
                     }}
-                  >🗑</button>
+                  ><Icon name="trash" size={14} /></button>
                 </span>
               </div>
             )
@@ -315,7 +316,7 @@ export default function SettingsArea() {
           <small className="text-fg-muted block">{isArabic ? 'نقاط الحضور والتفاعل، رتب النقاط، عتبات الغياب، تفضيلات الإشعارات، ربط المساعد.' : 'Attendance/interaction points, rank tiers, absence thresholds, notifications, assistant link.'}</small>
         </button>
         <button className="nk-content text-right cursor-pointer" onClick={() => setTemplatesOpen(true)}>
-          <b className="block text-[.85rem] mb-1">✉ {isArabic ? 'قوالب الرسائل' : 'Message templates'}</b>
+          <b className="block text-[.85rem] mb-1"><Icon name="send" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'قوالب الرسائل' : 'Message templates'}</b>
           <small className="text-fg-muted block">{isArabic ? 'قوالب واتساب: ترحيب، إنذار، ترقية، تقرير، رابط QR.' : 'WhatsApp templates: welcome, warning, promotion, report, QR.'}</small>
         </button>
         {!isAssistant && (

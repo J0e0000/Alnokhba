@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -103,7 +104,7 @@ function ContextMenuSheet({ menu, onClose }) {
               className={it.danger ? 'nk-ctxmenu-danger' : ''}
               onClick={(e) => { e.stopPropagation(); onClose(); it.onClick?.() }}
             >
-              <span className="nk-ctxmenu__icon" aria-hidden="true">{it.icon || '•'}</span>
+              <span className="nk-ctxmenu__icon" aria-hidden="true">{hasIcon(it.icon) ? <Icon name={it.icon} size={16} /> : (it.icon || '•')}</span>
               <span className="min-w-0">
                 {it.label}
                 {it.sub && <small className="block font-semibold text-fg-muted">{it.sub}</small>}

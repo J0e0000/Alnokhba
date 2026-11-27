@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import Icon from '../components/icons'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useTheme } from '../context/ThemeContext'
@@ -63,11 +64,11 @@ const EN_DATE = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeri
 // the name link). The history AREA still renders for the deep link
 // (ui.openStudentHistory); it just doesn't compete for navigation space.
 const NAV = [
-  { key: 'home', label: 'نظرة عامة', labelEn: 'Overview', icon: '▦' },
-  { key: 'students', label: 'الطلاب', labelEn: 'Students', icon: '♧' },
-  { key: 'homework', label: 'الواجبات', labelEn: 'Homework', icon: '✎' },
-  { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: '↗' },
-  { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: '⚙' },
+  { key: 'home', label: 'نظرة عامة', labelEn: 'Overview', icon: 'layout-dashboard' },
+  { key: 'students', label: 'الطلاب', labelEn: 'Students', icon: 'trophy' },
+  { key: 'homework', label: 'الواجبات', labelEn: 'Homework', icon: 'pencil' },
+  { key: 'reports', label: 'التقارير', labelEn: 'Reports', icon: 'arrow-up-right' },
+  { key: 'settings', label: 'الإعدادات', labelEn: 'Settings', icon: 'settings' },
 ]
 const MOBILE_NAV = NAV
 
@@ -83,7 +84,7 @@ const TOUR_STEPS_AR = [
   // Task 66 — الميزات الجديدة (معادين للمجموعة، الدمج الذكي، القائمة السياقية، شريط التحديد)
   { target: '.nk-session-card', title: 'قائمة سريعة بالضغط المطول', body: 'Right-click على الكمبيوتر أو ضغطة مطولة على الموبايل على أي بطاقة حصة أو صف طالب أو مجموعة — تظهر لك كل الإجراءات المتاحة فورًا.' },
   { title: 'مجموعة بمعادين', body: 'من الإعدادات → المجموعات: عدّل أي مجموعة واضف «معاد إضافي» ليوم وميعاد مختلفين — المجموعة تظهر في كل أيام مواعيدها على الشاشة الرئيسية، وكل موعد حصته المستقلة بحضورها ودرجاتها.' },
-  { title: 'دمج مجموعتين بذكاء', body: 'اضغط ⇄ جنب أي مجموعة في الإعدادات: تختار المجموعة الهدف، ونسألك — نفس الوقت ولا كل مجموعة بموعدها؟ والطالب المكرر (نفس الرقم أو نفس الاسم) يتوحد تلقائيًا في سجل واحد بنفس درجاته وحضوره وواجباته، بدون تكرار.' },
+  { title: 'دمج مجموعتين بذكاء', body: 'اضغط زر الدمج جنب أي مجموعة في الإعدادات: تختار المجموعة الهدف، ونسألك — نفس الوقت ولا كل مجموعة بموعدها؟ والطالب المكرر (نفس الرقم أو نفس الاسم) يتوحد تلقائيًا في سجل واحد بنفس درجاته وحضوره وواجباته، بدون تكرار.' },
   { title: 'حدّد طلاب وشوف الخيارات', body: 'في شاشة الطلاب، حدد أي عدد من الطلاب — شريط الإجراءات يظهر فورًا: تعيين مجموعة، رسالة جماعية، نسخ الأرقام، روابط البوابة، والحذف.' },
 ]
 const TOUR_STEPS_EN = [
@@ -96,7 +97,7 @@ const TOUR_STEPS_EN = [
   // Task 66 — new features (multi-slot groups, smart merge, context menu, bulk bar)
   { target: '.nk-session-card', title: 'Quick actions on long-press', body: 'Right-click on PC or long-press on mobile on any session card, student row or group — every available action appears instantly.' },
   { title: 'One group, two slots', body: 'Settings → Groups: edit any group and add an extra weekly slot on a different day and time — the group shows on Home on every scheduled day, each slot is its own session.' },
-  { title: 'Smart group merge', body: 'Press ⇄ next to any group in Settings: pick the target group, and choose — same time, or each keeps its slot? Duplicate students (same phone or same name) are automatically unified into one record keeping all grades, attendance and homework.' },
+  { title: 'Smart group merge', body: 'Press the merge button next to any group in Settings: pick the target group, and choose — same time, or each keeps its slot? Duplicate students (same phone or same name) are automatically unified into one record keeping all grades, attendance and homework.' },
   { title: 'Select students, see actions', body: 'In the Students screen, select any number of students — the action bar appears instantly: assign group, batch message, copy phone numbers, portal links, and delete.' },
 ]
 
@@ -183,7 +184,7 @@ export default function AppShell({ onOpenAdmin }) {
           data-tour={item.key === 'students' ? 'nav-students' : item.key === 'homework' ? 'nav-homework' : item.key === 'reports' ? 'nav-reports' : undefined}
           onClick={() => ui.setArea(item.key)}
         >
-          <span aria-hidden="true" style={{ fontSize: '1rem' }}>{item.icon}</span>
+          <Icon name={item.icon} size={18} />
           <span>{isArabic ? item.label : item.labelEn}</span>
         </button>
       ))}
@@ -237,7 +238,7 @@ export default function AppShell({ onOpenAdmin }) {
               title={isDark ? 'الوضع الفاتح' : 'الوضع الليلي'}
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              {isDark ? '☀' : '☾'}
+              <Icon name={isDark ? 'sun' : 'moon'} size={18} />
             </button>
             <button
               className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg text-[.7rem] font-black"
@@ -254,7 +255,7 @@ export default function AppShell({ onOpenAdmin }) {
               title="تراجع"
               aria-label="تراجع"
             >
-              ↺
+              <Icon name="rotate-ccw" size={18} />
             </button>
             <button
               className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
@@ -262,7 +263,7 @@ export default function AppShell({ onOpenAdmin }) {
               title="سجل العمليات"
               aria-label="سجل العمليات"
             >
-              ⧖
+              <Icon name="hourglass" size={18} />
             </button>
             {profile?.is_admin && !isAssistant && (
               <button
@@ -270,7 +271,7 @@ export default function AppShell({ onOpenAdmin }) {
                 onClick={onOpenAdmin}
                 title="لوحة الأدمن"
               >
-                🛡
+                <Icon name="shield" size={18} />
               </button>
             )}
             <div className="nk-account-anchor" data-tour="account">
@@ -336,7 +337,7 @@ export default function AppShell({ onOpenAdmin }) {
             onClick={() => ui.setArea(item.key)}
             data-tour={item.key === 'students' ? 'nav-students' : item.key === 'homework' ? 'nav-homework' : item.key === 'reports' ? 'nav-reports' : undefined}
           >
-            <span aria-hidden="true" style={{ fontSize: '1.05rem' }}>{item.icon}</span>
+            <Icon name={item.icon} size={20} />
             <span>{isArabic ? item.label : item.labelEn}</span>
           </button>
         ))}
@@ -363,7 +364,7 @@ export default function AppShell({ onOpenAdmin }) {
                 role="menuitem"
                 onClick={() => { setAccountOpen(false); ui.setArea('settings') }}
               >
-                <span aria-hidden="true">⚙</span>
+                <Icon name="settings" size={16} />
                 <span>{isArabic ? 'الإعدادات' : 'Settings'}</span>
               </button>
               <button
@@ -371,7 +372,7 @@ export default function AppShell({ onOpenAdmin }) {
                 role="menuitem"
                 onClick={handleSignOut}
               >
-                <span aria-hidden="true">⎋</span>
+                <Icon name="log-out" size={16} />
                 <span>{isArabic ? 'تسجيل الخروج' : 'Sign out'}</span>
               </button>
             </div>
@@ -459,7 +460,7 @@ function TeacherNotificationCenterLauncher({ onOpen }) {
       title="مركز الإشعارات"
       aria-label="مركز الإشعارات"
     >
-      ◔
+      <Icon name="history" size={18} />
     </button>
   )
 }

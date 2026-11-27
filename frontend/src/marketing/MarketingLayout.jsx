@@ -4,6 +4,7 @@
 // bundles, zero router dependency). Visual identity = the product's own
 // navy + gold system (lp-* classes already shipped in index.css).
 // ═══════════════════════════════════════════════════════════════════════════
+import Icon, { hasIcon } from '../components/icons'
 import { useState } from 'react'
 import { NAV, WHATSAPP_URL, SITE_NAME, track } from './config.js'
 
@@ -122,7 +123,7 @@ function Header({ active }) {
           aria-expanded={open}
           aria-label="القائمة"
         >
-          {open ? '✕' : '☰'}
+          {open ? <Icon name="x" size={20} /> : <Icon name="menu" size={20} />}
         </button>
       </nav>
       {open && (

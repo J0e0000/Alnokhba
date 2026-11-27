@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { UPDATE_POPUP_CONTENT } from '../lib/platformUpdates'
+import Icon, { hasIcon } from './icons'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UPDATE WELCOME POPUP (review round 5, note #23) — shown ONCE per teacher
@@ -34,7 +35,7 @@ export default function UpdateWelcomePopup({ onDismiss }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3 mb-1">
-          <span className="text-3xl leading-none shrink-0" aria-hidden="true">🎴</span>
+          <span className="shrink-0 w-11 h-11 rounded-2xl grid place-items-center" style={{ background: 'rgba(201,151,28,.14)', color: 'var(--brand-gold)' }} aria-hidden="true"><Icon name="credit-card" size={22} /></span>
           <div className="flex-1 min-w-0">
             <h2 className="text-lg font-black m-0 text-fg">{title}</h2>
             <p className="text-fg-muted text-[.78rem] mt-1 mb-0 leading-relaxed">{subtitle}</p>
@@ -49,11 +50,11 @@ export default function UpdateWelcomePopup({ onDismiss }) {
               style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}
             >
               <span
-                className="shrink-0 w-8 h-8 rounded-full grid place-items-center text-base"
-                style={{ background: 'rgba(201,151,28,.14)' }}
+                className="shrink-0 w-8 h-8 rounded-full grid place-items-center"
+                style={{ background: 'rgba(201,151,28,.14)', color: 'var(--brand-gold)' }}
                 aria-hidden="true"
               >
-                {s.icon}
+                {hasIcon(s.icon) ? <Icon name={s.icon} size={16} /> : s.icon}
               </span>
               <div className="flex-1 min-w-0">
                 <p className="m-0 text-[.82rem] leading-relaxed text-fg">{s.text}</p>

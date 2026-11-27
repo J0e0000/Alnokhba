@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import Icon from '../components/icons'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
@@ -194,26 +195,26 @@ export default function StudentsArea() {
   const studentMenuItems = (s, archivedView) => {
     if (archivedView) {
       return [
-        { icon: '↩', label: isArabic ? 'استرجاع الطالب' : 'Restore student', onClick: () => ws.restoreStudents?.([s.id]) },
-        { icon: '📜', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
+        { icon: 'rotate-ccw', label: isArabic ? 'استرجاع الطالب' : 'Restore student', onClick: () => ws.restoreStudents?.([s.id]) },
+        { icon: 'file-text', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
       ]
     }
     const items = [
-      { icon: '📜', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
-      { icon: '✎', label: isArabic ? 'تعديل بيانات الطالب' : 'Edit student', onClick: () => setStudentModal({ open: true, student: s }) },
+      { icon: 'file-text', label: isArabic ? 'فتح سجل الطالب' : 'Open student history', onClick: () => ui.openStudentHistory(s.id) },
+      { icon: 'pencil', label: isArabic ? 'تعديل بيانات الطالب' : 'Edit student', onClick: () => setStudentModal({ open: true, student: s }) },
       {
-        icon: '✆',
+        icon: 'phone',
         label: isArabic ? 'واتساب الطالب' : 'WhatsApp student',
         disabled: !s.phone || !isValidPhone(s.phone),
         onClick: () => sendWhatsApp(s, (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name)),
       },
-      { icon: '⛶', label: isArabic ? 'رابط البوابة (QR)' : 'Portal link (QR)', onClick: () => openStudentQR(s) },
+      { icon: 'scan', label: isArabic ? 'رابط البوابة (QR)' : 'Portal link (QR)', onClick: () => openStudentQR(s) },
       selected.has(s.id)
-        ? { icon: '☑', label: isArabic ? 'إلغاء تحديد الطالب' : 'Unselect student', onClick: () => toggleSelect(s.id) }
-        : { icon: '☐', label: isArabic ? 'تحديد الطالب' : 'Select student', onClick: () => toggleSelect(s.id) },
+        ? { icon: 'check-square', label: isArabic ? 'إلغاء تحديد الطالب' : 'Unselect student', onClick: () => toggleSelect(s.id) }
+        : { icon: 'square', label: isArabic ? 'تحديد الطالب' : 'Select student', onClick: () => toggleSelect(s.id) },
       'sep',
       {
-        icon: '🗑',
+        icon: 'trash',
         label: isArabic ? 'حذف الطالب' : 'Delete student',
         danger: true,
         onClick: async () => {
@@ -296,13 +297,13 @@ export default function StudentsArea() {
         <h1 className="text-lg font-black m-0">{isArabic ? 'الطلاب' : 'Students'}</h1>
         <div className="flex flex-wrap gap-2">
           <button className="btn-navy rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: null })}>
-            ＋ {isArabic ? 'طالب جديد' : 'Add student'}
+            <Icon name="user-plus" size={16} /> {isArabic ? 'طالب جديد' : 'Add student'}
           </button>
           <button className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setBulkAddOpen(true)}>
-            ＋＋ {isArabic ? 'إضافة عدة طلاب' : 'Bulk add'}
+            <Icon name="users" size={16} /> {isArabic ? 'إضافة عدة طلاب' : 'Bulk add'}
           </button>
           <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setCardsPrintOpen(true)} title={isArabic ? 'كرت QR مطبوع لكل طالب — أو كروت فارغة قبل التسجيل' : 'Printable QR card per student — or blank stock before enrollment'}>
-            💳 {isArabic ? 'كروت QR' : 'QR cards'}
+            <Icon name="credit-card" size={16} /> {isArabic ? 'كروت QR' : 'QR cards'}
           </button>
         </div>
       </div>
@@ -448,7 +449,7 @@ export default function StudentsArea() {
                       onClick={() => openStudentQR(s)}
                       title={isArabic ? 'رابط البوابة — نسخ / إرسال / تحميل QR' : 'Portal link — copy / send / download QR'}
                     >QR</button>
-                    <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}>✎</button>
+                    <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold" onClick={() => setStudentModal({ open: true, student: s })}><Icon name="pencil" size={14} /></button>
                     <button
                       className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                       style={{ background: 'var(--danger-bg)', color: 'var(--danger-strong)', border: '1px solid var(--danger-border)' }}
@@ -477,7 +478,7 @@ export default function StudentsArea() {
           <button className="btn-gold rounded-xl px-3.5 py-2 text-[.72rem] font-extrabold shrink-0" disabled={busyBulk === 'assign'} onClick={() => setAssignOpen(true)}>
             ♦ {isArabic ? 'تعيين مجموعة' : 'Assign group'}
           </button>
-          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkMessage}>✆ {isArabic ? 'رسالة' : 'Message'}</button>
+          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkMessage}><Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'رسالة' : 'Message'}</button>
           <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkCopyPhones}>⧉ {isArabic ? 'نسخ الأرقام' : 'Copy phones'}</button>
           <div className="nk-menu-wrap ms-auto">
             <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
@@ -488,7 +489,7 @@ export default function StudentsArea() {
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
                 <div className="nk-menu-sheet nk-menu-sheet--up" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
                   <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
-                  <button role="menuitem" disabled={busyBulk === 'cards'} onClick={() => printCardsFor(selectedStudents)}>💳 {isArabic ? 'طباعة كروت المحددين' : 'Print selected cards'}</button>
+                  <button role="menuitem" disabled={busyBulk === 'cards'} onClick={() => printCardsFor(selectedStudents)}><Icon name="printer" size={16} /> {isArabic ? 'طباعة كروت المحددين' : 'Print selected cards'}</button>
                   <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
                   <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}>✕ {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
                 </div>
@@ -878,7 +879,7 @@ function BulkAddModal({ onClose }) {
 
           <div className="flex flex-wrap gap-2 pt-3" style={{ borderTop: '1px solid var(--surface-border)' }}>
             <button className="btn-gold action-button !min-h-[3rem]" disabled={pickedReady.length === 0} onClick={sendSelected}>
-              ✆ {isArabic ? `إرسال إلى المحدد (${pickedReady.length})` : `Send to selected (${pickedReady.length})`}
+              <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? `إرسال إلى المحدد (${pickedReady.length})` : `Send to selected (${pickedReady.length})`}
             </button>
             <button className="btn-ghost action-button !min-h-[3rem]" onClick={copySelected}>
               ⧉ {isArabic ? 'نسخ الرسائل' : 'Copy messages'}
@@ -947,7 +948,7 @@ function BulkAddModal({ onClose }) {
         {step !== 'saving' && (
           <>
             <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold mt-2" onClick={addRow}>
-              ＋ {isArabic ? 'أضف صفًا آخر' : 'Add another'}
+              <Icon name="plus" size={16} /> {isArabic ? 'أضف صفًا آخر' : 'Add another'}
             </button>
             <div className="flex flex-wrap gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--surface-border)' }}>
               {step === 'edit' && (
@@ -983,7 +984,7 @@ function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlacehol
   return (
     <div className="fixed inset-0 z-[86] flex items-center justify-center bg-black/50 p-4" onClick={busy ? undefined : onClose} role="dialog" aria-modal="true">
       <div className="glass-card w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-base font-extrabold m-0 mb-1">{isArabic ? '💳 طباعة كروت الطلاب' : 'Print student QR cards'}</h3>
+        <h3 className="text-base font-extrabold m-0 mb-1"><Icon name="credit-card" size={18} style={{ verticalAlign: '-0.25em' }} /> {isArabic ? 'طباعة كروت الطلاب' : 'Print student QR cards'}</h3>
         <p className="text-[.72rem] text-fg-muted mt-0 mb-3 leading-relaxed">
           {isArabic
             ? 'كل كرت مطبوع بوجهين: الوجه الأمامي (اللوجو + اسم الطالب وكوده ومرحلته) والخلفي (QR الحضور). ٨ كروت في صفحة A4 مع خطوط قص — اطبع الوجوه ثم الظهراني واطبعهم على نفس الكرت.'
@@ -1019,7 +1020,7 @@ function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlacehol
             {isArabic ? `كروت الطلاب الحاليين (${studentCount})` : `Current students (${studentCount})`}
           </p>
           <button className="btn-navy w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy || studentCount === 0} onClick={onPrintAll}>
-            {busy ? '… ' : '🖨️ '}{isArabic ? (studentCount ? `طباعة كروت كل الطلاب (${studentCount})` : 'لا يوجد طلاب بعد') : (studentCount ? `Print all student cards (${studentCount})` : 'No students yet')}
+            {busy ? '… ' : <Icon name="printer" size={16} style={{ verticalAlign: '-0.25em', marginInlineEnd: 4 }} />}{isArabic ? (studentCount ? `طباعة كروت كل الطلاب (${studentCount})` : 'لا يوجد طلاب بعد') : (studentCount ? `Print all student cards (${studentCount})` : 'No students yet')}
           </button>
         </div>
         <div className="rounded-xl p-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
@@ -1037,7 +1038,7 @@ function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlacehol
             ))}
           </select>
           <button className="btn-gold w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy} onClick={onPrintPlaceholders}>
-            {busy ? '… ' : '🖨️ '}{isArabic ? `طباعة ${placeholderCount} كرت فارغ` : `Print ${placeholderCount} blank cards`}
+            {busy ? '… ' : <Icon name="printer" size={16} style={{ verticalAlign: '-0.25em', marginInlineEnd: 4 }} />}{isArabic ? `طباعة ${placeholderCount} كرت فارغ` : `Print ${placeholderCount} blank cards`}
           </button>
           <p className="text-[.66rem] text-fg-muted mt-2 mb-0">
             {isArabic ? 'كرت فارغ بنفس التصميم — خطوط للكتابة ومربع QR باهت. كرت الطالب الرسمي (بالاسم والكود والـ QR) بيتطبع من صفحة الطالب بعد التسجيل.' : 'Blank stock in the same style — write-in lines and an empty QR tile. Each student\'s real card (name, code, QR) prints from their page after enrollment.'}

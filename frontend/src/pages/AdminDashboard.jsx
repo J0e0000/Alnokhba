@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
@@ -21,12 +22,12 @@ const EMAIL_STATUS_LABEL = { sent: '✅ الإيميل اتبعت', failed: '⚠
 
 const TABS = [
   ['teachers', 'المدرّسون'],
-  ['renewals', '🔄 سجل التجديدات'],
-  ['teams', '👥 الفرق'],
-  ['backups', '💾 النسخ الاحتياطي'],
-  ['audit', '🛡️ سجل التدقيق'],
-  ['log', '📜 سجل النشاط'],
-  ['broadcast', '📢 رسالة بث'],
+  ['renewals', 'سجل التجديدات'],
+  ['teams', 'الفرق'],
+  ['backups', 'النسخ الاحتياطي'],
+  ['audit', 'سجل التدقيق'],
+  ['log', 'سجل النشاط'],
+  ['broadcast', 'رسالة بث'],
 ]
 
 export default function AdminDashboard({ onBack }) {
@@ -455,7 +456,7 @@ export default function AdminDashboard({ onBack }) {
             {/* تنبيهات تشغيلية — حسابات جديدة / اشتراكات قاربت أو انتهت */}
             {(opsAlerts.newAccounts.length > 0 || opsAlerts.expiring.length > 0 || opsAlerts.expired.length > 0) && (
               <div className="bg-surface border border-outline rounded-xl p-3.5">
-                <p className="font-bold text-fg text-sm mb-2">🔔 تنبيهات تشغيلية</p>
+                <p className="font-bold text-fg text-sm mb-2">تنبيهات تشغيلية</p>
                 <div className="space-y-1.5 text-xs">
                   {opsAlerts.newAccounts.map(({ t, when }) => (
                     <p key={`new-${t.id}`} className="m-0 text-fg-muted">👤 حساب جديد: <b className="text-fg">{t.full_name || t.email}</b> · {when}</p>
@@ -527,7 +528,7 @@ export default function AdminDashboard({ onBack }) {
                       </p>
                       {stats && (
                         <p className="text-fg-muted text-xs mt-1">
-                          👥 {stats.student_count ?? 0} طالب · آخر نشاط: {stats.last_activity ? new Date(stats.last_activity).toLocaleDateString('ar-EG') : 'مفيش نشاط بعد'}
+                          <Icon name="users" size={14} style={{ marginInlineEnd: 4, verticalAlign: '-0.2em' }} />{stats.student_count ?? 0} طالب · آخر نشاط: {stats.last_activity ? new Date(stats.last_activity).toLocaleDateString('ar-EG') : 'مفيش نشاط بعد'}
                         </p>
                       )}
                     </div>
@@ -631,7 +632,7 @@ export default function AdminDashboard({ onBack }) {
                   className="bg-surface-container-high text-fg text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-surface-container-highest"
                   title="مفتاح Resend + المُرسل + إيميل تجريبي — بلا Dashboard"
                 >
-                  ⚙️ إعدادات البريد
+                  إعدادات البريد
                 </button>
               </div>
             )}
@@ -639,9 +640,9 @@ export default function AdminDashboard({ onBack }) {
               <div className="mb-3 bg-[var(--warn-bg)] border border-[var(--warn-border)] rounded-xl p-3 text-xs leading-relaxed">
                 <p className="font-bold text-[var(--warn-strong)]">⚠️ فشل إرسال {failedRenewals.length} إيميل تجديد</p>
                 <p className="text-fg-muted mt-1">
-                  الإيميل مش ضروري — أبعت «وصل تجديد واتساب» مبراندج لكل عضو بزر «✆ وصل واتساب» جنب كل صف
+                  الإيميل مش ضروري — أبعت «وصل تجديد واتساب» مبراندج لكل عضو بزر «<Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />وصل واتساب» جنب كل صف
                   (بيوصل على الرقم المسجل بتاريخ التجديد والمدة والانتهاء). ولو لسه عايز الإيميل: اضغط
-                  «⚙️ إعدادات البريد» والصق مفتاح Resend، ثم استخدم «إعادة إرسال الإيميل» — التجديد نفسه محفوظ ولا يحتاج إعادة.
+                  «إعدادات البريد» والصق مفتاح Resend، ثم استخدم «إعادة إرسال الإيميل» — التجديد نفسه محفوظ ولا يحتاج إعادة.
                 </p>
               </div>
             )}
@@ -667,7 +668,7 @@ export default function AdminDashboard({ onBack }) {
                         <span className="text-fg-muted text-xs font-normal mr-1" dir="ltr">{r.teacher?.email ? `· ${r.teacher.email}` : ''}</span>
                       </p>
                       <p className="text-fg-muted text-xs mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span>📅 تجديد في {new Date(r.created_at).toLocaleDateString('ar-EG')}</span>
+                        <span><Icon name="calendar" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.2em' }} />تجديد في {new Date(r.created_at).toLocaleDateString('ar-EG')}</span>
                         <span>·</span>
                         <span>من {r.previous_expires_at ? new Date(r.previous_expires_at).toLocaleDateString('ar-EG') : '—'}</span>
                         <span>←</span>
@@ -690,7 +691,7 @@ export default function AdminDashboard({ onBack }) {
                         className="bg-[#25D366]/15 text-[#128C4A] border border-[#25D366]/40 text-[11px] font-bold px-2.5 py-1.5 rounded-lg hover:bg-[#25D366]/25 min-h-[2.2rem]"
                         title="وصل تجديد مبراندج على واتساب — الرقم المسجل للعضو"
                       >
-                        ✆ وصل واتساب
+                        <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />وصل واتساب
                       </button>
                       {(r.email_status === 'failed') && (
                         <button

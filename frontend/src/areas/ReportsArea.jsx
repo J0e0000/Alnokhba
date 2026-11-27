@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -196,7 +197,7 @@ export default function ReportsArea() {
         body: body || '',
       }),
     )
-    if (!error) ws.showToast?.(isArabic ? 'اتحفظ في مركز التنبيهات 🔔' : 'Saved to notifications 🔔', 'success')
+    if (!error) ws.showToast?.(isArabic ? 'اتحفظ في مركز التنبيهات' : 'Saved to notifications', 'success')
     else ws.showToast?.(friendlySaveErrorText(error, isArabic), 'error')
   }
 
@@ -223,16 +224,16 @@ export default function ReportsArea() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="btn-navy action-button !min-h-[3rem]" disabled={!lesson || busy === 'reports'} onClick={buildDailyReports}>
-            ↗ {isArabic ? 'قائمة تقارير الحصة' : 'Session report queue'}
+            <Icon name="arrow-up-right" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'قائمة تقارير الحصة' : 'Session report queue'}
           </button>
           <button className="btn-ghost action-button !min-h-[3rem]" disabled={busy === 'qr'} onClick={buildQRQueue}>
             ⛶ {isArabic ? 'قائمة روابط البوابة (QR)' : 'QR links queue'}
           </button>
           <button className="btn-ghost action-button !min-h-[3rem]" onClick={bulkWelcome}>
-            ✆ {isArabic ? 'رسالة ترحيب جماعية' : 'Bulk welcome message'}
+            <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'رسالة ترحيب جماعية' : 'Bulk welcome message'}
           </button>
           <button className="btn-gold action-button !min-h-[3rem]" onClick={openCustomMessagePicker}>
-            ✆ {isArabic ? 'رسالة لمحددين…' : 'Message specific people…'}
+            <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'رسالة لمحددين…' : 'Message specific people…'}
           </button>
           {lesson && (
             <button
@@ -241,7 +242,7 @@ export default function ReportsArea() {
               onClick={downloadLessonPdf}
               title={isArabic ? 'ملخص الحصة — PDF بالهوية الرسمية (الحضور والغائب وحالة كل طالب)' : 'Lesson summary — branded PDF (attendance, absentees, per-student status)'}
             >
-              {busy === 'pdf' ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `📄 ${isArabic ? 'ملخص الحصة (PDF)' : 'Lesson summary (PDF)'}`}
+              {busy === 'pdf' ? (isArabic ? '… جاري التجهيز' : 'Preparing…') : `${isArabic ? 'ملخص الحصة (PDF)' : 'Lesson summary (PDF)'}`}
             </button>
           )}
           {lesson && (
@@ -250,7 +251,7 @@ export default function ReportsArea() {
               onClick={() => ui.openSession({ groupId: group, date: lesson.session_date })}
               title={isArabic ? 'افتح الحصة في مساحة الحصة لتعديل بياناتها' : 'Open this session in the workspace to edit it'}
             >
-              ✎ {isArabic ? 'تعديل هذه الحصة' : 'Edit this session'}
+              <Icon name="pencil" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تعديل هذه الحصة' : 'Edit this session'}
             </button>
           )}
         </div>
@@ -259,7 +260,7 @@ export default function ReportsArea() {
 
       <div className="grid sm:grid-cols-2 gap-3">
         <button className="nk-content text-right cursor-pointer" onClick={() => setTemplatesOpen(true)}>
-          <b className="block text-[.85rem] mb-1">✉ {isArabic ? 'قوالب الرسائل' : 'Message templates'}</b>
+          <b className="block text-[.85rem] mb-1"><Icon name="send" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'قوالب الرسائل' : 'Message templates'}</b>
           <small className="text-fg-muted block">{isArabic ? 'ترحيب، إنذار، ترقية، تقرير، رابط QR — تُستخدم في كل قوائم الإرسال.' : 'Welcome, warning, promotion, report, QR templates.'}</small>
         </button>
         <button className="nk-content text-right cursor-pointer" onClick={() => setAnnouncementsOpen(true)}>

@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from './icons'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
@@ -38,9 +39,9 @@ const ChartsFallback = () => <div className="rounded-2xl border border-subtle p-
 // ═══════════════════════════════════════════════════════════════════════════
 
 const VERDICT = {
-  stable: { icon: '✓', label: 'الوضع تمام', color: 'var(--ok, #22c55e)', bg: 'rgba(34,197,94,.12)' },
-  watch: { icon: '◐', label: 'خلي بالك', color: 'var(--warn, #f59e0b)', bg: 'rgba(245,158,11,.12)' },
-  attention: { icon: '✗', label: 'محتاج اهتمام', color: 'var(--danger, #ef4444)', bg: 'rgba(239,68,68,.12)' },
+  stable: { icon: 'check', label: 'الوضع تمام', color: 'var(--ok, #22c55e)', bg: 'rgba(34,197,94,.12)' },
+  watch: { icon: 'clock', label: 'خلي بالك', color: 'var(--warn, #f59e0b)', bg: 'rgba(245,158,11,.12)' },
+  attention: { icon: 'x', label: 'محتاج اهتمام', color: 'var(--danger, #ef4444)', bg: 'rgba(239,68,68,.12)' },
 }
 const SEVERITY_COLOR = {
   'needs-attention': 'var(--danger, #ef4444)',
@@ -88,7 +89,7 @@ function StatTile({ icon, label, value, delta, positiveIsGood = true, children }
   return (
     <div className="rounded-2xl p-3.5" style={{ border: '1px solid var(--surface-border)', background: 'var(--surface-container)' }}>
       <div className="flex items-center gap-1.5 text-[.68rem] font-extrabold text-fg-muted">
-        <span aria-hidden="true">{icon}</span>{label}
+        <span aria-hidden="true">{hasIcon(icon) ? <Icon name={icon} size={15} /> : icon}</span>{label}
       </div>
       <div className="mt-1.5 flex items-baseline gap-1.5 flex-wrap">
         <b className="text-[1.35rem] leading-none font-black">{value}</b>
@@ -415,7 +416,7 @@ export default function InsightsReport() {
                 className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[.78rem] font-black"
                 style={{ background: verdict.bg, color: verdict.color, border: `1.5px solid ${verdict.color}` }}
               >
-                <span aria-hidden="true">{verdict.icon}</span> {verdict.label}
+                <span aria-hidden="true">{hasIcon(verdict.icon) ? <Icon name={verdict.icon} size={16} /> : verdict.icon}</span> {verdict.label}
               </span>
               {currentCard?.report?.generatedAt && (
                 <small className="text-[.62rem] text-fg-subtle">
@@ -429,11 +430,11 @@ export default function InsightsReport() {
             </small>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mt-4">
-              <StatTile icon="◔" label="الحضور" value={attRate == null ? '—' : `${attRate}%`} delta={attRate != null && attPrev != null ? attRate - attPrev : null} positiveIsGood>
+              <StatTile icon="clock" label="الحضور" value={attRate == null ? '—' : `${attRate}%`} delta={attRate != null && attPrev != null ? attRate - attPrev : null} positiveIsGood>
                 <MiniWeekBars weekly={at?.weekly} />
               </StatTile>
-              <StatTile icon="▤" label="تسليم الواجبات" value={hwRate == null ? '—' : `${hwRate}%`} delta={hwRate != null && hwPrev != null ? hwRate - hwPrev : null} positiveIsGood />
-              <StatTile icon="✎" label="متوسط الامتحانات" value={ac?.examAvgCur != null ? `${ac.examAvgCur}%` : '—'} delta={ac?.examAvgCur != null && ac?.examAvgPrev != null ? ac.examAvgCur - ac.examAvgPrev : null} positiveIsGood />
+              <StatTile icon="clipboard-list" label="تسليم الواجبات" value={hwRate == null ? '—' : `${hwRate}%`} delta={hwRate != null && hwPrev != null ? hwRate - hwPrev : null} positiveIsGood />
+              <StatTile icon="pencil" label="متوسط الامتحانات" value={ac?.examAvgCur != null ? `${ac.examAvgCur}%` : '—'} delta={ac?.examAvgCur != null && ac?.examAvgPrev != null ? ac.examAvgCur - ac.examAvgPrev : null} positiveIsGood />
               <StatTile icon="◷" label="حصص مكتملة" value={ops ? arNum(ops.heldCur) : '—'} delta={ops ? ops.heldCur - ops.heldPrev : null} positiveIsGood />
             </div>
 

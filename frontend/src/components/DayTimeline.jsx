@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from './icons'
 import { useMemo } from 'react'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -81,7 +82,7 @@ export default function DayTimeline({ value, onChange, isArabic }) {
           className="nk-dayline__today-btn"
           onClick={() => onChange(today)}
         >
-          {isArabic ? 'اليوم ↺' : 'Today ↺'}
+          {isArabic ? 'اليوم' : 'Today'} <Icon name="rotate-ccw" size={13} style={{ verticalAlign: '-0.2em' }} />
         </button>
       )}
     </div>

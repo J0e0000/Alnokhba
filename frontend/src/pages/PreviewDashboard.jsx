@@ -1,6 +1,11 @@
 import { useState } from 'react'
+import Icon from '../components/icons'
+const ICON_NAME = { '←': 'arrow-left', '→': 'arrow-right', '◉': 'bell', '▤': 'clipboard-list', '◷': 'calendar', '✓': 'check', '‹': 'chevron-left', '⌁': 'zap', '▦': 'layout-dashboard', '↗': 'arrow-up-right', '✦': 'sparkles', '★': 'star', '♧': 'trophy', '×': 'x' }
 const makeIcon = (symbol) => function LocalIcon({ className = '' }) {
-  return <span aria-hidden="true" className={`inline-flex items-center justify-center leading-none ${className}`}>{symbol}</span>
+  const n = ICON_NAME[symbol]
+  return n
+    ? <span aria-hidden="true" className={`inline-flex items-center justify-center leading-none ${className}`}><Icon name={n} size={16} /></span>
+    : <span aria-hidden="true" className={`inline-flex items-center justify-center leading-none ${className}`}>{symbol}</span>
 }
 
 const ArrowLeft = makeIcon('←')

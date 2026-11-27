@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useEffect, useRef, useState } from 'react'
 import { animate, useAnimeScope } from '../lib/animeMotion'
 import { setSeo, faqSchema, softwareAppSchema, websiteSchema, orgSchema } from '../marketing/seo.js'
@@ -23,8 +24,8 @@ const STATS = [
 
 const PROBLEMS = [
   ['▤', 'البيانات متفرقة', 'الحضور في دفتر، والطلاب في ملف Excel عند كل مدرّس بنسخة مختلفة — ومحدش عارف أنهي النسخة الصح.'],
-  ['✉', 'التواصل يدوي ومتعِب', 'رسايل واتساب واحدة واحدة، وتقارير بتتجمع إيدويًا آخر كل أسبوع — ومفيش حاجة بتوثّق إيه اللي اتبعت فعلاً.'],
-  ['◔', 'الصورة الكاملة غايبة', 'مين دفع، ومين تأخر، ومين مستواه نازل — كل سؤال من دول بياخد وقت، والمشاكل المهمة بتظهر متأخرة.'],
+  ['send', 'التواصل يدوي ومتعِب', 'رسايل واتساب واحدة واحدة، وتقارير بتتجمع إيدويًا آخر كل أسبوع — ومفيش حاجة بتوثّق إيه اللي اتبعت فعلاً.'],
+  ['clock', 'الصورة الكاملة غايبة', 'مين دفع، ومين تأخر، ومين مستواه نازل — كل سؤال من دول بياخد وقت، والمشاكل المهمة بتظهر متأخرة.'],
 ]
 
 // ONE connected workflow (merged the old 8-step + 7-step lists into 4).
@@ -36,12 +37,12 @@ const WORKFLOW = [
 ]
 
 const FEATURES = [
-  ['◎', 'إدارة الطلاب', 'ملف كامل لكل طالب: مجموعته ونقاطه وسجل حضوره وواجباته — وبحث فوري بالاسم أو الكود.'],
-  ['▦', 'مسار الحصة', 'حضور وتفاعل وواجب وامتحان وتقرير في مساحة واحدة — من غير تنقل بين شاشات.'],
-  ['✓', 'الحضور والغياب', 'لمسة لكل طالب أو مسح QR، وقاعدة أسبوع موحدة من الجمعة للخميس لكل المركز.'],
-  ['✎', 'الواجبات والامتحانات', 'حالات واجب واضحة، وامتحانات بدرجة قصوى وسلم تقديرات تخصصه زي ما تحب.'],
-  ['✉', 'التقارير وواتساب', 'تقارير أولياء أمور بتتبنى تلقائيًا من البيانات — وتبعتها بقائمة منظمة بتكمّل لو اتقطعت.'],
-  ['✦', 'فريق التحليل', 'مراجعة أسبوعية بترصد الأنماط المهمة بس — بأرقامها وسببها وخطتها المقترحة.'],
+  ['users', 'إدارة الطلاب', 'ملف كامل لكل طالب: مجموعته ونقاطه وسجل حضوره وواجباته — وبحث فوري بالاسم أو الكود.'],
+  ['layout-dashboard', 'مسار الحصة', 'حضور وتفاعل وواجب وامتحان وتقرير في مساحة واحدة — من غير تنقل بين شاشات.'],
+  ['check', 'الحضور والغياب', 'لمسة لكل طالب أو مسح QR، وقاعدة أسبوع موحدة من الجمعة للخميس لكل المركز.'],
+  ['pencil', 'الواجبات والامتحانات', 'حالات واجب واضحة، وامتحانات بدرجة قصوى وسلم تقديرات تخصصه زي ما تحب.'],
+  ['send', 'التقارير وواتساب', 'تقارير أولياء أمور بتتبنى تلقائيًا من البيانات — وتبعتها بقائمة منظمة بتكمّل لو اتقطعت.'],
+  ['sparkles', 'فريق التحليل', 'مراجعة أسبوعية بترصد الأنماط المهمة بس — بأرقامها وسببها وخطتها المقترحة.'],
 ]
 
 const OWNER_POINTS = [
@@ -107,12 +108,12 @@ function TaglineReveal() {
 
 // تحديث نوفمبر ٢٠٢٦ — كل حاجة هنا نزلت فعلًا على المنصة (شيلة تحديث نوفمبر).
 const UPDATES = [
-  ['◎', 'مجموعة بمعادين', 'أي مجموعة تقدر يكون ليها أكتر من موعد أسبوعي بأيام مختلفة — وبتظهر في كل أيامها على الشاشة الرئيسية بميعاد سلوكها.'],
-  ['⇄', 'دمج ذكي لمجموعتين', 'بتختار المجموعة الهدف، والمنصة بتسألك: نفس الوقت ولا كل مجموعة بموعدها؟ — والداتا كلها بتنتقل دفعة واحدة بأمان.'],
-  ['✓', 'توحيد الطلاب المكررين', 'الطالب الموجود في المجموعتين (بنفس الرقم أو الاسم) بيتوحد في سجل واحد بنفس درجاته وحضوره وواجباته — من غير تكرار ولا درجة بتضيع.'],
-  ['▦', 'حصة واحدة بمعادين', 'نفس الدرس بيتلقى في أكتر من تاريخ؟ ضيف مواعيد إضافية للحصة، والحضور بيتطابق معاها أوتوماتيك.'],
-  ['☰', 'قائمة سريعة بالضغط المطول', 'زر الفأرة الأيمن على الكمبيوتر أو ضغطة مطولة على الموبايل على أي طالب أو مجموعة أو بطاقة حصة — وكل الإجراءات قدامك فورًا.'],
-  ['▣', 'تحديد جماعي ونسخ الأرقام', 'حدد أي عدد من الطلاب فيظهر شريط الإجراءات: تعيين مجموعة، رسايل جماعية، ونسخ أرقام الهواتف بنقرة واحدة.'],
+  ['users', 'مجموعة بمعادين', 'أي مجموعة تقدر يكون ليها أكتر من موعد أسبوعي بأيام مختلفة — وبتظهر في كل أيامها على الشاشة الرئيسية بميعاد سلوكها.'],
+  ['refresh', 'دمج ذكي لمجموعتين', 'بتختار المجموعة الهدف، والمنصة بتسألك: نفس الوقت ولا كل مجموعة بموعدها؟ — والداتا كلها بتنتقل دفعة واحدة بأمان.'],
+  ['check', 'توحيد الطلاب المكررين', 'الطالب الموجود في المجموعتين (بنفس الرقم أو الاسم) بيتوحد في سجل واحد بنفس درجاته وحضوره وواجباته — من غير تكرار ولا درجة بتضيع.'],
+  ['layout-dashboard', 'حصة واحدة بمعادين', 'نفس الدرس بيتلقى في أكتر من تاريخ؟ ضيف مواعيد إضافية للحصة، والحضور بيتطابق معاها أوتوماتيك.'],
+  ['menu', 'قائمة سريعة بالضغط المطول', 'زر الفأرة الأيمن على الكمبيوتر أو ضغطة مطولة على الموبايل على أي طالب أو مجموعة أو بطاقة حصة — وكل الإجراءات قدامك فورًا.'],
+  ['layers', 'تحديد جماعي ونسخ الأرقام', 'حدد أي عدد من الطلاب فيظهر شريط الإجراءات: تعيين مجموعة، رسايل جماعية، ونسخ أرقام الهواتف بنقرة واحدة.'],
 ]
 function Counter({ value, suffix = '' }) {
   const ref = useRef(null)
@@ -314,7 +315,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {UPDATES.map(([icon, t, d]) => (
               <article key={t} data-io className="lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-nk-400/15 text-lg text-nk-300 ring-1 ring-nk-300/30">{icon}</div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-nk-400/15 text-nk-300 ring-1 ring-nk-300/30">{hasIcon(icon) ? <Icon name={icon} size={22} /> : icon}</div>
                 <h3 className="mt-4 text-lg font-bold">{t}</h3>
                 <p className="mt-2 text-base leading-6 text-slate-300/90">{d}</p>
               </article>
@@ -416,7 +417,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(([icon, t, d]) => (
               <article key={t} className="landing-feature-card lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-nk-400/15 text-lg text-nk-300 ring-1 ring-nk-300/30">{icon}</div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-nk-400/15 text-nk-300 ring-1 ring-nk-300/30">{hasIcon(icon) ? <Icon name={icon} size={22} /> : icon}</div>
                 <h3 className="mt-4 text-lg font-bold text-[#FBBF6D]">{t}</h3>
                 <p className="mt-2 text-sm leading-7 text-slate-300/90">{d}</p>
               </article>
@@ -458,7 +459,7 @@ export default function LandingPage({ onLogin, onSignup }) {
           <div className="order-2 lg:order-1">
             <div className="lp-reveal relative rounded-3xl border border-nk-300/20 bg-white/[0.04] p-4 sm:p-6">
               <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                <div className="flex items-center gap-2 font-bold text-nk-200">✦ فريق التحليل</div>
+                <div className="flex items-center gap-2 font-bold text-nk-200"><Icon name="sparkles" size={18} /> فريق التحليل</div>
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm font-bold text-slate-300">تحليل الأسبوع · اكتمل ✓</span>
               </div>
               <div className="mt-4 space-y-3">
@@ -511,12 +512,12 @@ export default function LandingPage({ onLogin, onSignup }) {
           />
           <div className="mt-12 grid gap-4 md:grid-cols-3">
             {[
-              ['↗', 'توليد تلقائي', 'الرسالة بتتبني من حضور الطالب وواجبه ونتيجته — بمستوى لغة يفهمه ولي الأمر من أول قراءة.'],
-              ['✎', 'مراجعة وتعديل', 'بتشوف المستلمين قبل الإرسال، وتقدر تستبعد أو تعدّل — مفيش حاجة بتبعت من غير موافقتك.'],
-              ['✓', 'إرسال مضمون', 'القائمة بتمشي رسالة رسالة، بتحفظ تقدمك لو حصل أي مقاطعة، وبتنبهك لو الرسالة اتبعتت قبل كده.'],
+              ['arrow-up-right', 'توليد تلقائي', 'الرسالة بتتبني من حضور الطالب وواجبه ونتيجته — بمستوى لغة يفهمه ولي الأمر من أول قراءة.'],
+              ['pencil', 'مراجعة وتعديل', 'بتشوف المستلمين قبل الإرسال، وتقدر تستبعد أو تعدّل — مفيش حاجة بتبعت من غير موافقتك.'],
+              ['check', 'إرسال مضمون', 'القائمة بتمشي رسالة رسالة، بتحفظ تقدمك لو حصل أي مقاطعة، وبتنبهك لو الرسالة اتبعتت قبل كده.'],
             ].map(([icon, t, d]) => (
               <div key={t} className="lp-reveal lp-glow-card rounded-3xl border border-white/10 bg-white/[0.05] p-6">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25D366]/15 text-xl text-[#4be08a] ring-1 ring-[#25D366]/30">{icon}</div>
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25D366]/15 text-[#4be08a] ring-1 ring-[#25D366]/30">{hasIcon(icon) ? <Icon name={icon} size={24} /> : icon}</div>
                 <h3 className="mt-4 text-lg font-bold">{t}</h3>
                 <p className="mt-3 text-sm leading-7 text-slate-300/90">{d}</p>
               </div>

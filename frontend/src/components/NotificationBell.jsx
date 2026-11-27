@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Icon from './icons'
 import { animate, prefersReducedMotion } from '../lib/animeMotion'
 
 export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDismiss, updatesUnread = 0 }) {
@@ -20,7 +21,7 @@ export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDi
   return (
     <div className="relative" ref={ref}>
       <button onClick={() => setOpen((o) => !o)} title="الإشعارات" className="relative text-fg-subtle hover:text-fg text-lg">
-        🔔
+        <Icon name="bell" size={18} />
         {unreadCount > 0 && (
           <span ref={badgeRef} className="absolute -top-1.5 -left-1.5 bg-rose-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -35,7 +36,7 @@ export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDi
         >
           <div className="px-3 py-2 border-b border-subtle text-xs font-bold text-fg">الإشعارات</div>
           {updatesUnread > 0 && (
-            <p className="px-3 pt-2 mb-0 text-[10px] text-brand-gold-hover font-bold">✨ {updatesUnread} تحديث من النخبة بانتظارك — افتح مركز الإشعارات ◔</p>
+            <p className="px-3 pt-2 mb-0 text-[10px] text-brand-gold-hover font-bold"><Icon name="sparkles" size={12} style={{ marginInlineEnd: 4, verticalAlign: '-0.2em' }} />{updatesUnread} تحديث من النخبة بانتظارك — افتح مركز الإشعارات</p>
           )}
           {broadcasts.length === 0 ? (
             <p className="text-fg-subtle text-xs text-center py-6">مفيش إشعارات لسه</p>

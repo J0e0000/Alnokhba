@@ -1,3 +1,4 @@
+import Icon, { hasIcon } from '../components/icons'
 import { useEffect } from 'react'
 import { setSeo } from '../marketing/seo.js'
 
@@ -77,7 +78,7 @@ export default function PrivacyPage() {
             أي سؤال عن الخصوصية أو بياناتك — كلمنا على واتساب وهنرد بسرعة.
           </p>
           <a href={WHATSAPP_SUPPORT} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-[.85rem] font-black text-white" style={{ background: '#25D366' }}>
-            ✆ تواصل على واتساب
+            <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />تواصل على واتساب
           </a>
         </section>
       </main>
