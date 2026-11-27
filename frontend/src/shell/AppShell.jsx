@@ -6,6 +6,7 @@ import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from './UIContext'
 import NotificationBell from '../components/NotificationBell'
 import TeacherNotificationCenter from '../components/TeacherNotificationCenter'
+import UpdateWelcomePopup from '../components/UpdateWelcomePopup'
 import { usePlatformUpdates } from '../hooks/usePlatformUpdates'
 import InsightsNotifier from '../components/InsightsNotifier'
 import OfflineBanner from '../components/OfflineBanner'
@@ -122,7 +123,7 @@ export default function AppShell({ onOpenAdmin }) {
   // ✨ unread platform-update count — shared by the ◔ launcher AND the 🔔
   // bell (review round 2, note b). refreshKey flips as the center opens and
   // closes so both badges re-sync after read.
-  const updatesUnread = usePlatformUpdates(notifCenterOpen ? 'open' : 'closed')
+  const { popupState, dismissPopup, openPopup } = usePlatformUpdates()
   const historyOpen = ui.historyOpen
   const setHistoryOpen = ui.setHistoryOpen
   const [historyCount, setHistoryCount] = useState(getHistoryCount())
@@ -245,8 +246,8 @@ export default function AppShell({ onOpenAdmin }) {
             >
               {lang === 'ar' ? 'EN' : 'ع'}
             </button>
-            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} unread={updatesUnread} />
-            <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} updatesUnread={updatesUnread} />
+            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} />
+            <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} updatesUnread={0} />
             <button
               className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
               onClick={() => { ws.handleUndo(); }}
@@ -380,10 +381,13 @@ export default function AppShell({ onOpenAdmin }) {
       {notifCenterOpen && (
         <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-4 pt-16" onClick={() => setNotifCenterOpen(false)}>
           <div className="glass-card w-full max-w-lg p-4 max-h-[75vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <TeacherNotificationCenter onOpenInsights={() => { setNotifCenterOpen(false); ui.openInsights() }} />
+            <TeacherNotificationCenter onOpenInsights={() => { setNotifCenterOpen(false); ui.openInsights() }} onOpenUpdatePopup={() => { setNotifCenterOpen(false); openPopup() }} />
           </div>
         </div>
       )}
+      {/* ONE-TIME welcome popup (note #23): what's new + short tutorial,
+          shown on the first open per teacher, dismissed forever after. */}
+      {popupState === 'show' && <UpdateWelcomePopup onDismiss={dismissPopup} />}
       <HistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -445,9 +449,9 @@ export default function AppShell({ onOpenAdmin }) {
   )
 }
 
-function TeacherNotificationCenterLauncher({ onOpen, unread = 0 }) {
-  // Badge comes from the shared usePlatformUpdates hook in AppShell —
-  // visible WITHOUT opening the center (unread until opened, per teacher).
+function TeacherNotificationCenterLauncher({ onOpen }) {
+  // Opens the notification center modal. The old unread badge (✨ platform
+  // updates) is gone — updates retired into the one-time welcome popup.
   return (
     <button
       className="relative w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
@@ -456,11 +460,6 @@ function TeacherNotificationCenterLauncher({ onOpen, unread = 0 }) {
       aria-label="مركز الإشعارات"
     >
       ◔
-      {unread > 0 && (
-        <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-          {unread > 9 ? '9+' : unread}
-        </span>
-      )}
     </button>
   )
 }

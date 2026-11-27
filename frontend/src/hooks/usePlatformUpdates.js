@@ -1,24 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { ensureUpdateNotifications } from '../lib/platformUpdates'
+import { dismissUpdatePopup, isUpdatePopupDismissed, retireUpdateNotifications } from '../lib/platformUpdates'
 
 /**
- * usePlatformUpdates(refreshKey) — seeds the platform-update rows for the
- * signed-in teacher and returns the UNREAD count. Shared by the ◔ launcher
- * and the 🔔 broadcast bell so both badges reflect «تحديثات النخبة» without
- * opening the center (review round 2, note b). Seeding itself is idempotent
- * and silent; visibility never depends on the server write succeeding.
+ * usePlatformUpdates() — retires the old ✨ seeded notices (one sweep per
+ * teacher per session) and drives the ONE-TIME welcome popup (note #23):
+ * 'checking' → 'show' (first open, not dismissed) | 'dismissed'.
+ * The ◔ launcher re-opens the tutorial via openPopup(); there is no unread
+ * badge anymore — the pinned updates section is gone from the center.
  */
-export function usePlatformUpdates(refreshKey) {
+export function usePlatformUpdates() {
   const { effectiveTeacherId } = useAuth()
-  const [unread, setUnread] = useState(0)
+  const [popupState, setPopupState] = useState('checking')
+
   useEffect(() => {
     let alive = true
-    if (!effectiveTeacherId) { setUnread(0); return }
-    ensureUpdateNotifications(effectiveTeacherId)
-      .then((rows) => { if (alive) setUnread(rows.filter((r) => !r.is_read).length) })
-      .catch(() => { if (alive) setUnread(0) })
+    if (!effectiveTeacherId) { setPopupState('dismissed'); return }
+    setPopupState('checking')
+    ;(async () => {
+      try { await retireUpdateNotifications(effectiveTeacherId) } catch { /* non-fatal */ }
+      const { dismissed } = await isUpdatePopupDismissed(effectiveTeacherId)
+      if (alive) setPopupState(dismissed ? 'dismissed' : 'show')
+    })()
     return () => { alive = false }
-  }, [effectiveTeacherId, refreshKey])
-  return unread
+  }, [effectiveTeacherId])
+
+  const dismissPopup = useCallback(() => {
+    setPopupState('dismissed')
+    if (effectiveTeacherId) dismissUpdatePopup(effectiveTeacherId).catch(() => {})
+  }, [effectiveTeacherId])
+
+  const openPopup = useCallback(() => setPopupState('show'), [])
+
+  return { popupState, dismissPopup, openPopup }
 }
