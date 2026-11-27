@@ -62,7 +62,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
       document.body.removeChild(ta)
     }
     setCopied(true)
-    showToast?.(isArabic ? 'تم نسخ الرابط ✓' : 'Link copied ✓', 'success')
+    showToast?.(isArabic ? 'تم نسخ الرابط' : 'Link copied', 'success')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -101,7 +101,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
         examScores: ws.examScoresByStudent?.[student.id] || [],
         download: true,
       })
-      if (res?.success) showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF ✓' : 'Student report PDF downloaded ✓', 'success')
+      if (res?.success) showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF' : 'Student report PDF downloaded', 'success')
       else showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
     } finally { setPdfBusy(false) }
   }
@@ -114,7 +114,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     setCardBusy(true)
     try {
       const res = await printStudentCardPdf(student, { centerName })
-      if (res?.success) showToast?.(isArabic ? 'تم تحميل كرت الطالب PDF ✓ (وجهان: قص على الخطوط)' : 'Student card PDF downloaded ✓ (two faces — cut on the dashed lines)', 'success')
+      if (res?.success) showToast?.(isArabic ? 'تم تحميل كرت الطالب PDF (وجهان: قص على الخطوط)' : 'Student card PDF downloaded (two faces — cut on the dashed lines)', 'success')
       else showToast?.(isArabic ? 'تعذر تجهيز كرت الطالب — حاول تاني' : 'Could not build the student card — try again', 'error')
     } finally { setCardBusy(false) }
   }
@@ -151,13 +151,13 @@ export default function StudentQRModal({ open, student, template, onClose, showT
           />
           <div className="flex flex-wrap gap-2 justify-center w-full">
             <button className="btn-navy rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={copyLink}>
-              {copied ? '✓ ' : '📋 '}{isArabic ? 'نسخ الرابط' : 'Copy link'}
+              <Icon name={copied ? 'check' : 'copy'} size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'نسخ الرابط' : 'Copy link'}
             </button>
             <button className="rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }} onClick={sendWhatsApp} disabled={sending}>
-              ✆ {isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
+              <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'إرسال واتساب' : 'Send WhatsApp'}
             </button>
             <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadQR} disabled={!qrDataUrl}>
-              ⬇ {isArabic ? 'تحميل QR' : 'Download QR'}
+              <Icon name="download" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تحميل QR' : 'Download QR'}
             </button>
             <button className="btn-gold rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadStudentPdf} disabled={pdfBusy} title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}>
               {pdfBusy ? '… جاري التجهيز' : (<><Icon name="file-text" size={16} style={{ marginInlineEnd: 6, verticalAlign: '-0.25em' }} />تقرير PDF</>)}

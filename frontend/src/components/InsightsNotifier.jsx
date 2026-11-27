@@ -2,10 +2,11 @@ import { useEffect, useRef } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabaseClient'
-import {
-  readLocalSnapshot, fetchRemoteState, analysisDue,
-} from '../lib/insights/dbStore'
-import { runWeeklyPipeline, openShape } from '../lib/insights/runWeekly'
+// PERF: the insights engine (~50 KB across dbStore + runWeekly + engine)
+// used to be statically imported here — i.e. in the FIRST bundle of every
+// teacher — although this whole flow runs once, 4s after startup, inside a
+// timer. Dynamic now: the engine streams in only when the notifier actually
+// fires, and the first paint stays lean.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INSIGHTS NOTIFIER (owner request) — فريق التحليل greets the teacher through
@@ -46,6 +47,10 @@ export default function InsightsNotifier() {
       ranRef.current = true
       const teacherId = effectiveTeacherId
       try {
+        const [{ readLocalSnapshot, fetchRemoteState, analysisDue }, { runWeeklyPipeline, openShape }] = await Promise.all([
+          import('../lib/insights/dbStore'),
+          import('../lib/insights/runWeekly'),
+        ])
         // SWEEP (review round 2, note c — cleanup): historic runs flooded this
         // teacher with identical unread «فريق التحليل» rows. One-time per
         // session: keep the newest 3 unread, mark all older unread copies

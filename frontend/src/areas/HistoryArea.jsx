@@ -74,7 +74,7 @@ export default function HistoryArea() {
         <p className="text-[.74rem] text-fg-muted mb-4">{isArabic ? 'ابحث بالاسم أو الكود أو الهاتف لعرض السجل السريع.' : 'Search by name, code, or phone for a quick history view.'}</p>
         <input
           className="glass-input rounded-xl px-4 py-3 text-sm w-full max-w-md"
-          placeholder={isArabic ? '🔍 اكتب الاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
+          placeholder={isArabic ? 'اكتب الاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoFocus
@@ -87,7 +87,7 @@ export default function HistoryArea() {
                 <small>{s.code || ''}{s.group_name ? ` · ${s.group_name}` : ''}{s.phone ? ` · ${s.phone}` : ''}</small>
               </span>
               {s.archived
-                ? <span className="nk-pill nk-pill-neutral">📦 {isArabic ? 'مؤرشف' : 'Archived'}</span>
+                ? <span className="nk-pill nk-pill-neutral"><Icon name="archive" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'مؤرشف' : 'Archived'}</span>
                 : <span className="nk-pill nk-pill-gold">{getStudentRank(s.points || 0, ws.ranks)}</span>}
             </button>
           ))}
@@ -118,7 +118,7 @@ export default function HistoryArea() {
         examScores: ws.examScoresByStudent[student.id] || [],
         download: true,
       })
-      if (res?.success) ws.showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF ✓' : 'Student report PDF downloaded ✓', 'success')
+      if (res?.success) ws.showToast?.(isArabic ? 'تم تحميل تقرير الطالب PDF' : 'Student report PDF downloaded', 'success')
       else ws.showToast?.(isArabic ? 'تعذر توليد الـ PDF — حاول تاني' : 'Could not generate the PDF — try again', 'error')
     } finally { setPdfBusy(false) }
   }
@@ -145,7 +145,7 @@ export default function HistoryArea() {
             )}
             {phone && (
               <a className="action-button !min-h-[2.7rem] !min-w-0 !px-4 text-[.75rem]" href={`tel:+${phone}`} style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', borderColor: 'var(--info-border)' }}>
-                📞 {isArabic ? 'اتصال' : 'Call'}
+                <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'اتصال' : 'Call'}
               </a>
             )}
             <button
@@ -170,7 +170,7 @@ export default function HistoryArea() {
         <div className="flex flex-wrap gap-1.5 mt-4">
           <span className="nk-pill nk-pill-gold">{rank} · {student.points || 0} {isArabic ? 'نقطة' : 'pts'}</span>
           <span className="nk-pill nk-pill-neutral">{isArabic ? 'الترتيب' : 'Rank'}: {position}</span>
-          {(student.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {isArabic ? 'إنذارات' : 'Warnings'}: {student.warnings}</span>}
+          {(student.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger"><Icon name="alert-circle" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'إنذارات' : 'Warnings'}: {student.warnings}</span>}
           {attendancePct !== null && <span className={`nk-pill ${attendancePct >= 75 ? 'nk-pill-live' : 'nk-pill-pending'}`}>{isArabic ? 'نسبة الحضور' : 'Attendance'}: {attendancePct}%</span>}
           {(() => {
             // DERIVED weekly attendance (Friday → Thursday, spec 17–20): read
@@ -184,7 +184,7 @@ export default function HistoryArea() {
               </span>
             )
           })()}
-          {academicWarning && <span className="nk-pill nk-pill-danger">⚠ {isArabic ? 'إنذار أكاديمي' : 'Academic warning'}</span>}
+          {academicWarning && <span className="nk-pill nk-pill-danger"><Icon name="alert-circle" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'إنذار أكاديمي' : 'Academic warning'}</span>}
         </div>
       </div>
 

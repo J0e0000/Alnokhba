@@ -139,7 +139,7 @@ export async function dismissUpdatePopup(teacherId) {
 /** Popup copy — what's new (card design v3, coded blank cards + assignment,
  * bulk print) as a short friendly Arabic tutorial (note #23: 3–5 steps). */
 export const UPDATE_POPUP_CONTENT = {
-  title: 'النخبة فيها جديد 👋',
+  title: 'النخبة فيها جديد',
   subtitle: 'تحديث كروت الطلاب — شوف إيه اللي اتغير في ٤ خطوات سريعة',
   steps: [
     {

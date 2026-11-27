@@ -1,5 +1,6 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
 import { useWorkspace } from '../store/WorkspaceStore'
+import Icon from '../components/icons'
 import { getStudentRank } from '../lib/helpers'
 import { localDateStr } from '../lib/csv'
 import { weekStart } from '../lib/week'
@@ -198,7 +199,7 @@ export default function AnalyticsArea() {
           <div className="grid gap-1.5">
             {leaderboard.map((s, i) => (
               <div key={s.id} className="flex items-center justify-between gap-2 text-[.76rem]">
-                <span className="truncate"><span aria-hidden="true">{['🥇', '🥈', '🥉'][i] || `${i + 1}.`}</span> {s.name}</span>
+                <span className="truncate">{i === 0 ? <Icon name="trophy" size={14} style={{ color: 'var(--brand-gold, #B8860B)', verticalAlign: '-0.15em', marginInlineEnd: 4 }} /> : <span aria-hidden="true" style={{ marginInlineEnd: 4 }}>{i + 1}.</span>}{s.name}</span>
                 <span className="flex items-center gap-1.5 shrink-0">
                   <small className="text-fg-muted">{getStudentRank(s.points || 0, ws.ranks)}</small>
                   <span className="nk-pill nk-pill-gold">{s.points || 0}</span>
@@ -216,12 +217,12 @@ export default function AnalyticsArea() {
             {insights.map((ins, i) => (
               <div key={i} className="flex items-start gap-2 text-[.74rem]">
                 <span className={`nk-pill shrink-0 ${ins.severity === 'danger' ? 'nk-pill-danger' : ins.severity === 'warning' ? 'nk-pill-pending' : 'nk-pill-neutral'}`}>
-                  {ins.severity === 'danger' ? '⚠' : ins.severity === 'warning' ? '!' : 'ℹ'}
+                  {ins.severity === 'danger' ? <Icon name="alert-circle" size={13} /> : ins.severity === 'warning' ? '!' : <Icon name="info" size={13} />}
                 </span>
                 <span><b>{ins.name}</b> — {ins.text}</span>
               </div>
             ))}
-            {insights.length === 0 && <p className="text-[.74rem] text-fg-muted m-0">{isArabic ? 'لا ملاحظات حالياً 👌' : 'Nothing flagged 👌'}</p>}
+            {insights.length === 0 && <p className="text-[.74rem] text-fg-muted m-0">{isArabic ? 'لا ملاحظات حالياً' : 'Nothing flagged'}</p>}
           </div>
         </section>
       </div>

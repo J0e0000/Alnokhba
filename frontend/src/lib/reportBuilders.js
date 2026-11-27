@@ -26,7 +26,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { weekStart, weekEnd, localISODate, attendanceDateOf } from './week.js'
-import { INSIGHT_CONFIG } from './insights/engine.js'
+import { INSIGHT_CONFIG } from './insights/config.js'
 import { getStudentRank, getStudentRankPosition } from './helpers.js'
 import { studentInGroup } from '../lib/helpers'
 

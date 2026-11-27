@@ -254,7 +254,7 @@ export default function StudentsArea() {
         // note #32-6: blanks are SIMPLE placeholder cards — dashed write-in
         // lines + empty QR tile, no codes, no pool bookkeeping.
         const res = await printPlaceholderCardsPdf(placeholders, { style: cardStyle, centerName })
-        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت فارغ PDF ✓ — كرت الطالب الرسمي بيتطبع من صفحته بعد التسجيل` : `Downloaded ${placeholders} blank cards ✓`, 'success')
+        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت فارغ PDF — كرت الطالب الرسمي بيتطبع من صفحته بعد التسجيل` : `Downloaded ${placeholders} blank cards`, 'success')
         else ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
       } finally { setBusyBulk('') }
       return
@@ -280,8 +280,8 @@ export default function StudentsArea() {
       if (res?.success) {
         ws.showToast?.(
           isArabic
-            ? `تم تحميل كروت ${res.printed} طالب ✓${res.failed ? ` — تعذر تجهيز ${res.failed}` : ''}`
-            : `Downloaded ${res.printed} cards ✓${res.failed ? ` — ${res.failed} failed` : ''}`,
+            ? `تم تحميل كروت ${res.printed} طالب${res.failed ? ` — تعذر تجهيز ${res.failed}` : ''}`
+            : `Downloaded ${res.printed} cards${res.failed ? ` — ${res.failed} failed` : ''}`,
           res.failed ? 'info' : 'success',
         )
         setCardsPrintOpen(false)
@@ -325,7 +325,7 @@ export default function StudentsArea() {
       <div className="flex flex-wrap gap-2 mb-2">
         <input
           className="glass-input rounded-xl px-3.5 py-2.5 text-sm flex-1 min-w-[190px]"
-          placeholder={isArabic ? '🔍 بحث بالاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
+          placeholder={isArabic ? 'بحث بالاسم أو الكود أو الهاتف...' : 'Search name / code / phone...'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label={isArabic ? 'بحث' : 'Search'}
@@ -368,7 +368,8 @@ export default function StudentsArea() {
       {filtered.length > 0 && statusFilter !== 'archived' && (
         <div className="flex items-center gap-2 mb-2">
           <button className="nk-att-chip" onClick={toggleSelectAll} aria-pressed={allFilteredSelected}>
-            {allFilteredSelected ? (isArabic ? '☑ إلغاء تحديد الكل' : '☑ Unselect all') : (isArabic ? `☐ تحديد الكل (${filtered.length})` : `☐ Select all (${filtered.length})`)}
+            <Icon name={allFilteredSelected ? 'check-square' : 'square'} size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />
+            {allFilteredSelected ? (isArabic ? 'إلغاء تحديد الكل' : 'Unselect all') : (isArabic ? `تحديد الكل (${filtered.length})` : `Select all (${filtered.length})`)}
           </button>
         </div>
       )}
@@ -416,7 +417,7 @@ export default function StudentsArea() {
               </span>
               {archivedView ? (
                 <span className="flex flex-wrap items-center gap-1.5">
-                  <span className="nk-pill nk-pill-neutral" title={s.archived_reason || ''}>📦 {isArabic ? 'مؤرشف' : 'Archived'}</span>
+                  <span className="nk-pill nk-pill-neutral" title={s.archived_reason || ''}><Icon name="archive" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'مؤرشف' : 'Archived'}</span>
                   {s.archived_at && (
                     <small className="text-fg-subtle">{new Date(s.archived_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en-GB')}</small>
                   )}
@@ -426,7 +427,7 @@ export default function StudentsArea() {
                     lives in the session); warnings stay visible when present. */
                 <span className="flex flex-wrap items-center gap-1.5">
                   <span className="nk-pill nk-pill-gold">{s.points || 0}</span>
-                  {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger">⚠ {s.warnings}</span>}
+                  {(s.warnings || 0) > 0 && <span className="nk-pill nk-pill-danger"><Icon name="alert-circle" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{s.warnings}</span>}
                 </span>
               )}
               <span className="flex flex-wrap items-center gap-1.5 ms-auto">
@@ -436,7 +437,7 @@ export default function StudentsArea() {
                     style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
                     onClick={() => ws.restoreStudents?.([s.id])}
                     title={isArabic ? 'إرجاع الطالب لقوائم الحضور والتقارير' : 'Bring the student back to attendance and reports'}
-                  >↩ {isArabic ? 'استرجاع' : 'Restore'}</button>
+                  ><Icon name="rotate-ccw" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'استرجاع' : 'Restore'}</button>
                 ) : (
                   <>
                     <button
@@ -444,7 +445,7 @@ export default function StudentsArea() {
                       style={{ background: '#e7f8ee', color: '#0c6b50', border: '1px solid #b5e5d2' }}
                       onClick={() => sendWhatsApp(s, (ws.settings?.msg_welcome || 'مرحبًا {studentName}').replace('{studentName}', s.name))}
                       title="WhatsApp"
-                    >✆</button>
+                    ><Icon name="phone" size={14} /></button>
                     <button
                       className="!min-h-0 rounded-lg px-2.5 py-1.5 text-[.68rem] font-extrabold"
                       style={{ background: 'var(--info-bg)', color: 'var(--info-strong)', border: '1px solid var(--info-border)' }}
@@ -459,7 +460,8 @@ export default function StudentsArea() {
                         const ok = await ui.askConfirm(`حذف الطالب ${s.name}؟ لا يمكن التراجع عن حذف سجلاته من السيرفر.`, { danger: true, confirmLabel: 'حذف' })
                         if (ok) ws.deleteStudent(s)
                       }}
-                    >🗑</button>
+                      aria-label={isArabic ? 'حذف الطالب' : 'Delete student'}
+                    ><Icon name="trash" size={14} /></button>
                   </>
                 )}
               </span>
@@ -478,22 +480,22 @@ export default function StudentsArea() {
         <div className="nk-bulkbar glass-card animate-slide-up" role="toolbar" aria-label={isArabic ? 'إجراءات المحددين' : 'Bulk actions'}>
           <span className="nk-pill nk-pill-gold shrink-0">{selected.size} {isArabic ? 'محدد' : 'selected'}</span>
           <button className="btn-gold rounded-xl px-3.5 py-2 text-[.72rem] font-extrabold shrink-0" disabled={busyBulk === 'assign'} onClick={() => setAssignOpen(true)}>
-            ♦ {isArabic ? 'تعيين مجموعة' : 'Assign group'}
+            <Icon name="users" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'تعيين مجموعة' : 'Assign group'}
           </button>
           <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkMessage}><Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'رسالة' : 'Message'}</button>
-          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkCopyPhones}>⧉ {isArabic ? 'نسخ الأرقام' : 'Copy phones'}</button>
+          <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={bulkCopyPhones}><Icon name="copy" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'نسخ الأرقام' : 'Copy phones'}</button>
           <div className="nk-menu-wrap ms-auto">
             <button className="btn-ghost rounded-xl px-3 py-2 text-[.72rem] font-extrabold shrink-0" onClick={() => setMoreOpen((o) => !o)} aria-expanded={moreOpen}>
-              {isArabic ? 'المزيد' : 'More'} ▾
+              {isArabic ? 'المزيد' : 'More'} <Icon name="chevron-down" size={14} style={{ verticalAlign: '-0.15em' }} />
             </button>
             {moreOpen && (
               <>
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
                 <div className="nk-menu-sheet nk-menu-sheet--up" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
-                  <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
+                  <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}><Icon name="smartphone" size={16} /> {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
                   <button role="menuitem" disabled={busyBulk === 'cards'} onClick={() => printCardsFor(selectedStudents)}><Icon name="printer" size={16} /> {isArabic ? 'طباعة كروت المحددين' : 'Print selected cards'}</button>
-                  <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
-                  <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}>✕ {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
+                  <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}><Icon name="trash" size={16} /> {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>
+                  <button role="menuitem" onClick={() => { setSelected(new Set()); setMoreOpen(false) }}><Icon name="x" size={16} /> {isArabic ? 'إلغاء التحديد' : 'Clear selection'}</button>
                 </div>
               </>
             )}
@@ -807,7 +809,7 @@ function BulkAddModal({ onClose }) {
       <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/50 p-3 sm:p-6 overflow-y-auto" onClick={onClose} role="dialog" aria-modal="true">
         <div className="glass-card w-full max-w-2xl p-5 my-4" onClick={(e) => e.stopPropagation()}>
           <div className="text-center mb-4">
-            <div className="text-3xl mb-1" aria-hidden="true">🎉</div>
+            <div className="mb-1 flex justify-center" aria-hidden="true"><Icon name="sparkles" size={30} style={{ color: 'var(--brand-gold, #B8860B)' }} /></div>
             <h3 className="text-base font-black m-0">{isArabic ? 'تمت إضافة الطلاب بنجاح' : 'Students added successfully'}</h3>
             <p className="text-[.74rem] text-fg-muted m-0 mt-1">{isArabic ? `تمت إضافة ${created.length} طالب. جهّز رسائل الدخول وأرسلها للمحدد — لن يُرسل شيء تلقائيًا.` : `${created.length} students added. Prepare the access messages and send to your selection — nothing sends automatically.`}</p>
           </div>
@@ -823,7 +825,8 @@ function BulkAddModal({ onClose }) {
               </button>
             ))}
             <button className="nk-att-chip" onClick={() => setPicked(new Set(visibleCreated.filter((s) => links[s.id]?.status === 'ready' || isValidPhone(s.phone)).map((s) => s.id)))}>
-              {isArabic ? '☐ تحديد الظاهرين' : '☐ Select visible'}
+              <Icon name="square" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />
+              {isArabic ? 'تحديد الظاهرين' : 'Select visible'}
             </button>
           </div>
 
@@ -852,18 +855,18 @@ function BulkAddModal({ onClose }) {
                   <span className="flex items-center gap-1.5 shrink-0">
                     {!hasPhone && <span className="nk-pill nk-pill-neutral">—</span>}
                     {hasPhone && link?.status === 'pending' && <span className="nk-pill nk-pill-neutral">… {isArabic ? 'جاري التجهيز' : 'Preparing'}</span>}
-                    {hasPhone && link?.status === 'ready' && <span className="nk-pill nk-pill-live">✓ {isArabic ? 'جاهزة' : 'Ready'}</span>}
+                    {hasPhone && link?.status === 'ready' && <span className="nk-pill nk-pill-live"><Icon name="check" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'جاهزة' : 'Ready'}</span>}
                     {hasPhone && link?.status === 'error' && (
                       <button className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.64rem] font-extrabold" onClick={() => retryLink(s)}>
-                        ⟲ {isArabic ? 'إعادة المحاولة' : 'Retry'}
+                        <Icon name="rotate-ccw" size={13} style={{ marginInlineEnd: 4, verticalAlign: '-0.15em' }} />{isArabic ? 'إعادة المحاولة' : 'Retry'}
                       </button>
                     )}
                     {link?.status === 'ready' && (
                       <button
                         className="btn-ghost !min-h-0 rounded-lg px-2.5 py-1.5 text-[.64rem] font-extrabold"
-                        onClick={async () => { const ok = await copyText(link.message); ws.showToast?.(ok ? 'تم نسخ الرسالة ✓' : 'تعذر النسخ', ok ? 'success' : 'error') }}
+                        onClick={async () => { const ok = await copyText(link.message); ws.showToast?.(ok ? 'تم نسخ الرسالة' : 'تعذر النسخ', ok ? 'success' : 'error') }}
                         title={isArabic ? 'نسخ الرسالة' : 'Copy message'}
-                      >⧉</button>
+                      ><Icon name="copy" size={14} /></button>
                     )}
                   </span>
                 </div>
@@ -884,7 +887,7 @@ function BulkAddModal({ onClose }) {
               <Icon name="phone" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? `إرسال إلى المحدد (${pickedReady.length})` : `Send to selected (${pickedReady.length})`}
             </button>
             <button className="btn-ghost action-button !min-h-[3rem]" onClick={copySelected}>
-              ⧉ {isArabic ? 'نسخ الرسائل' : 'Copy messages'}
+              <Icon name="copy" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? 'نسخ الرسائل' : 'Copy messages'}
             </button>
             <button className="btn-ghost action-button !min-h-[3rem] ms-auto" onClick={onClose}>
               {isArabic ? 'عدم الإرسال الآن' : "Don't send now"}
@@ -903,7 +906,7 @@ function BulkAddModal({ onClose }) {
       <div className="glass-card w-full max-w-2xl p-5 my-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="text-base font-extrabold m-0">{isArabic ? 'إضافة عدة طلاب' : 'Bulk add students'}</h3>
-          <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.72rem] font-extrabold" onClick={onClose}>✕</button>
+          <button className="btn-ghost rounded-lg px-3 py-1.5 text-[.72rem] font-extrabold" onClick={onClose} aria-label={isArabic ? 'إغلاق' : 'Close'}><Icon name="x" size={15} /></button>
         </div>
         <p className="text-[.7rem] text-fg-muted mt-0 mb-4">
           {step === 'edit' && (isArabic ? 'أدخل الطلاب في صفوف سريعة، ثم تحقق من الكل ← راجع ← احفظ الجميع مرة واحدة. اختيار المجموعة يحدد المرحلة تلقائيًا.' : 'Enter students in fast rows, then validate all → review → save all at once. Picking a group sets the stage automatically.')}
@@ -941,7 +944,7 @@ function BulkAddModal({ onClose }) {
                   {rest.map((g) => <option key={g} value={g}>{g}</option>)}
                 </optgroup>}
               </select>
-              <button disabled={step === 'review'} className="btn-ghost rounded-lg px-2.5 py-2 text-[.7rem] font-extrabold" onClick={() => removeRow(i)} aria-label={isArabic ? 'حذف الصف' : 'Remove row'}>✕</button>
+              <button disabled={step === 'review'} className="btn-ghost rounded-lg px-2.5 py-2 text-[.7rem] font-extrabold" onClick={() => removeRow(i)} aria-label={isArabic ? 'حذف الصف' : 'Remove row'}><Icon name="x" size={14} /></button>
             </div>
           )
         })}
@@ -955,12 +958,12 @@ function BulkAddModal({ onClose }) {
             <div className="flex flex-wrap gap-2 mt-5 pt-4" style={{ borderTop: '1px solid var(--surface-border)' }}>
               {step === 'edit' && (
                 <button className="btn-navy action-button !min-h-[3rem]" onClick={validateAll}>
-                  ✓ {isArabic ? `تحقق من الكل (${filled.length})` : `Validate all (${filled.length})`}
+                  <Icon name="check" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? `تحقق من الكل (${filled.length})` : `Validate all (${filled.length})`}
                 </button>
               )}
               {step === 'review' && (
                 <button className="btn-gold action-button !min-h-[3rem]" onClick={saveAll}>
-                  💾 {isArabic ? `احفظ الجميع (${filled.length})` : `Save all (${filled.length})`}
+                  <Icon name="save" size={15} style={{ marginInlineEnd: 6, verticalAlign: '-0.2em' }} />{isArabic ? `احفظ الجميع (${filled.length})` : `Save all (${filled.length})`}
                 </button>
               )}
               {step === 'review' && (

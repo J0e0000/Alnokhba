@@ -14,7 +14,10 @@ import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
 import SubscriptionExpiryBanner from '../components/SubscriptionExpiryBanner'
 import HistoryModal from '../components/HistoryModal'
-import MessageQueueModal from '../components/MessageQueueModal'
+// PERF (bundle splitting): the message-queue modal is the ONLY eager window
+// into lib/qrPdfWhatsApp (~70 KB of PDF/QR builders). It renders only when a
+// send queue is active — lazily, so its graph ships on demand.
+const MessageQueueModal = lazySafe(() => import('../components/MessageQueueModal'))
 import { getHistoryCount, getRedoCount } from '../lib/undoManager'
 import HomePage from '../home/HomePage'
 import SessionWorkspace from '../session/SessionWorkspace'
@@ -199,7 +202,7 @@ export default function AppShell({ onOpenAdmin }) {
   )
 
   return (
-    <div className={`min-h-screen flex flex-col${focusActive ? ' nk-focus' : ''}`} style={{ background: 'var(--app-bg)' }}>
+    <div className={`nk-shell min-h-screen flex flex-col${focusActive ? ' nk-focus' : ''}`} style={{ background: 'var(--app-bg)' }}>
       {/* ── Top bar — unmounted during mobile Focus Mode ────────── */}
       {!focusActive && (
       <header
@@ -397,15 +400,19 @@ export default function AppShell({ onOpenAdmin }) {
         canRedo={wsMeta.canRedo}
         redoCount={getRedoCount()}
       />
-      <MessageQueueModal
-        open={ui.queue.open}
-        onClose={ui.closeQueue}
-        queue={ui.queue.items}
-        index={ui.queue.index}
-        status={ui.queue.status}
-        onAdvance={ui.advanceQueue}
-        onEditMessage={ui.updateQueueItemMessage}
-      />
+      {(ui.queue.open || (ui.queue.items.length > 0 && ui.queue.index < ui.queue.items.length)) && (
+        <Suspense fallback={null}>
+          <MessageQueueModal
+            open={ui.queue.open}
+            onClose={ui.closeQueue}
+            queue={ui.queue.items}
+            index={ui.queue.index}
+            status={ui.queue.status}
+            onAdvance={ui.advanceQueue}
+            onEditMessage={ui.updateQueueItemMessage}
+          />
+        </Suspense>
+      )}
       {/* Paused send batch — a small non-intrusive chip at the very top
           (never over the working area): resume exactly where it stopped, or
           discard the remainder. Hidden while the queue modal itself is open. */}
@@ -416,9 +423,9 @@ export default function AppShell({ onOpenAdmin }) {
           role="status"
         >
           <button className="text-[.7rem] font-extrabold" onClick={ui.reopenQueue}>
-            ⏸ استكمال قائمة الإرسال ({ui.queue.items.length - ui.queue.index} متبقي)
+            <Icon name="pause" size={13} style={{ marginInlineEnd: 5, verticalAlign: '-0.15em' }} />استكمال قائمة الإرسال ({ui.queue.items.length - ui.queue.index} متبقي)
           </button>
-          <button className="text-fg-subtle hover:text-fg leading-none" onClick={ui.discardQueue} aria-label="إلغاء القائمة المتبقية">✕</button>
+          <button className="text-fg-subtle hover:text-fg leading-none" onClick={ui.discardQueue} aria-label="إلغاء القائمة المتبقية"><Icon name="x" size={13} /></button>
         </div>
       )}
       {/* فريق التحليل greeting (owner request): when the weekly window is due
