@@ -252,8 +252,21 @@ export default function StudentsArea() {
     if (!targets?.length) { ws.showToast?.(isArabic ? 'لا يوجد طلاب للطباعة' : 'No students to print', 'error'); return }
     setBusyBulk('cards')
     ws.showToast?.(isArabic ? `جاري تجهيز كروت ${targets.length} طالب…` : `Preparing ${targets.length} cards…`, 'info')
+    // Task 68 review note 3: big centers (500+ students) need live progress —
+    // throttled to one toast every ~2.5s so the stack never spams.
+    let lastProgressAt = 0
+    let lastShownPct = 0
+    const onProgress = (done, total) => {
+      const pct = Math.min(100, Math.round((done / Math.max(total, 1)) * 100))
+      const now = Date.now()
+      if (pct >= 100 || (now - lastProgressAt > 2500 && pct > lastShownPct)) {
+        lastProgressAt = now
+        lastShownPct = pct
+        if (pct < 100) ws.showToast?.(isArabic ? `جاري تجهيز الكروت… ${pct}%` : `Preparing cards… ${pct}%`, 'info', 2200)
+      }
+    }
     try {
-      const res = await printStudentsCardsPdf(targets)
+      const res = await printStudentsCardsPdf(targets, { onProgress })
       if (res?.success) {
         ws.showToast?.(
           isArabic
@@ -466,7 +479,7 @@ export default function StudentsArea() {
             {moreOpen && (
               <>
                 <div className="nk-menu-backdrop" onClick={() => setMoreOpen(false)} aria-hidden="true" />
-                <div className="nk-menu-sheet" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
+                <div className="nk-menu-sheet nk-menu-sheet--up" role="menu" aria-label={isArabic ? 'المزيد من الإجراءات' : 'More actions'}>
                   <button role="menuitem" disabled={busyBulk === 'qr'} onClick={bulkQRQueue}>⛶ {isArabic ? 'إرسال روابط البوابة (QR)' : 'Send portal links (QR)'}</button>
                   <button role="menuitem" disabled={busyBulk === 'cards'} onClick={() => printCardsFor(selectedStudents)}>💳 {isArabic ? 'طباعة كروت المحددين' : 'Print selected cards'}</button>
                   <button role="menuitem" className="nk-menu-danger" disabled={busyBulk === 'delete'} onClick={bulkDelete}>🗑 {isArabic ? 'حذف المحددين' : 'Delete selected'}</button>

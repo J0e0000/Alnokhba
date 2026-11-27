@@ -1092,7 +1092,11 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
   align-items: center;
   gap: .5rem;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  /* overflow-x:auto used to clip the absolutely-positioned "More" menu
+     sheet on desktop (Task 68 review note 1) — a scroll container clips
+     in BOTH axes, so the upward sheet only showed as a sliver. Desktop
+     gets overflow:visible; the ≤1023px fixed bar keeps its own scrolling. */
+  overflow: visible;
   padding: .6rem .7rem;
   border-radius: 14px;
 }
@@ -1102,6 +1106,8 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
     inset-inline: .5rem;
     bottom: calc(64px + env(safe-area-inset-bottom, 0px) + .4rem);
     z-index: 55;
+    overflow-x: auto;
+    overflow-y: visible;
     box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
   }
 }
@@ -1128,6 +1134,13 @@ img[src*="logo"], img[src*="favicon"], img[src*="nokhba"] { background-color: in
   padding: .4rem;
   display: grid;
   gap: 2px;
+}
+/* Bottom-anchored contexts (bulkbar sticks to the viewport bottom on
+   desktop too): the sheet must open UPWARD or it lands below the fold
+   (Task 68 review note 1 — y=728 items on a 720px viewport). */
+.nk-menu-sheet--up {
+  top: auto;
+  bottom: calc(100% + .4rem);
 }
 .nk-menu-sheet__title {
   font-size: .66rem;

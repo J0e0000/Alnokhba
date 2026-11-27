@@ -258,8 +258,8 @@ export async function paintCardCanvas({ student, qr: qrDataUrl, placeholder = fa
   ctx.lineWidth = 1
   ctx.beginPath(); ctx.moveTo(0, stripTop); ctx.lineTo(W, stripTop); ctx.stroke()
   const note = placeholder
-    ? 'كرت جاهز للتسليم — بعد تسجيل الطالب اطبع كرته الرسمية بـ QR الحضور من صفحة الطلاب'
-    : 'امسح الكود بكاميرا النخبة داخل الحصة لتسجيل الحضور — أو افتح الرابط بأي كاميرا'
+    ? 'كرت جاهز للتسليم — بعد تسجيل الطالب اطبع كرته الرسمية من صفحة الطلاب (QR الحضور)'
+    : 'امسح الكود بكاميرا النخبة داخل الحصة لتسجيل الحضور — أو امسحه بأي كاميرا وادخل على موقع النخبة'
   ctx.textAlign = 'right'
   ctx.font = `700 21px ${FONT}`
   ctx.fillStyle = 'rgba(255,255,255,.85)'
@@ -431,11 +431,18 @@ export async function printStudentCardPdf(student, { download = true } = {}) {
  *   (token/QR generation failed); printed = cards placed on the sheet.
  */
 export async function printStudentsCardsPdf(students, { download = true, onProgress } = {}) {
-  const { entries, failed } = await buildStudentCardEntries(students, { onProgress })
+  // Progress is reported 0→50% during token/link resolution and 50→100%
+  // during card painting — big centers (500+ students) get live feedback
+  // (Task 68 review note 3).
+  const total = (students || []).filter(Boolean).length
+  const { entries, failed } = await buildStudentCardEntries(students, {
+    onProgress: (done, t) => onProgress?.(Math.round((done / Math.max(t, 1)) * 50), 100),
+  })
   if (!entries.length) return { success: false, failed, printed: 0 }
   const imgList = []
-  for (const e of entries) {
-    imgList.push(await renderCardToImage({ student: e.student, qr: e.qr }))
+  for (let i = 0; i < entries.length; i += 1) {
+    imgList.push(await renderCardToImage({ student: entries[i].student, qr: entries[i].qr }))
+    onProgress?.(50 + Math.round(((i + 1) / entries.length) * 50), 100)
   }
   const res = await composeCardsPdf({ cards: imgList, fileName: 'nokhba-student-cards.pdf', download })
   return { ...res, failed, printed: imgList.length }
