@@ -273,10 +273,32 @@ export async function paintCardFront({ student, style: styleId } = {}) {
 
   ctx.textAlign = 'center'
   if (name) {
-    const size = fitFontSize(ctx, name, 56, 30, W - 160)
+    // Long names (note #33): shrink first; below the readable floor, wrap
+    // onto two balanced centered lines — never cut, never overlapping.
+    const maxW = W - 150
+    let size = fitFontSize(ctx, name, 56, 34, maxW)
+    let lines = [name]
+    if (size <= 34 && name.includes(' ')) {
+      const words = name.split(/\s+/)
+      let best = null
+      ctx.font = `900 44px ${FONT}`
+      for (let k = 1; k < words.length; k += 1) {
+        const l1 = words.slice(0, k).join(' ')
+        const l2 = words.slice(k).join(' ')
+        const spread = Math.abs(ctx.measureText(l1).width - ctx.measureText(l2).width)
+        if (!best || spread < best.spread) best = { l1, l2, spread }
+      }
+      lines = [best.l1, best.l2]
+      size = Math.min(fitFontSize(ctx, lines[0], 44, 26, maxW), fitFontSize(ctx, lines[1], 44, 26, maxW))
+    }
     ctx.font = `900 ${size}px ${FONT}`
     ctx.fillStyle = style.nameColor
-    ctx.fillText(name, W / 2, 208)
+    if (lines.length === 1) {
+      ctx.fillText(lines[0], W / 2, 208)
+    } else {
+      ctx.fillText(lines[0], W / 2, 182)
+      ctx.fillText(lines[1], W / 2, 182 + size + 16)
+    }
   }
   if (code) {
     // F-code over a thin accent line (note #30) — no dark rectangle (#25-1)
@@ -299,8 +321,9 @@ export async function paintCardFront({ student, style: styleId } = {}) {
 }
 
 /**
- * BACK (note #32-2): the student's own QR in a white rounded tile — the
- * SAME token the QR modal shows (getOrCreateStudentToken is the only source).
+ * BACK (note #32-2 + #33): the student's own QR in a white rounded tile —
+ * the SAME token the QR modal shows — with the Nokhba name + tagline line
+ * under it (the platform link stays OFF the card).
  */
 export async function paintCardBack({ link, style: styleId } = {}) {
   await loadFonts()
@@ -308,20 +331,23 @@ export async function paintCardBack({ link, style: styleId } = {}) {
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
   const W = CARD_W_PX
-  const H = CARD_H_PX
   paintFace(ctx, style)
 
-  const panel = Math.min(H - 72, 420)
+  const panel = 396
   const px = W / 2 - panel / 2
-  const py = H / 2 - panel / 2
+  const py = 42
   roundRectPath(ctx, px, py, panel, panel, 32)
   ctx.fillStyle = QR_PANEL_BG
   ctx.fill()
   if (link) {
     try {
-      await drawDotQR(ctx, link, W / 2, H / 2, panel - 44, logoImg)
+      await drawDotQR(ctx, link, px + panel / 2, py + panel / 2, panel - 44, logoImg)
     } catch { /* leave the empty well on failure */ }
   }
+  ctx.textAlign = 'center'
+  ctx.font = `700 26px ${FONT}`
+  ctx.fillStyle = style.accent
+  ctx.fillText('النخبة · إدارة الحصص الذكية', W / 2, py + panel + 30)
   return canvas
 }
 
