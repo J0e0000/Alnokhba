@@ -20,11 +20,6 @@ const FIRST_STAGE = Object.values(GRADES_BY_STAGE)[0][0]
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentModal({ open, onClose, onSave, student, groups, groupMeta, students, multiGroup = false, isSaving: externalSaving }) {
   const [form, setForm] = useState({ name: '', phone: '', stage: FIRST_STAGE, group: groups?.[0] || '', extra: [] })
-  // 🎴 review round 4 — pre-printed card attach (NEW students only):
-  // mode 'none' | 'code' (5-digit printed code) | 'auto' (next free card).
-  const isNewStudent = !student
-  const [cardMode, setCardMode] = useState('none')
-  const [cardCode, setCardCode] = useState('')
   const [errors, setErrors] = useState({})
   const [hasChanged, setHasChanged] = useState(false)
   const [stageInherited, setStageInherited] = useState(false)
@@ -48,8 +43,6 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
     setHasChanged(false)
     setStageInherited(false)
     setStageClearedGroup(false)
-    setCardMode('none')
-    setCardCode('')
     // Focus name input when modal opens
     setTimeout(() => nameRef.current?.focus(), 100)
   }, [student, open, groups])
@@ -163,15 +156,10 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
   const submit = (e) => {
     e.preventDefault()
     if (!validate()) return
-    if (isNewStudent && cardMode === 'code' && !/^\d{5}$/.test(cardCode.trim())) {
-      setErrors((prev) => ({ ...prev, cardCode: 'الكود 5 أرقام' }))
-      return
-    }
     onSave({
       ...form,
       phone: sanitizePhone(form.phone),
       extra_groups: multiGroup ? form.extra.filter((g) => g !== form.group) : undefined,
-      card_attach: isNewStudent && cardMode !== 'none' ? { mode: cardMode, code: cardCode.trim() } : null,
     })
   }
 
@@ -281,53 +269,6 @@ export default function StudentModal({ open, onClose, onSave, student, groups, g
             <p className='text-[11px] m-0 mt-1' style={{ color: 'var(--fg-muted, #94A3B8)' }}>
               ⓘ نفس الطالب يظهر في الحصص والواجبات والامتحانات لكل مجموعة موجودة فيها (الأساسية + الإضافية).
             </p>
-          </div>
-        )}
-
-        {/* 🎴 review round 4 — attach a PRE-PRINTED card (new students only):
-            the printed card's QR resolves to this student after saving. */}
-        {isNewStudent && (
-          <div className='rounded-xl p-3' style={{ background: 'var(--surface-container, rgba(20,45,98,.05))', border: '1px solid var(--surface-border)' }}>
-            <label className='block text-sm font-bold mb-1.5'>🎴 بطاقة مطبوعة مسبقًا (اختياري)</label>
-            <div className='flex flex-wrap gap-2 mb-2'>
-              {[
-                ['none', 'بدون بطاقة'],
-                ['code', 'ربط بكود'],
-                ['auto', 'أول بطاقة حرة'],
-              ].map(([key, label]) => (
-                <button
-                  key={key} type='button'
-                  onClick={() => setCardMode(key)}
-                  className={`rounded-full px-3 py-1 text-xs font-bold border transition-colors ${cardMode === key ? 'bg-brand-gold/15 text-brand-gold-hover border-brand-gold/40' : 'text-fg-subtle border-subtle hover:text-fg'}`}
-                  aria-pressed={cardMode === key}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {cardMode === 'code' && (
-              <div>
-                <input
-                  value={cardCode}
-                  onChange={(e) => setCardCode(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                  inputMode='numeric'
-                  placeholder='12345'
-                  dir='ltr'
-                  className='glass-input rounded-lg px-3 py-2 text-sm w-full outline-none focus:border-brand-gold'
-                  style={{ fontFamily: 'ui-monospace, monospace', letterSpacing: '2px' }}
-                  aria-label='كود البطاقة المطبوعة'
-                />
-                {errors.cardCode && <p className='text-[11px] m-0 mt-1' style={{ color: 'var(--danger-strong)' }}>{errors.cardCode}</p>}
-                <p className='text-[11px] m-0 mt-1' style={{ color: 'var(--fg-muted, #94A3B8)' }}>
-                  اكتب الكود المطبوع على البطاقة الورقية (5 أرقام) — نفس الـ QR المطبوع هيشتغل له بعد الحفظ.
-                </p>
-              </div>
-            )}
-            {cardMode === 'auto' && (
-              <p className='text-[11px] m-0' style={{ color: 'var(--fg-muted, #94A3B8)' }}>
-                أول بطاقة حرة من مخزن الكروت المطبوعة هتتربط بالطالب تلقائيًا بعد الحفظ.
-              </p>
-            )}
           </div>
         )}
 

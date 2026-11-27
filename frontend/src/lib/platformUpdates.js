@@ -44,39 +44,48 @@ export async function updateRowId(name, teacherId) {
   }
 }
 
-/* ── RETIRE the old ✨ seeded notices ────────────────────────────────────── */
+/* ── RETIRE legacy system rows ───────────────────────────────────────────── */
 
-// One delete sweep per teacher per session — the rows are gone from the DB,
-// nothing re-seeds them (the seeder was removed with this file's old logic).
+// One delete sweep per teacher per session: the old ✨ seeded notices AND
+// the 🎴 card-pool bookkeeping (note #32-1: the card-linking feature was
+// removed — its leftover rows must go too). Nothing re-seeds either kind.
 const retiredTeachers = new Set()
 
 export async function retireUpdateNotifications(teacherId) {
   if (!teacherId || retiredTeachers.has(teacherId)) return 0
-  try {
-    const { error, count } = await supabase
-      .from('teacher_notification_events')
-      .delete()
-      .eq('teacher_id', teacherId)
-      .like('title', `${UPDATE_MARKER}%`)
-      .select('id', { count: 'exact' })
-    retiredTeachers.add(teacherId)
-    if (error) throw new Error(error.message)
-    return count || 0
-  } catch (err) {
-    // Non-fatal: rows are also filtered client-side everywhere, so a failed
-    // sweep only means leftover rows this session — retried next session.
-    console.warn('[NOKHBA updates] retire sweep failed:', err?.message || err)
-    return 0
+  retiredTeachers.add(teacherId)
+  let deleted = 0
+  for (const prefix of [UPDATE_MARKER, '🎴']) {
+    try {
+      const { error, count } = await supabase
+        .from('teacher_notification_events')
+        .delete()
+        .eq('teacher_id', teacherId)
+        .like('title', `${prefix}%`)
+        .select('id', { count: 'exact' })
+      if (error) throw new Error(error.message)
+      deleted += count || 0
+    } catch (err) {
+      // Non-fatal: rows are also filtered client-side everywhere, so a
+      // failed sweep only means leftover rows this session — retried next.
+      console.warn('[NOKHBA updates] retire sweep failed:', err?.message || err)
+    }
   }
+  return deleted
 }
 
 /* ── ONE-TIME welcome popup state ────────────────────────────────────────── */
 
-const POPUP_ROW_NAME = 'platform-update-popup'
+// v2 (note #32): the popup copy changed (card-linking cancelled — the
+// tutorial now describes the final personal-card design), so the flag is
+// versioned: EVERY teacher sees the updated tutorial exactly once more,
+// and a fresh dismiss is stored under the new key (also gives the reviewer
+// a clean re-test path without touching the DB).
+const POPUP_ROW_NAME = 'platform-update-popup-v2'
 
 const popupRowId = (teacherId) => updateRowId(POPUP_ROW_NAME, teacherId)
 
-const popupLocalKey = (teacherId) => `alnokhba_update_popup_done_${teacherId}`
+const popupLocalKey = (teacherId) => `alnokhba_update_popup_done_v2_${teacherId}`
 
 function popupLocalDismissed(teacherId) {
   try { return localStorage.getItem(popupLocalKey(teacherId)) === '1' } catch { return false }
@@ -131,23 +140,23 @@ export async function dismissUpdatePopup(teacherId) {
  * bulk print) as a short friendly Arabic tutorial (note #23: 3–5 steps). */
 export const UPDATE_POPUP_CONTENT = {
   title: 'النخبة فيها جديد 👋',
-  subtitle: 'تحديث الكروت — شوف إيه اللي اتغير في ٤ خطوات سريعة',
+  subtitle: 'تحديث كروت الطلاب — شوف إيه اللي اتغير في ٤ خطوات سريعة',
   steps: [
     {
       icon: '💳',
-      text: 'كرت الطالب لبس جديد: تصميم نضيف بألوان النخبة وزوايا دائرية، ومقاس فيزا جاهز للطباعة.',
+      text: 'كل طالب ليه كرت رسمي جديد: تصميم نضيف بألوان النخبة، وزوايا دائرية، ومقاس فيزا جاهز للطباعة — وجهين (الاسم والكود أمامًا و QR خلف).',
     },
     {
-      icon: '🎴',
-      text: 'تقدر تطبع كروت جاهزة قبل ما تسجل الطلاب: كل كرت عليه كود من ٥ أرقام و QR خاص بيه — من صفحة الطلاب → «💳 كروت QR».',
-    },
-    {
-      icon: '🔗',
-      text: 'لما تسجل طالب جديد، اربط الكرت في خانة «بطاقة مطبوعة مسبقًا»: بالكود أو «أول بطاقة حرة» — ونفس الـ QR المطبوع هيشتغل للحضور والبوابة من غير إعادة طباعة.',
+      icon: '🎨',
+      text: 'اختار شكل الكرت اللي يعجبك: ٤ ألوان (أزرق ليلي، عاجي ذهبي، زمردي، بنفسجي) — من صفحة الطلاب → «💳 كروت QR»، واختيارك بيشتغل في كل الطبعات.',
     },
     {
       icon: '🖨️',
-      text: 'طباعة بالجملة: حدّد الطلاب → «المزيد» → «طباعة كروت المحددين»، أو اطبع كروت مركزك كلها — ٨ كروت في صفحة A4 مع خطوط قص.',
+      text: 'اطبع كروت كل الطلاب أو المحددين منهم في PDF واحد — ٨ كروت في صفحة A4 مع خطوط قص: صفحة الوجوه الأول ثم صفحة الظهراني.',
+    },
+    {
+      icon: '📱',
+      text: 'QR الكرت هو نفسه رابط بوابة الطالب: الكاميرا العادية بتفتح صفحته، وكاميرا النخبة بتسجل حضوره — وكروت فارغة للتحضير متاحة برضو قبل التسجيل.',
     },
   ],
   cta: 'يلا نبدأ 🚀',

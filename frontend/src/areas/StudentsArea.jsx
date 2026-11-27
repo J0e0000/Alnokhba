@@ -1,7 +1,6 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
-import { useAuth } from '../context/AuthContext'
 import StudentModal from '../components/StudentModal'
 import StudentQRModal from '../components/StudentQRModal'
 import LeaderboardPanel from '../components/LeaderboardPanel'
@@ -10,8 +9,7 @@ import { SkeletonTableRows } from '../components/Skeleton'
 import { checkAcademicWarning, buildWhatsAppUrl, normalizeEgyptianPhone, isValidPhone, openWhatsAppUrl, GRADES_BY_STAGE, STAGE_CATEGORIES, stageCategoryOf, isStageCompatible } from '../lib/helpers'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage } from '../lib/qrPdfWhatsApp'
 import useContextMenu from '../hooks/useContextMenu'
-import { printStudentsCardsPdf, printBlankCardsPdf, CARD_STYLES, DEFAULT_CARD_STYLE, normalizeCardStyle } from '../lib/studentCardPdf'
-import { findCardByCode, nextFreeCard, assignCardToStudent, fetchAssignedPoolByStudent } from '../lib/cardPool'
+import { printStudentsCardsPdf, printPlaceholderCardsPdf, CARD_STYLES, getSavedCardStyle, saveCardStyle } from '../lib/studentCardPdf'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STUDENTS AREA — student-management round (spec 3–8, 21–26):
@@ -29,7 +27,6 @@ export default function StudentsArea() {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const ui = useUI()
-  const { effectiveTeacherId } = useAuth()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('الكل')
@@ -45,19 +42,10 @@ export default function StudentsArea() {
   const [busyBulk, setBusyBulk] = useState('')
   const [cardsPrintOpen, setCardsPrintOpen] = useState(false)
   const [placeholderCount, setPlaceholderCount] = useState(8)
-  // 🎴 card style (review round 5, note #27-6): three gradient faces Youssef
-  // picks from — persisted on this device, applied to every print path.
-  const [cardStyle, setCardStyle] = useState(() => {
-    try { return normalizeCardStyle(localStorage.getItem('alnokhba_card_style')) } catch { return DEFAULT_CARD_STYLE }
-  })
-  // studentId → { code, token } for pool cards ALREADY assigned (note
-  // #27-4: printing is for students that have a card — no card, no print).
-  const [printableMap, setPrintableMap] = useState(null)
-  const changeCardStyle = (id) => {
-    const next = normalizeCardStyle(id)
-    setCardStyle(next)
-    try { localStorage.setItem('alnokhba_card_style', next) } catch { /* private mode */ }
-  }
+  // 💳 card style (notes #30/#32): FOUR gradient faces Youssef picks from —
+  // persisted on this device via the lib, applied to every print path.
+  const [cardStyle, setCardStyle] = useState(() => getSavedCardStyle())
+  const changeCardStyle = (id) => setCardStyle(saveCardStyle(id))
 
   // Task 42: التبويب «المؤرشفون» يسحب من ws.archivedStudents بدل النشطين —
   // بحث + فلتر المجموعة/المرحلة شغالين، وفلتر الحالة الفرعية لا ينطبق هنا.
@@ -253,45 +241,24 @@ export default function StudentsArea() {
 
   // 💳 QR cards (Task 68): Visa-style FRONT/BACK cards on a selectable
   // gradient — 8 fronts per A4 page then the matching backs, with cut
-  // guides. Students print ONLY if a pool card is assigned to them (note
-  // #27-4); blanks come from the pool with their own codes.
-  const openCardsModal = async () => {
-    setMoreOpen(false)
-    setCardsPrintOpen(true)
-    // always fresh — assignments made elsewhere (QR modal, another device)
-    // must be reflected the moment the modal opens
-    const map = await fetchAssignedPoolByStudent(effectiveTeacherId).catch(() => new Map())
-    setPrintableMap(map)
-  }
-
+  // guides. ALL selected students print (note #32-5); blanks are simple
+  // placeholder stock (note #32-6).
   const printCardsFor = async (targets, { placeholders = 0 } = {}) => {
     setMoreOpen(false)
     if (placeholders) {
       setBusyBulk('placeholders')
       try {
-        // Review round 4: blanks come from the PRE-PRINTED POOL — each card
-        // gets a unique 5-digit code + its own QR token; assign later.
-        const res = await printBlankCardsPdf(effectiveTeacherId, placeholders, { style: cardStyle })
-        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} بطاقة بكود فريد PDF ✓ — اربط كل بطاقة بالطالب بعد التسجيل` : `Downloaded ${placeholders} coded blank cards ✓`, 'success')
+        // note #32-6: blanks are SIMPLE placeholder cards — dashed write-in
+        // lines + empty QR tile, no codes, no pool bookkeeping.
+        const res = await printPlaceholderCardsPdf(placeholders, { style: cardStyle })
+        if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت فارغ PDF ✓ — كرت الطالب الرسمي بيتطبع من صفحته بعد التسجيل` : `Downloaded ${placeholders} blank cards ✓`, 'success')
         else ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
       } finally { setBusyBulk('') }
       return
     }
-    // note #27-4: only students with an ASSIGNED pool card get printed —
-    // the printed 5-digit code is that card's code. Always fresh.
-    const map = await fetchAssignedPoolByStudent(effectiveTeacherId).catch(() => new Map())
-    setPrintableMap(map)
-    const printable = (targets || []).filter((s) => map.has(s.id)).map((s) => ({ ...s, _poolCode: map.get(s.id)?.code }))
-    const skipped = (targets?.length || 0) - printable.length
-    if (!printable.length) {
-      ws.showToast?.(
-        isArabic ? 'مفيش طالب مربوط بكرت جاهز — اربطهم من مودال QR («🔗 اربط بطاقة جاهزة») واطبع تاني' : 'No selected student is assigned a card — attach one from the QR modal first',
-        'error',
-      )
-      return
-    }
+    if (!targets?.length) { ws.showToast?.(isArabic ? 'لا يوجد طلاب للطباعة' : 'No students to print', 'error'); return }
     setBusyBulk('cards')
-    ws.showToast?.(isArabic ? `جاري تجهيز كروت ${printable.length} طالب…` : `Preparing ${printable.length} cards…`, 'info')
+    ws.showToast?.(isArabic ? `جاري تجهيز كروت ${targets.length} طالب…` : `Preparing ${targets.length} cards…`, 'info')
     // Task 68 review note 3: big centers (500+ students) need live progress —
     // throttled to one toast every ~2.5s so the stack never spams.
     let lastProgressAt = 0
@@ -306,12 +273,12 @@ export default function StudentsArea() {
       }
     }
     try {
-      const res = await printStudentsCardsPdf(printable, { style: cardStyle, onProgress })
+      const res = await printStudentsCardsPdf(targets, { style: cardStyle, onProgress })
       if (res?.success) {
         ws.showToast?.(
           isArabic
-            ? `تم تحميل كروت ${res.printed} طالب ✓${skipped > 0 ? ` — استُثني ${skipped} من غير كرت مربوط` : ''}${res.failed ? ` — تعذر تجهيز ${res.failed}` : ''}`
-            : `Downloaded ${res.printed} cards ✓${skipped > 0 ? ` — ${skipped} skipped (no card)` : ''}${res.failed ? ` — ${res.failed} failed` : ''}`,
+            ? `تم تحميل كروت ${res.printed} طالب ✓${res.failed ? ` — تعذر تجهيز ${res.failed}` : ''}`
+            : `Downloaded ${res.printed} cards ✓${res.failed ? ` — ${res.failed} failed` : ''}`,
           res.failed ? 'info' : 'success',
         )
         setCardsPrintOpen(false)
@@ -334,7 +301,7 @@ export default function StudentsArea() {
           <button className="btn-gold rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setBulkAddOpen(true)}>
             ＋＋ {isArabic ? 'إضافة عدة طلاب' : 'Bulk add'}
           </button>
-          <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={openCardsModal} title={isArabic ? 'كرت QR مطبوع لكل طالب مربوط — أو كروت فارغة قبل التسجيل' : 'Printable QR card per assigned student — or blank stock before enrollment'}>
+          <button className="btn-ghost rounded-xl px-4 py-2.5 text-[.78rem] font-extrabold" onClick={() => setCardsPrintOpen(true)} title={isArabic ? 'كرت QR مطبوع لكل طالب — أو كروت فارغة قبل التسجيل' : 'Printable QR card per student — or blank stock before enrollment'}>
             💳 {isArabic ? 'كروت QR' : 'QR cards'}
           </button>
         </div>
@@ -540,28 +507,9 @@ export default function StudentsArea() {
         multiGroup={ws.multiGroupEnabled}
         onClose={() => setStudentModal({ open: false, student: null })}
         onSave={async (form) => {
-          const cardAttach = form.card_attach
           const result = await ws.saveStudent(form, studentModal.student)
           if (result?.ok) {
             setStudentModal({ open: false, student: null })
-            // 🎴 review round 4: attach a pre-printed card at creation —
-            // by 5-digit code, or the next free card in the pool.
-            if (cardAttach && result.student?.id && effectiveTeacherId) {
-              try {
-                const card = cardAttach.mode === 'code'
-                  ? await findCardByCode(effectiveTeacherId, cardAttach.code)
-                  : await nextFreeCard(effectiveTeacherId)
-                if (!card) {
-                  ws.showToast?.(isArabic ? (cardAttach.mode === 'code' ? 'مفيش بطاقة بالكود ده — راجع الكود المطبوع' : 'مفيش بطاقات حرة في المخزن — اطبع كروت جديدة') : 'No matching free card', 'error')
-                } else {
-                  await assignCardToStudent(effectiveTeacherId, card, result.student.id)
-                  ws.showToast?.(isArabic ? `تم ربط البطاقة ${card.code} بالطالب ✓ — نفس الـ QR المطبوع هيشتغل للحضور` : `Card ${card.code} assigned ✓`, 'success')
-                }
-              } catch (err) {
-                const msg = String(err?.message || err)
-                ws.showToast?.(isArabic ? (msg === 'card-already-assigned' ? 'البطاقة دي مربوطة بطالب تاني' : 'تعذر ربط البطاقة — حاول تاني') : 'Card assignment failed', 'error')
-              }
-            }
           }
         }}
         isSaving={wsMeta.isSaving}
@@ -601,12 +549,12 @@ export default function StudentsArea() {
         />
       )}
 
-      {/* QR cards print modal (Task 68): FRONT/BACK gradient cards in three
-          selectable styles — assigned students only + pool blanks. */}
+      {/* QR cards print modal (Task 68): FRONT/BACK gradient cards, four
+          selectable styles — all students + simple blank stock. */}
       {cardsPrintOpen && (
         <CardsPrintModal
           isArabic={isArabic}
-          printableCount={printableMap ? ws.students.filter((s) => printableMap.has(s.id)).length : null}
+          studentCount={ws.students.length}
           placeholderCount={placeholderCount}
           setPlaceholderCount={setPlaceholderCount}
           cardStyle={cardStyle}
@@ -1028,7 +976,7 @@ function BulkAddModal({ onClose }) {
 // per student (portal QR + F-code), or blank placeholder stock for centers
 // that haven't added students yet. 8 cards per A4 page, dashed cut guides.
 // ─────────────────────────────────────────────────────────────────────────────
-function CardsPrintModal({ isArabic, printableCount, placeholderCount, setPlaceholderCount, cardStyle, setCardStyle, busy, onClose, onPrintAll, onPrintPlaceholders }) {
+function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlaceholderCount, cardStyle, setCardStyle, busy, onClose, onPrintAll, onPrintPlaceholders }) {
   // 🎴 note #27-6: three gradient faces — Youssef picks; the choice drives
   // every print path and persists on this device.
   const styles = Object.values(CARD_STYLES)
@@ -1038,12 +986,12 @@ function CardsPrintModal({ isArabic, printableCount, placeholderCount, setPlaceh
         <h3 className="text-base font-extrabold m-0 mb-1">{isArabic ? '💳 طباعة كروت الطلاب' : 'Print student QR cards'}</h3>
         <p className="text-[.72rem] text-fg-muted mt-0 mb-3 leading-relaxed">
           {isArabic
-            ? 'كل كرت مطبوع بوجهين: الوجه الأمامي (اللوجو + كود الكرت) والخلفي (QR الحضور). ٨ كروت في صفحة A4 مع خطوط قص — اطبع الوجوه ثم الظهراني واطبعهم على نفس الكرت.'
-            : 'Every printed card has two faces: FRONT (logo + card code) and BACK (the attendance QR). 8 cards per A4 page with cut guides — print the fronts, then the backs.'}
+            ? 'كل كرت مطبوع بوجهين: الوجه الأمامي (اللوجو + اسم الطالب وكوده ومرحلته) والخلفي (QR الحضور). ٨ كروت في صفحة A4 مع خطوط قص — اطبع الوجوه ثم الظهراني واطبعهم على نفس الكرت.'
+            : 'Every printed card has two faces: FRONT (logo + student name, code and stage) and BACK (the attendance QR). 8 cards per A4 page with cut guides — print the fronts, then the backs.'}
         </p>
         <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
           <p className="text-[.78rem] font-extrabold m-0 mb-2">{isArabic ? 'شكل الكرت' : 'Card style'}</p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             {styles.map((s) => {
               const active = s.id === cardStyle
               return (
@@ -1068,14 +1016,11 @@ function CardsPrintModal({ isArabic, printableCount, placeholderCount, setPlaceh
         </div>
         <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
           <p className="text-[.78rem] font-extrabold m-0 mb-2">
-            {isArabic ? `كروت الطلاب المربوطين (${printableCount == null ? '…' : printableCount})` : `Assigned students (${printableCount == null ? '…' : printableCount})`}
+            {isArabic ? `كروت الطلاب الحاليين (${studentCount})` : `Current students (${studentCount})`}
           </p>
-          <button className="btn-navy w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy || !printableCount} onClick={onPrintAll}>
-            {busy ? '… ' : '🖨️ '}{isArabic ? (printableCount ? `طباعة كروت ${printableCount} طالب مربوط` : 'مفيش طالب مربوط بكرت لسه') : (printableCount ? `Print ${printableCount} assigned student cards` : 'No assigned cards yet')}
+          <button className="btn-navy w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy || studentCount === 0} onClick={onPrintAll}>
+            {busy ? '… ' : '🖨️ '}{isArabic ? (studentCount ? `طباعة كروت كل الطلاب (${studentCount})` : 'لا يوجد طلاب بعد') : (studentCount ? `Print all student cards (${studentCount})` : 'No students yet')}
           </button>
-          <p className="text-[.66rem] text-fg-muted mt-2 mb-0">
-            {isArabic ? 'الطباعة للطلاب المربوطين بكرت جاهز فقط — الطالب من غير كرت مش هيطبع. اربطه من مودال QR («🔗 اربط بطاقة جاهزة»).' : 'Only students assigned a pool card get printed. Attach a card from the student\'s QR modal first.'}
-          </p>
         </div>
         <div className="rounded-xl p-3" style={{ background: 'var(--surface-container, rgba(20,45,98,.06))', border: '1px solid var(--surface-border)' }}>
           <p className="text-[.78rem] font-extrabold m-0 mb-2">
@@ -1092,10 +1037,10 @@ function CardsPrintModal({ isArabic, printableCount, placeholderCount, setPlaceh
             ))}
           </select>
           <button className="btn-gold w-full rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" disabled={busy} onClick={onPrintPlaceholders}>
-            {busy ? '… ' : '🖨️ '}{isArabic ? `طباعة ${placeholderCount} كرت جاهز` : `Print ${placeholderCount} blank cards`}
+            {busy ? '… ' : '🖨️ '}{isArabic ? `طباعة ${placeholderCount} كرت فارغ` : `Print ${placeholderCount} blank cards`}
           </button>
           <p className="text-[.66rem] text-fg-muted mt-2 mb-0">
-            {isArabic ? 'كل كرت جاهز عليه كود من ٥ أرقام و QR خاص بيه — لما تسجل الطالب اربطه بالكود أو اختار «أول بطاقة حرة»، ونفس الـ QR المطبوع هيشتغل من غير إعادة طباعة.' : 'Each blank card carries a unique 5-digit code + its own QR — after enrolling a student, attach it by code or auto-assign; the same printed QR works, no reprint.'}
+            {isArabic ? 'كرت فارغ بنفس التصميم — خطوط للكتابة ومربع QR باهت. كرت الطالب الرسمي (بالاسم والكود والـ QR) بيتطبع من صفحة الطالب بعد التسجيل.' : 'Blank stock in the same style — write-in lines and an empty QR tile. Each student\'s real card (name, code, QR) prints from their page after enrollment.'}
           </p>
         </div>
         <div className="flex gap-2 mt-3">

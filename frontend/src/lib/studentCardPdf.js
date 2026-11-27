@@ -1,38 +1,33 @@
 /**
  * Student QR CARDS — printable card + A4 sheet composer (Task 68).
  * ─────────────────────────────────────────────────────────────────────────
- * DESIGN v4 (review round 5 — owner spec, relay note #27): FRONT/BACK.
- *   FRONT = النخبة logo lockup + the 5-digit card code on a soft modern
- *           gradient — NOTHING else (no name, no group/stage, no site URL).
- *   BACK  = the QR — nothing else.
- * Three selectable gradient styles (navy/blue, ivory/gold, dark/emerald)
- * picked in the cards modal; the choice persists on the teacher's device.
+ * DESIGN v5 (review round 6 — owner spec, relay note #32): the card-linking
+ * idea is CANCELLED — every student keeps their OWN F-code and their OWN QR
+ * token (the QR-modal link and the printed card QR are the same, always).
+ *   FRONT = النخبة logo lockup + student NAME + F-code over a thin accent
+ *           line + stage/group — on a soft modern gradient.
+ *   BACK  = the QR in a white rounded tile — nothing else.
+ *   BLANK STOCK = simple placeholder cards (dashed write-in lines + dashed
+ *           empty QR tile), printed before students exist.
+ * Four selectable gradient styles — A Midnight Blue, B Ivory Gold (DEFAULT),
+ * C Emerald Night, D Sunset Violet — chosen in the cards modal and persisted
+ * per device; getSavedCardStyle() drives every print path that doesn't pass
+ * an explicit style (note #31-2: the choice must drive EVERY path).
  *
- * The QR encodes the SAME portal URL the system already issues
- * (…/qr/<token>): phone camera → public portal page; Nokhba in-app scanner
- * → resolve_student_by_qr RPC → attendance. It lives on the BACK inside a
- * white rounded well (dark dot modules — maximum scanner contrast on every
- * style), error-correction level H.
+ * PDF PAGE FIX (note #31-1): the backs section previously overprinted the
+ * fronts on page 1 (no addPage between the two sections). Pages are now
+ * started unconditionally: page 1 = fronts, page 2 = backs (verified with
+ * pdfinfo: exactly 2 pages for one 8-card batch).
  *
- * CORNER FIX (note #25-2): JPEG has no alpha — transparent canvas corners
- * rasterize BLACK in the PDF. The canvas is filled WHITE first, so the area
- * outside the rounded card is white/paper, never black.
+ * CORNERS (note #25-2): JPEG has no alpha — transparent canvas corners
+ * rasterize BLACK. The canvas is filled WHITE first → paper-white corners.
  *
- * CODE PILL FIX (note #25-1): there is no pill/rectangle around the code at
- * all — the digits sit directly on the gradient in a high-contrast color,
- * centered, fully readable.
- *
- * PRE-PRINTED BLANK CARDS (pool): printBlankCardsPdf() reserves real cards
- * in the pool (src/lib/cardPool.js) — each with a unique 5-digit code and
- * its own QR token. When a student is registered the card is assigned and
- * the SAME printed QR resolves to that student.
- *
- * PDF: A4 portrait, 2 × 4 grid (8 cards/page) — page(s) of FRONTS followed
- * by page(s) of BACKS, dashed cut guides, English-only footer (jsPDF core
- * fonts cannot render Arabic — all Arabic lives inside the card images).
+ * QR (note #25 + #31): dot matrix painted on a 3× offscreen canvas and
+ * downscaled (at-size dots turn mushy through JPEG), radius 0.50 so dots
+ * touch (0.46 gaps failed decode at some sampling scales). Verified: the A4
+ * PDF raster decodes the exact portal URL with jsQR and OpenCV.
  */
 import { getOrCreateStudentToken, buildStudentQRLink } from './qrPdfWhatsApp'
-import { generateBlankCards } from './cardPool'
 
 // ISO ID-1 in mm — do not change without changing the composer geometry.
 export const CARD_W_MM = 85.6
@@ -49,44 +44,72 @@ const FONT = 'Cairo'
 const MONO = `'DM Mono','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace`
 const LOGO_URL = '/nokhba-mark.svg'
 
-/* ── SELECTABLE GRADIENT STYLES (note #27-6) ─────────────────────────────── */
+/* ── SELECTABLE GRADIENT STYLES (notes #30/#32: four, default B) ─────────── */
 export const CARD_STYLES = {
-  'navy-blue': {
-    id: 'navy-blue',
-    label: 'أ — كحلي/أزرق ملكي',
-    swatch: ['#0E2350', '#2E6BC9'],
+  'midnight-blue': {
+    id: 'midnight-blue',
+    label: 'أ — أزرق منتصف الليل',
+    swatch: ['#0B1F47', '#2E6BC9'],
     gradient: ['#0B1F47', '#163C86', '#2E6BC9'],
-    accent: '#FFC95C', // wordmark + hairlines on dark faces
+    accent: '#FFC95C',
+    nameColor: '#FFFFFF',
     codeColor: '#FFE3A0',
     border: 'rgba(255,255,255,.28)',
-    sub: 'rgba(255,255,255,.55)',
+    sub: 'rgba(255,255,255,.62)',
   },
   'ivory-gold': {
     id: 'ivory-gold',
     label: 'ب — عاجي/ذهبي',
     swatch: ['#FBFAF6', '#E9D8A6'],
     gradient: ['#FCFBF7', '#F4E9CF', '#E7D39B'],
-    accent: '#142D62', // logo wordmark reads navy on the light face
-    codeColor: '#142D62',
+    accent: '#142D62',
+    nameColor: '#142D62',
+    codeColor: '#8A6A1C',
     border: 'rgba(20,45,98,.18)',
-    sub: 'rgba(20,45,98,.45)',
+    sub: 'rgba(20,45,98,.5)',
   },
-  'dark-emerald': {
-    id: 'dark-emerald',
-    label: 'ج — زمردي داكن',
+  'emerald-night': {
+    id: 'emerald-night',
+    label: 'ج — زمردي ليلي',
     swatch: ['#06231C', '#1E8A6A'],
     gradient: ['#051E18', '#0E4D3C', '#1E8A6A'],
     accent: '#E9D8A6',
+    nameColor: '#F6F3E7',
     codeColor: '#F2E6B8',
     border: 'rgba(255,255,255,.25)',
-    sub: 'rgba(255,255,255,.55)',
+    sub: 'rgba(255,255,255,.6)',
+  },
+  'sunset-violet': {
+    id: 'sunset-violet',
+    label: 'د — بنفسجي الغروب',
+    swatch: ['#1E1B4B', '#DB2777'],
+    gradient: ['#1E1B4B', '#6D28D9', '#DB2777'],
+    accent: '#FCD34D',
+    nameColor: '#FFFFFF',
+    codeColor: '#FFE9F5',
+    border: 'rgba(255,255,255,.28)',
+    sub: 'rgba(255,255,255,.62)',
   },
 }
 
-export const DEFAULT_CARD_STYLE = 'navy-blue'
+export const DEFAULT_CARD_STYLE = 'ivory-gold' // notes #30/#32: B is the default
+
+const STYLE_LS_KEY = 'alnokhba_card_style'
 
 export function normalizeCardStyle(style) {
   return CARD_STYLES[style] ? style : DEFAULT_CARD_STYLE
+}
+
+/** The teacher's persisted style choice — used by EVERY print path that is
+ * not given an explicit style (QR-modal single card, etc.). */
+export function getSavedCardStyle() {
+  try { return normalizeCardStyle(localStorage.getItem(STYLE_LS_KEY)) } catch { return DEFAULT_CARD_STYLE }
+}
+
+export function saveCardStyle(style) {
+  const id = normalizeCardStyle(style)
+  try { localStorage.setItem(STYLE_LS_KEY, id) } catch { /* private mode */ }
+  return id
 }
 
 function roundRectPath(ctx, x, y, w, h, r) {
@@ -106,7 +129,7 @@ const loadFonts = (() => {
     if (!done) {
       const faces = [
         '300 20px Cairo', '400 20px Cairo', '700 18px Cairo',
-        '800 30px Cairo', '900 44px Cairo', '900 64px Cairo',
+        '800 30px Cairo', '900 44px Cairo', '900 54px Cairo',
       ]
       done = Promise.all(faces.map((f) => document.fonts.load(f, 'النخبة').catch(() => undefined)))
     }
@@ -133,15 +156,19 @@ function setLetterSpacing(ctx, spacing) {
   try { ctx.letterSpacing = spacing } catch { /* older browsers: skip */ }
 }
 
-/* ── ROUNDED-DOT QR ────────────────────────────────────────────────────────
- * QRCode.create() gives the raw module matrix; every dark module becomes a
- * circle. The النخبة mark sits in a white rounded well at the centre —
- * safe at EC level H (30% damage tolerance).
- * SUPER-SAMPLING (review round 5): dots drawn directly at print size turn
- * mushy through JPEG + rasterization and scanners fail to read them — so
- * the matrix is painted on an offscreen canvas at 3× and downscaled, which
- * keeps every module crisp (verified: decodes at print size, logo well on).
- * */
+/** Shrink-to-fit one line: returns the font size (≤ startSize) that renders
+ * `text` within `maxWidth`, never falling below `minSize`. */
+function fitFontSize(ctx, text, startSize, minSize, maxWidth) {
+  let size = startSize
+  ctx.font = `900 ${size}px ${FONT}`
+  while (size > minSize && ctx.measureText(text).width > maxWidth) {
+    size -= 2
+    ctx.font = `900 ${size}px ${FONT}`
+  }
+  return size
+}
+
+/* ── ROUNDED-DOT QR (3× supersampled — see header) ───────────────────────── */
 async function drawDotQR(ctx, link, cx, cy, size, logoImg) {
   const QRCode = (await import('qrcode')).default
   const qr = QRCode.create(link, { errorCorrectionLevel: 'H' })
@@ -201,7 +228,6 @@ function newCardCanvas() {
 function paintFace(ctx, style) {
   const W = CARD_W_PX
   const H = CARD_H_PX
-  // soft modern diagonal gradient (ivory→gold / navy→blue / dark→emerald)
   const g = ctx.createLinearGradient(W, 0, 0, H)
   g.addColorStop(0, style.gradient[0])
   g.addColorStop(0.55, style.gradient[1])
@@ -215,51 +241,66 @@ function paintFace(ctx, style) {
   ctx.stroke()
 }
 
+/** Draw the النخبة logo lockup (mark + wordmark) centered at (cx, cy). */
+function drawLogoLockup(ctx, logoImg, style, cx, cy) {
+  const markS = 72
+  ctx.textAlign = 'center'
+  ctx.fillStyle = style.accent
+  ctx.font = `900 58px ${FONT}`
+  const wordW = ctx.measureText('النخبة').width
+  const gx = cx - (markS + 18 + wordW) / 2
+  if (logoImg) ctx.drawImage(logoImg, gx, cy - markS / 2, markS, markS)
+  ctx.fillText('النخبة', gx + markS + 18 + wordW / 2, cy - 29)
+}
+
 /**
- * FRONT (note #27): gradient face + logo lockup + 5-digit code — nothing
- * else. `code` is the card's permanent 5-digit pool code; when a student
- * has no assigned pool code yet the front stays logo-only.
+ * FRONT (note #32-2): logo + student NAME + F-code over a thin accent line
+ * + stage/group — the student's own identity; their own QR on the back.
  */
-export async function paintCardFront({ code, style: styleId } = {}) {
+export async function paintCardFront({ student, style: styleId } = {}) {
   await loadFonts()
   const logoImg = await loadLogo()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
   const W = CARD_W_PX
-  const H = CARD_H_PX
   paintFace(ctx, style)
 
-  // logo lockup — mark + wordmark, centered
-  const markS = 74
+  drawLogoLockup(ctx, logoImg, style, W / 2, 118)
+
+  const name = String(student?.name || '').trim()
+  const code = String(student?.code || '').trim()
+  const meta = [student?.group_name, student?.stage].filter(Boolean).join(' — ')
+
   ctx.textAlign = 'center'
-  ctx.fillStyle = style.accent
-  ctx.font = `900 60px ${FONT}`
-  const wordW = ctx.measureText('النخبة').width
-  const groupW = markS + 18 + wordW
-  const gx = W / 2 - groupW / 2
-  if (logoImg) ctx.drawImage(logoImg, gx, H / 2 - markS - 66, markS, markS)
-  ctx.fillText('النخبة', gx + markS + 18 + wordW / 2, H / 2 - markS - 58)
-
-  // the 5-digit code — the ONE thing on the face besides the logo: big,
-  // centered, high-contrast, NO rectangle behind it (note #25-1)
-  const codeText = code ? String(code).trim() : ''
-  if (codeText) {
-    ctx.font = `800 74px ${MONO}`
-    setLetterSpacing(ctx, '10px')
-    ctx.fillStyle = style.codeColor
-    ctx.fillText(codeText, W / 2, H / 2 + 8)
-    setLetterSpacing(ctx, '0px')
-    ctx.font = `300 20px ${FONT}`
-    ctx.fillStyle = style.sub
-    ctx.fillText('كود الكرت', W / 2, H / 2 + 108)
+  if (name) {
+    const size = fitFontSize(ctx, name, 56, 30, W - 160)
+    ctx.font = `900 ${size}px ${FONT}`
+    ctx.fillStyle = style.nameColor
+    ctx.fillText(name, W / 2, 208)
   }
-
+  if (code) {
+    // F-code over a thin accent line (note #30) — no dark rectangle (#25-1)
+    ctx.font = `800 40px ${MONO}`
+    setLetterSpacing(ctx, '6px')
+    ctx.fillStyle = style.codeColor
+    ctx.fillText(code, W / 2, 306)
+    setLetterSpacing(ctx, '0px')
+    const codeW = Math.min(ctx.measureText(code).width + 48, W - 200)
+    ctx.fillStyle = style.accent
+    roundRectPath(ctx, W / 2 - codeW / 2, 368, codeW, 3.5, 2)
+    ctx.fill()
+  }
+  if (meta) {
+    ctx.font = `300 24px ${FONT}`
+    ctx.fillStyle = style.sub
+    ctx.fillText(meta, W / 2, 404)
+  }
   return canvas
 }
 
 /**
- * BACK (note #27): the QR — nothing else. Dot QR inside a white rounded
- * well, centered on the same gradient face.
+ * BACK (note #32-2): the student's own QR in a white rounded tile — the
+ * SAME token the QR modal shows (getOrCreateStudentToken is the only source).
  */
 export async function paintCardBack({ link, style: styleId } = {}) {
   await loadFonts()
@@ -281,7 +322,58 @@ export async function paintCardBack({ link, style: styleId } = {}) {
       await drawDotQR(ctx, link, W / 2, H / 2, panel - 44, logoImg)
     } catch { /* leave the empty well on failure */ }
   }
+  return canvas
+}
 
+/**
+ * BLANK STOCK CARD (note #32-6): simple placeholder — dashed write-in lines
+ * (name / F-code / stage-group) on the front, a dashed empty QR tile on the
+ * back. Printed BEFORE students exist; the real card comes from the
+ * student's own page afterwards.
+ */
+export async function paintBlankFront({ style: styleId } = {}) {
+  await loadFonts()
+  const logoImg = await loadLogo()
+  const style = CARD_STYLES[normalizeCardStyle(styleId)]
+  const { canvas, ctx } = newCardCanvas()
+  const W = CARD_W_PX
+  paintFace(ctx, style)
+  drawLogoLockup(ctx, logoImg, style, W / 2, 118)
+
+  ctx.textAlign = 'center'
+  ctx.strokeStyle = style.sub
+  ctx.lineWidth = 2.5
+  ctx.setLineDash([12, 10])
+  const line = (y) => { ctx.beginPath(); ctx.moveTo(W / 2 - 300, y); ctx.lineTo(W / 2 + 300, y); ctx.stroke() }
+  line(248)
+  line(338)
+  line(424)
+  ctx.setLineDash([])
+  ctx.font = `300 22px ${FONT}`
+  ctx.fillStyle = style.sub
+  ctx.fillText('الاسم', W / 2 - 334, 218)
+  ctx.fillText('كود الطالب', W / 2 - 334, 308)
+  ctx.fillText('المجموعة / المرحلة', W / 2 - 334, 394)
+  return canvas
+}
+
+export async function paintBlankBack({ style: styleId } = {}) {
+  await loadFonts()
+  const style = CARD_STYLES[normalizeCardStyle(styleId)]
+  const { canvas, ctx } = newCardCanvas()
+  const W = CARD_W_PX
+  const H = CARD_H_PX
+  paintFace(ctx, style)
+  ctx.textAlign = 'center'
+  ctx.strokeStyle = style.sub
+  ctx.lineWidth = 3
+  ctx.setLineDash([14, 11])
+  roundRectPath(ctx, W / 2 - 190, H / 2 - 190, 380, 380, 32)
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.font = `300 26px ${FONT}`
+  ctx.fillStyle = style.sub
+  ctx.fillText('QR الطالب', W / 2, H / 2 + 212)
   return canvas
 }
 
@@ -292,7 +384,9 @@ async function renderToImage(painter, opts) {
 }
 
 /**
- * Resolve portal links for a list of students (concurrency 4).
+ * Resolve portal links for a list of students (concurrency 4). Each entry
+ * uses the student's OWN token — the same one the QR modal shows
+ * (note #31-3: modal link, WhatsApp share and printed card must match).
  * @returns {Promise<{ entries: Array<{student, link}>, failed: number }>}
  */
 export async function buildStudentCardEntries(students = [], { onProgress } = {}) {
@@ -323,9 +417,12 @@ export async function buildStudentCardEntries(students = [], { onProgress } = {}
 const loadJsPDF = async () => (await import('jspdf')).default
 
 /**
- * Compose the A4 sheet: 2 × 4 cards per page with dashed cut guides —
- * FRONTS page(s) first, then BACKS page(s) (note #27-5). `pairs` = array of
- * { front, back } image data URLs.
+ * Compose the A4 sheet: 2 × 4 cards per page with dashed cut guides.
+ * PAGE LAYOUT (note #31-1 bug fix): page 1..n = FRONTS, then n+1.. = BACKS —
+ * a new page is started UNCONDITIONALLY whenever a section (or a full page)
+ * begins, so backs never overprint fronts (pdfinfo: exactly 2 pages for one
+ * 8-card batch).
+ * `pairs` = array of { front, back } image data URLs.
  */
 async function composeCardsPdf({ pairs = [], fileName = 'nokhba-student-cards.pdf', download = true, label = 'student QR cards' } = {}) {
   if (!pairs.length) return { success: false, skipped: true }
@@ -366,69 +463,69 @@ async function composeCardsPdf({ pairs = [], fileName = 'nokhba-student-cards.pd
     doc.text(text, pageW / 2, pageH - 6, { align: 'center' })
   }
 
-  const placePage = (imgs, side) => {
-    const pages = Math.ceil(imgs.length / PER_PAGE)
+  let pageStarted = false
+  const startPage = (side) => {
+    if (pageStarted) doc.addPage()
+    pageStarted = true
+    drawGuides()
+    footer(`Nokhba ${label} — ${side} — cut along the dashed lines`)
+  }
+
+  const placeFaces = (imgs, side) => {
     for (let i = 0; i < imgs.length; i += 1) {
       const slot = i % PER_PAGE
-      if (slot === 0) {
-        if (i > 0) doc.addPage()
-        drawGuides()
-        footer(`Nokhba ${label} — ${side} — cut along the dashed lines`)
-      }
+      if (slot === 0) startPage(side)
       const r = Math.floor(slot / COLS)
       const c = slot % COLS
       const x = MARGIN_X + c * (CARD_W_MM + GAP_X)
       const y = MARGIN_Y + r * CELL_H
       doc.addImage(imgs[i], 'JPEG', x, y, CARD_W_MM, CARD_H_MM)
     }
-    return pages
   }
 
-  placePage(pairs.map((p) => p.front), 'FRONT')
-  placePage(pairs.map((p) => p.back), 'BACK')
+  placeFaces(pairs.map((p) => p.front), 'FRONT')
+  placeFaces(pairs.map((p) => p.back), 'BACK')
 
   if (download) {
     doc.save(fileName)
   }
-  return { success: true, cards: pairs.length }
+  return { success: true, cards: pairs.length, pages: doc.getNumberOfPages() }
 }
 
 /**
- * Print ONE student's card (front + back). The student must be assigned a
- * pool card — the printed 5-digit code IS that card's code (note #27-4:
- * no printing for students without a card).
+ * Print ONE student's card (front + back) — the student's OWN QR token, so
+ * the printed QR is identical to the QR-modal link and WhatsApp share.
  */
-export async function printStudentCardPdf(student, { style, download = true, poolCode } = {}) {
+export async function printStudentCardPdf(student, { style, download = true } = {}) {
   if (!student?.id) return { success: false, reason: 'student' }
   const token = await getOrCreateStudentToken(student.id)
   if (!token) return { success: false, reason: 'token' }
   const link = buildStudentQRLink(token)
-  const code = poolCode || student._poolCode || null
+  const chosen = style || getSavedCardStyle()
   const [front, back] = await Promise.all([
-    renderToImage(paintCardFront, { code, style }),
-    renderToImage(paintCardBack, { link, style }),
+    renderToImage(paintCardFront, { student, style: chosen }),
+    renderToImage(paintCardBack, { link, style: chosen }),
   ])
-  const safeCode = String(code || student.code || student.id).replace(/[^A-Za-z0-9-]/g, '_')
+  const safeCode = String(student.code || student.id).replace(/[^A-Za-z0-9-]/g, '_')
   return composeCardsPdf({ pairs: [{ front, back }], fileName: `nokhba-card-${safeCode}.pdf`, download, label: 'student QR card' })
 }
 
 /**
- * Print cards for MANY students (bulk selection / whole center). Callers
- * pass ONLY students that are assigned a pool card (note #27-4) — each may
- * carry `_poolCode` so the printed face matches the physical card.
+ * Print cards for MANY students (bulk selection / whole center) — ALL
+ * selected students print (note #32-5: no card-holding filter).
  */
 export async function printStudentsCardsPdf(students, { style, download = true, onProgress } = {}) {
-  const total = (students || []).filter(Boolean).length
   const { entries, failed } = await buildStudentCardEntries(students, {
     onProgress: (done, t) => onProgress?.(Math.round((done / Math.max(t, 1)) * 50), 100),
   })
   if (!entries.length) return { success: false, failed, printed: 0 }
+  const chosen = style || getSavedCardStyle()
   const pairs = []
   for (let i = 0; i < entries.length; i += 1) {
     const { student, link } = entries[i]
     const [front, back] = await Promise.all([
-      renderToImage(paintCardFront, { code: student._poolCode || null, style }),
-      renderToImage(paintCardBack, { link, style }),
+      renderToImage(paintCardFront, { student, style: chosen }),
+      renderToImage(paintCardBack, { link, style: chosen }),
     ])
     pairs.push({ front, back })
     onProgress?.(50 + Math.round(((i + 1) / entries.length) * 50), 100)
@@ -438,25 +535,21 @@ export async function printStudentsCardsPdf(students, { style, download = true, 
 }
 
 /**
- * Print N blank cards from the PRE-PRINTED POOL (review round 4): every
- * card gets a unique 5-digit code (persisted in the pool) and the QR of its
- * own pool token — after assignment the SAME QR resolves to the student.
- * @param {string} teacherId  pool owner
- * @param {number} count      1–40 — 8 per A4 page.
+ * Print N BLANK placeholder cards (note #32-6): simple stock — dashed
+ * write-in lines + dashed empty QR tile, same selected style. Printed
+ * BEFORE students exist; no codes, no pool, no bookkeeping.
+ * @param {number} count 1–40 — 8 per A4 page (fronts page + backs page).
  */
-export async function printBlankCardsPdf(teacherId, count = 8, { style, download = true } = {}) {
+export async function printPlaceholderCardsPdf(count = 8, { style, download = true } = {}) {
   const n = Math.max(1, Math.min(40, Math.floor(Number(count) || 0)))
-  const cards = await generateBlankCards(teacherId, n)
-  if (!cards.length) return { success: false, failed: n, printed: 0 }
+  const chosen = style || getSavedCardStyle()
   const pairs = []
-  for (const c of cards) {
-    const link = buildStudentQRLink(c.token)
+  for (let i = 0; i < n; i += 1) {
     const [front, back] = await Promise.all([
-      renderToImage(paintCardFront, { code: c.code, style }),
-      renderToImage(paintCardBack, { link, style }),
+      renderToImage(paintBlankFront, { style: chosen }),
+      renderToImage(paintBlankBack, { style: chosen }),
     ])
     pairs.push({ front, back })
   }
-  const res = await composeCardsPdf({ pairs, fileName: 'nokhba-blank-cards.pdf', download, label: 'blank pool cards' })
-  return { ...res, failed: 0, printed: pairs.length, cards }
+  return composeCardsPdf({ pairs, fileName: 'nokhba-blank-cards.pdf', download, label: 'blank stock cards' })
 }
