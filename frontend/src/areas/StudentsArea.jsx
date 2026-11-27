@@ -1027,7 +1027,7 @@ function CardsPrintModal({ isArabic, studentCount, placeholderCount, setPlacehol
             {busy ? '… ' : '🖨️ '}{isArabic ? `طباعة ${placeholderCount} كرت جاهز` : `Print ${placeholderCount} blank cards`}
           </button>
           <p className="text-[.66rem] text-fg-muted mt-2 mb-0">
-            {isArabic ? 'الكروت الجاهزة تيجي من غير QR واسم فاضي — بعد تسجيل الطالب اطبع كرته الرسمي من صفحة الطلاب وبيتبدل.' : 'Blank cards have no QR/name — after enrolling a student, print their real card from this page to replace it.'}
+            {isArabic ? 'كل كرت جاهز عليه كود من ٥ أرقام و QR خاص بيه — لما تسجل الطالب اربطه بالكود أو اختار «أول بطاقة حرة»، ونفس الـ QR المطبوع هيشتغل من غير إعادة طباعة.' : 'Each blank card carries a unique 5-digit code + its own QR — after enrolling a student, attach it by code or auto-assign; the same printed QR works, no reprint.'}
           </p>
         </div>
         <div className="flex gap-2 mt-3">

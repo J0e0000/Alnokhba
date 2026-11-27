@@ -395,6 +395,11 @@ class Query {
   lte(col, val) { this._filters.push(['lte', col, val]); return this }
   in(col, vals) { this._filters.push(['in', col, vals]); return this }
   not(col, op, val) { this._filters.push(['not', col, op, val]); return this }
+  // supabase-js v2 exposes positive .like()/.ilike() too — the card pool
+  // (fetchCardPool) filters 🎴 rows with .like(); without these the demo
+  // silently returned an empty pool and card assignment appeared broken.
+  like(col, val) { this._filters.push(['like', col, val]); return this }
+  ilike(col, val) { this._filters.push(['like', col, val]); return this }
   order(col, opts = {}) { this._order = { col, asc: opts.ascending !== false }; return this }
   limit(n) { this._limitVal = n; return this }
   single() { this._single = true; return this }
@@ -420,6 +425,7 @@ class Query {
       if (op === 'lt') return rv < val
       if (op === 'lte') return rv <= val
       if (op === 'in') return (val || []).some((v) => String(rv) === String(v))
+      if (op === 'like' || op === 'ilike') return String(rv).includes(String(val).replace(/%/g, ''))
       if (op === 'not') {
         const sub = f[2]
         if (sub === 'like' || sub === 'ilike') return !String(rv).includes(String(val).replace(/%/g, ''))
