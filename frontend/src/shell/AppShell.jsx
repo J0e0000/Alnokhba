@@ -6,6 +6,7 @@ import { useWorkspace, useWorkspaceMeta } from '../store/WorkspaceStore'
 import { useUI } from './UIContext'
 import NotificationBell from '../components/NotificationBell'
 import TeacherNotificationCenter from '../components/TeacherNotificationCenter'
+import { usePlatformUpdates } from '../hooks/usePlatformUpdates'
 import InsightsNotifier from '../components/InsightsNotifier'
 import OfflineBanner from '../components/OfflineBanner'
 import UndoSnackbar from '../components/UndoSnackbar'
@@ -118,6 +119,10 @@ export default function AppShell({ onOpenAdmin }) {
 
   const [accountOpen, setAccountOpen] = useState(false)
   const [notifCenterOpen, setNotifCenterOpen] = useState(false)
+  // ✨ unread platform-update count — shared by the ◔ launcher AND the 🔔
+  // bell (review round 2, note b). refreshKey flips as the center opens and
+  // closes so both badges re-sync after read.
+  const updatesUnread = usePlatformUpdates(notifCenterOpen ? 'open' : 'closed')
   const historyOpen = ui.historyOpen
   const setHistoryOpen = ui.setHistoryOpen
   const [historyCount, setHistoryCount] = useState(getHistoryCount())
@@ -240,8 +245,8 @@ export default function AppShell({ onOpenAdmin }) {
             >
               {lang === 'ar' ? 'EN' : 'ع'}
             </button>
-            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} refreshKey={notifCenterOpen ? 'open' : 'closed'} />
-            <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} />
+            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} unread={updatesUnread} />
+            <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} updatesUnread={updatesUnread} />
             <button
               className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
               onClick={() => { ws.handleUndo(); }}
@@ -440,23 +445,9 @@ export default function AppShell({ onOpenAdmin }) {
   )
 }
 
-function TeacherNotificationCenterLauncher({ onOpen, refreshKey }) {
-  // ✨ Badge = unread platform-update notifications (per-teacher rows in
-  // teacher_notification_events). Seeding happens inside the center too —
-  // this keeps the badge honest WITHOUT opening the center, which is the
-  // whole point: "unread until opened, visible to every teacher".
-  const { effectiveTeacherId } = useAuth()
-  const [unread, setUnread] = useState(0)
-  useEffect(() => {
-    let alive = true
-    if (!effectiveTeacherId) { setUnread(0); return }
-    import('../lib/platformUpdates').then((m) =>
-      m.ensureUpdateNotifications(effectiveTeacherId).then((rows) => {
-        if (alive) setUnread(rows.filter((r) => !r.is_read).length)
-      }).catch(() => { if (alive) setUnread(0) }),
-    )
-    return () => { alive = false }
-  }, [effectiveTeacherId, refreshKey])
+function TeacherNotificationCenterLauncher({ onOpen, unread = 0 }) {
+  // Badge comes from the shared usePlatformUpdates hook in AppShell —
+  // visible WITHOUT opening the center (unread until opened, per teacher).
   return (
     <button
       className="relative w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"

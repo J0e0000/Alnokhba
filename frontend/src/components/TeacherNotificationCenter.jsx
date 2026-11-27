@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { registerTeacherPush, hasTeacherPushSubscription } from '../lib/pushNotifications'
-import { UPDATE_MARKER, ensureUpdateNotifications, fetchUpdateNotifications } from '../lib/platformUpdates'
+import { UPDATE_MARKER, ensureUpdateNotifications, markUpdateRead, lastSeedErrorMessage } from '../lib/platformUpdates'
 
 // Swipeable notification row (teacher request): drag a notification sideways
 // (either direction, ~80px threshold) to remove it from the list. The inner
@@ -75,7 +75,11 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   // teacher, unread until opened). Rendered in a PINNED section that is
   // exempt from the session-time filter, so every teacher sees what's new.
   const [updates, setUpdates] = useState([])
-  const [expanded, setExpanded] = useState(false)
+  const [seedError, setSeedError] = useState(null)
+  // Opens DIRECTLY to the list (review round 2, note d) — the component only
+  // ever mounts inside the AppShell modal, so a collapsed state there was
+  // just a lone bell button with no content.
+  const [expanded, setExpanded] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [pushPermission, setPushPermission] = useState(() => typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
   const [pushReady, setPushReady] = useState(false)
@@ -140,6 +144,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     if (!effectiveTeacherId) return
     const rows = await ensureUpdateNotifications(effectiveTeacherId)
     setUpdates(rows)
+    setSeedError(lastSeedErrorMessage())
   }, [effectiveTeacherId])
   useEffect(() => { loadUpdates() }, [loadUpdates])
 
@@ -302,21 +307,21 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })))
     setUnreadCount(0)
     setHiddenUnread(0)
-    // ✨ platform-update rows count as read too.
-    try {
-      const unreadIds = updates.filter((u) => !u.is_read).map((u) => u.id)
-      if (unreadIds.length) {
-        await supabase.from('teacher_notification_events').update({ is_read: true }).in('id', unreadIds).eq('is_read', false)
-      }
-    } catch { /* best-effort */ }
+    // ✨ platform-update rows count as read too (server when possible,
+    // local fallback otherwise).
+    for (const u of updates.filter((x) => !x.is_read)) {
+      try { await markUpdateRead(effectiveTeacherId, u) } catch { /* best-effort */ }
+    }
     setUpdates((prev) => prev.map((u) => ({ ...u, is_read: true })))
   }
 
-  // Open one platform-update row: mark it read server-side (same hardened
-  // path as regular events) and flip it locally.
+  // Open one platform-update row: mark read server-side when the row exists
+  // there, local fallback otherwise (RLS-safe — visibility never depends on
+  // the write).
   const markUpdateRow = async (row) => {
-    await markRead(row)
-    setUpdates((prev) => prev.map((u) => (u.id === row.id ? { ...u, is_read: true } : u)))
+    if (!effectiveTeacherId) return
+    await markUpdateRead(effectiveTeacherId, row)
+    setUpdates((prev) => prev.map((u) => (u.key === row.key ? { ...u, is_read: true } : u)))
   }
 
   // Swipe-to-remove (teacher request): optimistic local removal first so the
@@ -454,6 +459,11 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
                     <p className="text-[11px] font-bold text-brand-gold-hover m-0">✨ {isArabic ? 'تحديثات النخبة — إيه الجديد وإلاقيه فين' : 'Nokhba updates — what changed and where'}</p>
                     {unreadUpdates > 0 && <span className="text-[10px] font-bold text-brand-gold-hover">{isArabic ? `${unreadUpdates} جديد` : `${unreadUpdates} new`}</span>}
                   </div>
+                  {seedError && (
+                    <p className="px-4 pt-1.5 mb-0 text-[10px] text-fg-muted" title={seedError}>
+                      {isArabic ? `مزامنة السيرفر متعثرة (${seedError.slice(0, 60)}) — التحديثات معروضة وحالة القراءة محفوظة على الجهاز.` : `Server sync failed (${seedError.slice(0, 60)}) — updates shown, read state kept locally.`}
+                    </p>
+                  )}
                   {updates.map((u) => (
                     <button
                       key={u.id}

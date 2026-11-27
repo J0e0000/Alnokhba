@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { animate, prefersReducedMotion } from '../lib/animeMotion'
 
-export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDismiss }) {
+export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDismiss, updatesUnread = 0 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const badgeRef = useRef(null)
-  const unreadCount = broadcasts.filter((b) => !dismissedBroadcasts.includes(b.id)).length
+  const unreadCount = broadcasts.filter((b) => !dismissedBroadcasts.includes(b.id)).length + updatesUnread
   useEffect(() => {
     if (!badgeRef.current || unreadCount === 0 || prefersReducedMotion()) return
     animate(badgeRef.current, { scale: [0.8, 1.18, 1], duration: 360, ease: 'out(4)' })
@@ -34,6 +34,9 @@ export default function NotificationBell({ broadcasts, dismissedBroadcasts, onDi
           style={{ insetInlineEnd: 0, width: 'min(18rem, calc(100vw - 1.5rem))' }}
         >
           <div className="px-3 py-2 border-b border-subtle text-xs font-bold text-fg">الإشعارات</div>
+          {updatesUnread > 0 && (
+            <p className="px-3 pt-2 mb-0 text-[10px] text-brand-gold-hover font-bold">✨ {updatesUnread} تحديث من النخبة بانتظارك — افتح مركز الإشعارات ◔</p>
+          )}
           {broadcasts.length === 0 ? (
             <p className="text-fg-subtle text-xs text-center py-6">مفيش إشعارات لسه</p>
           ) : (

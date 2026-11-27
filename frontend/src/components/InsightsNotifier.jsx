@@ -89,6 +89,22 @@ export default function InsightsNotifier() {
         if (watchCount) parts.push(`${watchCount} ملاحظة للمتابعة`)
         const summaryBits = [headline, parts.length ? parts.join(' و ') : `${openInsights.length} ملاحظات مفتوحة`].filter(Boolean)
         const body = summaryBits.join(' — ')
+        // DEDUPE (review round 2, note c): the same report used to re-notify
+        // on every fresh browser (localStorage NOTIFIED_KEY is per-device)
+        // and the center flooded with identical «فريق التحليل» rows. Server-
+        // side rule now: within 20h only a CHANGED body may produce a new
+        // notification — identical content is skipped no matter the device.
+        try {
+          const since = new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+          const { data: recent } = await supabase
+            .from('teacher_notification_events')
+            .select('id, body')
+            .eq('teacher_id', teacherId)
+            .eq('title', 'فريق التحليل — تقرير الوضع')
+            .gte('created_at', since)
+            .limit(30)
+          if ((recent || []).some((r) => (r.body || '') === body)) return
+        } catch { /* best-effort — local dedupe below still applies */ }
         const { error } = await supabase.from('teacher_notification_events').insert({
           teacher_id: teacherId,
           event_type: 'student_insight',

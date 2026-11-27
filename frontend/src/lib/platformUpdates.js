@@ -114,9 +114,30 @@ function rowFor(u, teacherId, id) {
   }
 }
 
+// Last seeding failure — surfaced in the UI (pinned section) so a silent RLS
+// or FK failure can never hide the updates again (review round 2, note a).
+let lastSeedError = null
+export function lastSeedErrorMessage() { return lastSeedError }
+
+// Local read-state fallback (per teacher): used when the server write fails
+// (RLS / connectivity) so the UX still degrades gracefully.
+const localReadKey = (teacherId) => `alnokhba_update_reads_${teacherId}`
+export function localReadKeys(teacherId) {
+  try { return JSON.parse(localStorage.getItem(localReadKey(teacherId)) || '[]') } catch { return [] }
+}
+function markUpdateReadLocal(teacherId, key) {
+  try {
+    const cur = localReadKeys(teacherId)
+    if (!cur.includes(key)) localStorage.setItem(localReadKey(teacherId), JSON.stringify([...cur, key]))
+  } catch { /* private mode — ignore */ }
+}
+
 /** Seed any missing update rows for this teacher. Duplicate-safe by
- * construction (deterministic id + on-conflict-ignore). Returns the rows
- * that are (now) present, manifest-ordered, with their read state. */
+ * construction (deterministic id + on-conflict-ignore). ALWAYS returns the
+ * full manifest as renderable rows: DB rows where they exist (persisted
+ * read state), manifest-synthesized rows otherwise (local read state) —
+ * the pinned section can never go empty again, and a failed seed is no
+ * longer silent (lastSeedErrorMessage + console.error). */
 export async function ensureUpdateNotifications(teacherId) {
   if (!teacherId) return []
   const ids = []
@@ -126,37 +147,57 @@ export async function ensureUpdateNotifications(teacherId) {
     ids.push(id)
     rows.push(rowFor(u, teacherId, id))
   }
+  let readFromDb = null
   try {
     const { error } = await supabase
       .from('teacher_notification_events')
       .insert(rows)
       .onConflict('id')
       .ignoreDuplicates()
-    if (error) console.warn('update-notifications seed skipped:', error.message)
+    if (error) {
+      lastSeedError = error.message
+      console.error('[NOKHBA updates] seed insert failed:', error.message, '| code:', error.code || '?')
+    } else {
+      lastSeedError = null
+    }
   } catch (err) {
-    console.warn('update-notifications seed unavailable:', err?.message || err)
+    lastSeedError = err?.message || String(err)
+    console.error('[NOKHBA updates] seed insert threw:', lastSeedError)
   }
-  return fetchUpdateNotifications(teacherId)
-}
-
-/** Fetch the update rows that exist for this teacher (manifest order). */
-export async function fetchUpdateNotifications(teacherId) {
-  if (!teacherId) return []
   try {
-    const ids = await Promise.all(PLATFORM_UPDATES.map((u) => updateRowId(u.key, teacherId)))
     const { data, error } = await supabase
       .from('teacher_notification_events')
       .select('id, title, body, is_read, created_at')
       .in('id', ids)
-    if (error) return []
-    const byId = new Map((data || []).map((r) => [r.id, r]))
-    return ids.map((id, i) => {
-      const found = byId.get(id)
-      return found
-        ? { ...found, icon: PLATFORM_UPDATES[i].icon }
-        : null
-    }).filter(Boolean)
-  } catch {
-    return []
+    if (!error) readFromDb = new Map((data || []).map((r) => [r.id, r]))
+    else if (!lastSeedError) lastSeedError = error.message
+  } catch (err) {
+    if (!lastSeedError) lastSeedError = err?.message || String(err)
   }
+  const readLocal = new Set(localReadKeys(teacherId))
+  return PLATFORM_UPDATES.map((u, i) => {
+    const dbRow = readFromDb?.get(ids[i])
+    if (dbRow) return { ...dbRow, key: u.key, icon: u.icon }
+    const base = rowFor(u, teacherId, ids[i])
+    return { ...base, key: u.key, icon: u.icon, is_read: readLocal.has(u.key), _localOnly: true }
+  })
+}
+
+/** Mark one update read: prefer the server row (persisted, provable),
+ * fall back to the local store when the row only exists client-side or the
+ * write is rejected. Returns 'server' | 'local'. */
+export async function markUpdateRead(teacherId, row) {
+  if (!row?._localOnly) {
+    try {
+      const { error } = await supabase
+        .from('teacher_notification_events')
+        .update({ is_read: true })
+        .eq('id', row.id)
+        .eq('is_read', false)
+      if (!error) return 'server'
+      lastSeedError = error.message
+    } catch (err) { lastSeedError = err?.message || String(err) }
+  }
+  if (row?.key) markUpdateReadLocal(teacherId, row.key)
+  return 'local'
 }
