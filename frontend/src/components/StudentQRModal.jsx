@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 import { useWorkspace } from '../store/WorkspaceStore'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
+import { printStudentCardPdf } from '../lib/studentCardPdf'
 import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -22,6 +23,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [cardBusy, setCardBusy] = useState(false)
   const linkRef = useRef(null)
 
   useEffect(() => {
@@ -101,6 +103,18 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     } finally { setPdfBusy(false) }
   }
 
+  // 💳 كرت الطالب المطبوع (مقاس فيزا 85.6×54مم — QR الحضور + كود الطالب):
+  // PDF جاهز للطباعة مع خطوط قص متقطعة، ونفس رابط البوابة المماسي في كل النظام.
+  const printVisaCard = async () => {
+    if (cardBusy || !student?.id) return
+    setCardBusy(true)
+    try {
+      const res = await printStudentCardPdf(student)
+      if (res?.success) showToast?.(isArabic ? 'تم تحميل كرت الطالب PDF ✓ (مقاس فيزا — قص على الخطوط)' : 'Student card PDF downloaded ✓ (visa size — cut on dashed lines)', 'success')
+      else showToast?.(isArabic ? 'تعذر تجهيز كرت الطالب — حاول تاني' : 'Could not build the student card — try again', 'error')
+    } finally { setCardBusy(false) }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={isArabic ? `رابط بوابة الطالب — ${student?.name || ''}` : `Student portal link — ${student?.name || ''}`}>
       {status === 'loading' && (
@@ -143,6 +157,9 @@ export default function StudentQRModal({ open, student, template, onClose, showT
             </button>
             <button className="btn-gold rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={downloadStudentPdf} disabled={pdfBusy} title={isArabic ? 'تقرير متابعة الطالب — PDF بالهوية الرسمية' : 'Student follow-up report — branded PDF'}>
               {pdfBusy ? '… جاري التجهيز' : '📄 تقرير PDF'}
+            </button>
+            <button className="btn-navy rounded-xl px-4 py-2.5 text-[.75rem] font-extrabold" onClick={printVisaCard} disabled={cardBusy} title={isArabic ? 'كرت مطبوع بمقاس فيزا — QR الحضور + كود الطالب' : 'Printable visa-size card — attendance QR + student code'}>
+              {cardBusy ? '… جاري التجهيز' : '💳 كرت الطالب (فيزا)'}
             </button>
           </div>
           <p className="text-[.68rem] text-fg-muted text-center m-0">
