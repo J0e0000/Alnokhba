@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import Icon from '../components/icons'
+import { useBranding } from '../context/BrandingContext'
 import { useWorkspace, useWorkspaceMeta, normalizeArabicSearch } from '../store/WorkspaceStore'
 import { useUI } from '../shell/UIContext'
 import StudentModal from '../components/StudentModal'
@@ -28,6 +29,7 @@ export default function StudentsArea() {
   const ws = useWorkspace()
   const wsMeta = useWorkspaceMeta()
   const ui = useUI()
+  const { centerName } = useBranding()
   const { isArabic } = ws
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('الكل')
@@ -251,7 +253,7 @@ export default function StudentsArea() {
       try {
         // note #32-6: blanks are SIMPLE placeholder cards — dashed write-in
         // lines + empty QR tile, no codes, no pool bookkeeping.
-        const res = await printPlaceholderCardsPdf(placeholders, { style: cardStyle })
+        const res = await printPlaceholderCardsPdf(placeholders, { style: cardStyle, centerName })
         if (res?.success) ws.showToast?.(isArabic ? `تم تحميل ${placeholders} كرت فارغ PDF ✓ — كرت الطالب الرسمي بيتطبع من صفحته بعد التسجيل` : `Downloaded ${placeholders} blank cards ✓`, 'success')
         else ws.showToast?.(isArabic ? 'تعذر تجهيز الكروت — حاول تاني' : 'Could not build cards — try again', 'error')
       } finally { setBusyBulk('') }
@@ -274,7 +276,7 @@ export default function StudentsArea() {
       }
     }
     try {
-      const res = await printStudentsCardsPdf(targets, { style: cardStyle, onProgress })
+      const res = await printStudentsCardsPdf(targets, { style: cardStyle, onProgress, centerName })
       if (res?.success) {
         ws.showToast?.(
           isArabic

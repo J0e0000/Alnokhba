@@ -244,33 +244,30 @@ function paintFace(ctx, style) {
 }
 
 /**
- * Draw the النخبة mark DIRECTLY on the gradient (note #8-1): a stylized
- * peak — two round-cap strokes meeting at the apex (accent color) with the
- * small brand-orange dot at its foot. No image, no white box, and the
- * colors always fit the selected style.
+ * Subtle geometric pattern behind the code (note #13a): plain diamonds —
+ * NEVER Islamic ornament — very light, count derived from the first two
+ * digits of the student's code, spanning the code band width.
  */
-function drawMark(ctx, cx, cy, s, accent) {
-  const halfW = s * 0.40
-  const top = cy - s * 0.44
-  const bottom = cy + s * 0.44
-  const lw = s * 0.155
+function drawCodePattern(ctx, code, cx, cy, W, accent) {
+  const digits = String(code || '').replace(/\D/g, '')
+  const seed = digits.length >= 2 ? Number(digits.slice(0, 2)) : (digits.length ? Number(digits) * 7 : 11)
+  const n = 3 + (seed % 5) // 3..7 diamonds
+  const span = Math.min(W - 220, 620)
+  const step = span / n
   ctx.save()
-  ctx.strokeStyle = accent
-  ctx.fillStyle = '#F59E0B'
-  ctx.lineWidth = lw
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-  ctx.beginPath()
-  ctx.moveTo(cx - halfW, bottom)
-  ctx.lineTo(cx, top)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(cx, top)
-  ctx.lineTo(cx + halfW, bottom)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(cx + halfW * 0.52, bottom - lw * 0.1, s * 0.075, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.globalAlpha = 0.12
+  ctx.fillStyle = accent
+  for (let i = 0; i < n; i += 1) {
+    const px = cx - span / 2 + step * (i + 0.5)
+    const s = 5 + ((seed >> i) % 3)
+    ctx.beginPath()
+    ctx.moveTo(px, cy - s)
+    ctx.lineTo(px + s, cy)
+    ctx.lineTo(px, cy + s)
+    ctx.lineTo(px - s, cy)
+    ctx.closePath()
+    ctx.fill()
+  }
   ctx.restore()
 }
 
@@ -339,37 +336,30 @@ function drawTopBand(ctx, style, W) {
   ctx.restore()
 }
 
-/** Footer micro-line (note #9-3): tiny letterspaced academy wordmark. */
-function drawFooterLine(ctx, style, W, H) {
+/** Footer micro-line (note #9-3 + #13b): tiny letterspaced line — prints the
+ * center's name AS STORED in the system (never hardcoded); falls back to the
+ * academy wordmark when branding has no name yet. */
+function drawFooterLine(ctx, style, W, H, centerName) {
   ctx.save()
   ctx.globalAlpha = 0.55
   ctx.textAlign = 'center'
   ctx.fillStyle = style.sub
-  ctx.font = `700 13px ${MONO}`
-  setLetterSpacing(ctx, '5px')
-  ctx.fillText('AL-NOKHBBA · NOKHBA ACADEMY', W / 2, H - 34)
+  ctx.font = `700 14px ${FONT}`
+  setLetterSpacing(ctx, '2px')
+  ctx.fillText(String(centerName || 'AL-NOKHBBA · NOKHBA ACADEMY').slice(0, 48), W / 2, H - 34)
   setLetterSpacing(ctx, '0px')
   ctx.restore()
 }
 
-/** Logo lockup (mark + النخبة wordmark) centered at (cx, cy) — drawn on the
- * gradient in the style's accent color (note #8-1: no white box); alphabetic
- * baseline tuned so the wordmark's visual center matches the mark's center. */
+/** Wordmark (note #12-2): the النخبة word ONLY — no emblem — in the style's
+ * accent color, centered at (cx, cy). */
 function drawLogoLockup(ctx, style, cx, cy) {
-  const markS = 76
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = style.accent
-  ctx.font = `900 60px ${FONT}`
-  const wordW = ctx.measureText('النخبة').width
-  const gap = 20
-  const total = markS + gap + wordW
-  const left = cx - total / 2
-  drawMark(ctx, left + markS / 2, cy, markS, style.accent)
-  // alphabetic baseline tuned so the wordmark's visual center matches the
-  // mark's center
-  ctx.fillText('النخبة', left + markS + gap + wordW / 2, cy + 16)
+  ctx.font = `900 64px ${FONT}`
+  ctx.fillText('النخبة', cx, cy + 22)
   ctx.restore()
 }
 
@@ -380,7 +370,7 @@ function drawLogoLockup(ctx, style, cx, cy) {
  * margins top and bottom, no top-heavy stack), and the name takes more size
  * when there is room (start 66px, was 56).
  */
-export async function paintCardFront({ student, style: styleId } = {}) {
+export async function paintCardFront({ student, style: styleId, centerName } = {}) {
   await loadFonts()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
@@ -390,7 +380,7 @@ export async function paintCardFront({ student, style: styleId } = {}) {
   drawInnerFrame(ctx, style, W, H)
   drawCornerShapes(ctx, W, H)
   drawTopBand(ctx, style, W)
-  drawFooterLine(ctx, style, W, H)
+  drawFooterLine(ctx, style, W, H, centerName)
 
   const name = String(student?.name || '').trim()
   const code = String(student?.code || '').trim()
@@ -452,7 +442,10 @@ export async function paintCardFront({ student, style: styleId } = {}) {
   }
   y += GAP_NAME_CODE
   if (code) {
-    // F-code over a thin accent line (note #30) — no dark rectangle (#25-1)
+    // F-code over a thin accent line (note #30) — no dark rectangle (#25-1);
+    // a very light geometric pattern (diamonds, count from the first two
+    // digits — note #13a) sits behind the code band.
+    drawCodePattern(ctx, code, W / 2, y + CODE_SIZE / 2 + 2, W, style.accent)
     ctx.font = `800 ${CODE_SIZE}px ${MONO}`
     setLetterSpacing(ctx, '6px')
     ctx.fillStyle = style.codeColor
@@ -479,7 +472,7 @@ export async function paintCardFront({ student, style: styleId } = {}) {
  * the SAME token the QR modal shows — with the Nokhba name + tagline line
  * under it (the platform link stays OFF the card).
  */
-export async function paintCardBack({ link, style: styleId } = {}) {
+export async function paintCardBack({ link, student, style: styleId, centerName } = {}) {
   await loadFonts()
   const logoImg = await loadLogo()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
@@ -490,11 +483,15 @@ export async function paintCardBack({ link, style: styleId } = {}) {
   drawInnerFrame(ctx, style, W, H)
   drawCornerShapes(ctx, W, H)
   drawTopBand(ctx, style, W)
-  drawFooterLine(ctx, style, W, H)
 
-  const panel = 380
-  const taglineH = 26
-  const blockH = panel + 30 + taglineH
+  // Centered stack (note #12-3/5): QR tile → the student's CODE under it →
+  // the center's name (as stored — note #13b) → the tagline. No link text.
+  const panel = 340
+  const codeH = 30
+  const centerH = 22
+  const taglineH = 18
+  const code = String(student?.code || '').trim()
+  const blockH = panel + 20 + codeH + 10 + centerH + 8 + taglineH
   const py = 96 + ((H - 96 - 56) - blockH) / 2
   const px = W / 2 - panel / 2
   roundRectPath(ctx, px, py, panel, panel, 32)
@@ -502,13 +499,27 @@ export async function paintCardBack({ link, style: styleId } = {}) {
   ctx.fill()
   if (link) {
     try {
-      await drawDotQR(ctx, link, px + panel / 2, py + panel / 2, panel - 44, logoImg)
+      await drawDotQR(ctx, link, px + panel / 2, py + panel / 2, panel - 40, logoImg)
     } catch { /* leave the empty well on failure */ }
   }
+  let by = py + panel + 20
+  if (code) {
+    ctx.textAlign = 'center'
+    ctx.font = `800 ${codeH}px ${MONO}`
+    setLetterSpacing(ctx, '4px')
+    ctx.fillStyle = style.codeColor
+    ctx.fillText(code, W / 2, by)
+    setLetterSpacing(ctx, '0px')
+  }
+  by += codeH + 10
   ctx.textAlign = 'center'
-  ctx.font = `700 ${taglineH}px ${FONT}`
+  ctx.font = `700 ${centerH}px ${FONT}`
   ctx.fillStyle = style.accent
-  ctx.fillText('النخبة · إدارة الحصص الذكية', W / 2, py + panel + 30)
+  ctx.fillText(String(centerName || 'مركز النخبة التعليمي').slice(0, 40), W / 2, by)
+  by += centerH + 8
+  ctx.font = `700 ${taglineH}px ${FONT}`
+  ctx.fillStyle = style.sub
+  ctx.fillText('النخبة · إدارة الحصص الذكية', W / 2, by)
   return canvas
 }
 
@@ -518,7 +529,7 @@ export async function paintCardBack({ link, style: styleId } = {}) {
  * back. Printed BEFORE students exist; the real card comes from the
  * student's own page afterwards.
  */
-export async function paintBlankFront({ style: styleId } = {}) {
+export async function paintBlankFront({ style: styleId, centerName } = {}) {
   await loadFonts()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
@@ -528,7 +539,7 @@ export async function paintBlankFront({ style: styleId } = {}) {
   drawInnerFrame(ctx, style, W, H)
   drawCornerShapes(ctx, W, H)
   drawTopBand(ctx, style, W)
-  drawFooterLine(ctx, style, W, H)
+  drawFooterLine(ctx, style, W, H, centerName)
 
   // Same vertical balance as the student front (note #8-2): lockup + three
   // write-in rows (label above a dashed line), block centered top/bottom.
@@ -558,7 +569,7 @@ export async function paintBlankFront({ style: styleId } = {}) {
   return canvas
 }
 
-export async function paintBlankBack({ style: styleId } = {}) {
+export async function paintBlankBack({ style: styleId, centerName } = {}) {
   await loadFonts()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
@@ -568,20 +579,30 @@ export async function paintBlankBack({ style: styleId } = {}) {
   drawInnerFrame(ctx, style, W, H)
   drawCornerShapes(ctx, W, H)
   drawTopBand(ctx, style, W)
-  drawFooterLine(ctx, style, W, H)
+
+  // Centered stack: dashed QR tile → center name → tagline (no code — no
+  // student exists yet; note #13b).
   ctx.textAlign = 'center'
   ctx.strokeStyle = style.sub
   ctx.fillStyle = style.sub
   ctx.lineWidth = 3
   ctx.setLineDash([14, 11])
-  const tile = 380
-  const blockH = tile + 30 + 26
+  const tile = 340
+  const centerH = 22
+  const taglineH = 18
+  const blockH = tile + 20 + centerH + 8 + taglineH
   const py = 96 + ((H - 96 - 56) - blockH) / 2
   roundRectPath(ctx, W / 2 - tile / 2, py, tile, tile, 32)
   ctx.stroke()
   ctx.setLineDash([])
-  ctx.font = `300 26px ${FONT}`
-  ctx.fillText('QR الطالب', W / 2, py + tile + 30)
+  let by = py + tile + 20
+  ctx.font = `700 ${centerH}px ${FONT}`
+  ctx.fillStyle = style.accent
+  ctx.fillText(String(centerName || 'مركز النخبة التعليمي').slice(0, 40), W / 2, by)
+  by += centerH + 8
+  ctx.font = `700 ${taglineH}px ${FONT}`
+  ctx.fillStyle = style.sub
+  ctx.fillText('النخبة · إدارة الحصص الذكية', W / 2, by)
   return canvas
 }
 
@@ -684,7 +705,12 @@ async function composeCardsPdf({ pairs = [], fileName = 'nokhba-student-cards.pd
       const slot = i % PER_PAGE
       if (slot === 0) startPage(side)
       const r = Math.floor(slot / COLS)
-      const c = slot % COLS
+      // BACKS mirror each row (notes #11/#12-7): flipping the sheet on its
+      // long edge swaps left/right, so the back of the card printed at
+      // column 0 must be printed at the LAST column of the same row — then
+      // every back lines up exactly behind its front. Single-slot pages
+      // keep their position (note #11: single-card PDF stays as is).
+      const c = side === 'BACK' ? COLS - 1 - (slot % COLS) : slot % COLS
       const x = MARGIN_X + c * (CARD_W_MM + GAP_X)
       const y = MARGIN_Y + r * CELL_H
       doc.addImage(imgs[i], 'JPEG', x, y, CARD_W_MM, CARD_H_MM)
@@ -704,15 +730,15 @@ async function composeCardsPdf({ pairs = [], fileName = 'nokhba-student-cards.pd
  * Print ONE student's card (front + back) — the student's OWN QR token, so
  * the printed QR is identical to the QR-modal link and WhatsApp share.
  */
-export async function printStudentCardPdf(student, { style, download = true } = {}) {
+export async function printStudentCardPdf(student, { style, download = true, centerName } = {}) {
   if (!student?.id) return { success: false, reason: 'student' }
   const token = await getOrCreateStudentToken(student.id)
   if (!token) return { success: false, reason: 'token' }
   const link = buildStudentQRLink(token)
   const chosen = style || getSavedCardStyle()
   const [front, back] = await Promise.all([
-    renderToImage(paintCardFront, { student, style: chosen }),
-    renderToImage(paintCardBack, { link, style: chosen }),
+    renderToImage(paintCardFront, { student, style: chosen, centerName }),
+    renderToImage(paintCardBack, { link, student, style: chosen, centerName }),
   ])
   const safeCode = String(student.code || student.id).replace(/[^A-Za-z0-9-]/g, '_')
   return composeCardsPdf({ pairs: [{ front, back }], fileName: `nokhba-card-${safeCode}.pdf`, download, label: 'student QR card' })
@@ -722,7 +748,7 @@ export async function printStudentCardPdf(student, { style, download = true } = 
  * Print cards for MANY students (bulk selection / whole center) — ALL
  * selected students print (note #32-5: no card-holding filter).
  */
-export async function printStudentsCardsPdf(students, { style, download = true, onProgress } = {}) {
+export async function printStudentsCardsPdf(students, { style, download = true, onProgress, centerName } = {}) {
   const { entries, failed } = await buildStudentCardEntries(students, {
     onProgress: (done, t) => onProgress?.(Math.round((done / Math.max(t, 1)) * 50), 100),
   })
@@ -732,8 +758,8 @@ export async function printStudentsCardsPdf(students, { style, download = true, 
   for (let i = 0; i < entries.length; i += 1) {
     const { student, link } = entries[i]
     const [front, back] = await Promise.all([
-      renderToImage(paintCardFront, { student, style: chosen }),
-      renderToImage(paintCardBack, { link, style: chosen }),
+      renderToImage(paintCardFront, { student, style: chosen, centerName }),
+      renderToImage(paintCardBack, { link, student, style: chosen, centerName }),
     ])
     pairs.push({ front, back })
     onProgress?.(50 + Math.round(((i + 1) / entries.length) * 50), 100)
@@ -748,14 +774,14 @@ export async function printStudentsCardsPdf(students, { style, download = true, 
  * BEFORE students exist; no codes, no pool, no bookkeeping.
  * @param {number} count 1–40 — 8 per A4 page (fronts page + backs page).
  */
-export async function printPlaceholderCardsPdf(count = 8, { style, download = true } = {}) {
+export async function printPlaceholderCardsPdf(count = 8, { style, download = true, centerName } = {}) {
   const n = Math.max(1, Math.min(40, Math.floor(Number(count) || 0)))
   const chosen = style || getSavedCardStyle()
   const pairs = []
   for (let i = 0; i < n; i += 1) {
     const [front, back] = await Promise.all([
-      renderToImage(paintBlankFront, { style: chosen }),
-      renderToImage(paintBlankBack, { style: chosen }),
+      renderToImage(paintBlankFront, { style: chosen, centerName }),
+      renderToImage(paintBlankBack, { style: chosen, centerName }),
     ])
     pairs.push({ front, back })
   }

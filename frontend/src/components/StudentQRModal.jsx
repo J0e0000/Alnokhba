@@ -4,6 +4,7 @@ import { useWorkspace } from '../store/WorkspaceStore'
 import { getOrCreateStudentToken, buildStudentQRLink, buildQRMessage, generateStudentReportPDF } from '../lib/qrPdfWhatsApp'
 import { printStudentCardPdf } from '../lib/studentCardPdf'
 import Icon from './icons'
+import { useBranding } from '../context/BrandingContext'
 import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsAppHandoff } from '../lib/helpers'
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,6 +15,7 @@ import { normalizeEgyptianPhone, buildWhatsAppUrl, openWhatsAppUrl, showWhatsApp
 // ═══════════════════════════════════════════════════════════════════════════
 export default function StudentQRModal({ open, student, template, onClose, showToast }) {
   const ws = useWorkspace()
+  const { centerName } = useBranding()
   const { isArabic } = ws
   // PERF: qrcode loads on demand (dynamic import) — it used to ship in the
   // first bundle for every teacher even though QR modals are button-driven.
@@ -111,7 +113,7 @@ export default function StudentQRModal({ open, student, template, onClose, showT
     if (cardBusy || !student?.id) return
     setCardBusy(true)
     try {
-      const res = await printStudentCardPdf(student)
+      const res = await printStudentCardPdf(student, { centerName })
       if (res?.success) showToast?.(isArabic ? 'تم تحميل كرت الطالب PDF ✓ (وجهان: قص على الخطوط)' : 'Student card PDF downloaded ✓ (two faces — cut on the dashed lines)', 'success')
       else showToast?.(isArabic ? 'تعذر تجهيز كرت الطالب — حاول تاني' : 'Could not build the student card — try again', 'error')
     } finally { setCardBusy(false) }
