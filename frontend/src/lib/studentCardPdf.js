@@ -1,14 +1,16 @@
 /**
  * Student QR CARDS — printable card + A4 sheet composer (Task 68).
  * ─────────────────────────────────────────────────────────────────────────
- * DESIGN v5 (review round 6 — owner spec, relay note #32): the card-linking
- * idea is CANCELLED — every student keeps their OWN F-code and their OWN QR
- * token (the QR-modal link and the printed card QR are the same, always).
- *   FRONT = النخبة logo lockup + student NAME + F-code over a thin accent
- *           line + stage/group — on a soft modern gradient.
- *   BACK  = the QR in a white rounded tile — nothing else.
- *   BLANK STOCK = simple placeholder cards (dashed write-in lines + dashed
- *           empty QR tile), printed before students exist.
+ * DESIGN v6 (review round 7 — owner spec, relay note #8): polish pass.
+ *   FRONT = the mark + النخبة wordmark drawn DIRECTLY on the gradient in the
+ *           style's accent color (no white box), student NAME, F-code over a
+ *           thin accent line, stage/group — all measured and centered
+ *           VERTICALLY as one balanced block (even margins; the name takes
+ *           more size when there is room, wraps when long).
+ *   BACK  = the QR in a white rounded tile + the tagline
+ *           «النخبة · إدارة الحصص الذكية», the block centered vertically.
+ *   BLANK STOCK = same balance: lockup + three dashed write-in rows, and a
+ *           centered dashed QR tile on the back.
  * Four selectable gradient styles — A Midnight Blue, B Ivory Gold (DEFAULT),
  * C Emerald Night, D Sunset Violet — chosen in the cards modal and persisted
  * per device; getSavedCardStyle() drives every print path that doesn't pass
@@ -128,8 +130,8 @@ const loadFonts = (() => {
   return () => {
     if (!done) {
       const faces = [
-        '300 20px Cairo', '400 20px Cairo', '700 18px Cairo',
-        '800 30px Cairo', '900 44px Cairo', '900 54px Cairo',
+        '300 22px Cairo', '400 20px Cairo', '700 18px Cairo',
+        '800 30px Cairo', '900 44px Cairo', '900 60px Cairo', '900 66px Cairo',
       ]
       done = Promise.all(faces.map((f) => document.fonts.load(f, 'النخبة').catch(() => undefined)))
     }
@@ -241,81 +243,147 @@ function paintFace(ctx, style) {
   ctx.stroke()
 }
 
-/** Draw the النخبة logo lockup (mark + wordmark) centered at (cx, cy). */
-function drawLogoLockup(ctx, logoImg, style, cx, cy) {
-  const markS = 72
+/**
+ * Draw the النخبة mark DIRECTLY on the gradient (note #8-1): a stylized
+ * peak — two round-cap strokes meeting at the apex (accent color) with the
+ * small brand-orange dot at its foot. No image, no white box, and the
+ * colors always fit the selected style.
+ */
+function drawMark(ctx, cx, cy, s, accent) {
+  const halfW = s * 0.40
+  const top = cy - s * 0.44
+  const bottom = cy + s * 0.44
+  const lw = s * 0.155
+  ctx.save()
+  ctx.strokeStyle = accent
+  ctx.fillStyle = '#F59E0B'
+  ctx.lineWidth = lw
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(cx - halfW, bottom)
+  ctx.lineTo(cx, top)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(cx, top)
+  ctx.lineTo(cx + halfW, bottom)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(cx + halfW * 0.52, bottom - lw * 0.1, s * 0.075, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** Logo lockup (mark + النخبة wordmark) centered at (cx, cy) — drawn on the
+ * gradient in the style's accent color (note #8-1: no white box). */
+function drawLogoLockup(ctx, style, cx, cy) {
+  const markS = 76
+  ctx.save()
   ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
   ctx.fillStyle = style.accent
-  ctx.font = `900 58px ${FONT}`
+  ctx.font = `900 60px ${FONT}`
   const wordW = ctx.measureText('النخبة').width
-  const gx = cx - (markS + 18 + wordW) / 2
-  if (logoImg) ctx.drawImage(logoImg, gx, cy - markS / 2, markS, markS)
-  ctx.fillText('النخبة', gx + markS + 18 + wordW / 2, cy - 29)
+  const gap = 20
+  const total = markS + gap + wordW
+  const left = cx - total / 2
+  drawMark(ctx, left + markS / 2, cy, markS, style.accent)
+  // alphabetic baseline tuned so the wordmark's visual center matches the
+  // mark's center
+  ctx.fillText('النخبة', left + markS + gap + wordW / 2, cy + 16)
+  ctx.restore()
 }
 
 /**
- * FRONT (note #32-2): logo + student NAME + F-code over a thin accent line
- * + stage/group — the student's own identity; their own QR on the back.
+ * FRONT (note #32-2 + #8-2): logo + student NAME + F-code over a thin accent
+ * line + stage/group — the student's own identity; their own QR on the back.
+ * The whole content block is measured first and centered VERTICALLY (even
+ * margins top and bottom, no top-heavy stack), and the name takes more size
+ * when there is room (start 66px, was 56).
  */
 export async function paintCardFront({ student, style: styleId } = {}) {
   await loadFonts()
-  const logoImg = await loadLogo()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
   const W = CARD_W_PX
+  const H = CARD_H_PX
   paintFace(ctx, style)
-
-  drawLogoLockup(ctx, logoImg, style, W / 2, 118)
 
   const name = String(student?.name || '').trim()
   const code = String(student?.code || '').trim()
   const meta = [student?.group_name, student?.stage].filter(Boolean).join(' — ')
 
-  ctx.textAlign = 'center'
+  // Measure the name first (shrink → wrap, note #33) so the whole block can
+  // be centered. Long names: shrink first; below the readable floor, wrap
+  // onto two balanced centered lines — never cut, never overlapping.
+  const maxW = W - 150
+  let nameSize = 0
+  let nameLines = []
   if (name) {
-    // Long names (note #33): shrink first; below the readable floor, wrap
-    // onto two balanced centered lines — never cut, never overlapping.
-    const maxW = W - 150
-    let size = fitFontSize(ctx, name, 56, 34, maxW)
-    let lines = [name]
-    if (size <= 34 && name.includes(' ')) {
+    nameSize = fitFontSize(ctx, name, 66, 38, maxW)
+    nameLines = [name]
+    if (nameSize <= 38 && name.includes(' ')) {
       const words = name.split(/\s+/)
       let best = null
-      ctx.font = `900 44px ${FONT}`
+      ctx.font = `900 52px ${FONT}`
       for (let k = 1; k < words.length; k += 1) {
         const l1 = words.slice(0, k).join(' ')
         const l2 = words.slice(k).join(' ')
         const spread = Math.abs(ctx.measureText(l1).width - ctx.measureText(l2).width)
         if (!best || spread < best.spread) best = { l1, l2, spread }
       }
-      lines = [best.l1, best.l2]
-      size = Math.min(fitFontSize(ctx, lines[0], 44, 26, maxW), fitFontSize(ctx, lines[1], 44, 26, maxW))
-    }
-    ctx.font = `900 ${size}px ${FONT}`
-    ctx.fillStyle = style.nameColor
-    if (lines.length === 1) {
-      ctx.fillText(lines[0], W / 2, 208)
-    } else {
-      ctx.fillText(lines[0], W / 2, 182)
-      ctx.fillText(lines[1], W / 2, 182 + size + 16)
+      nameLines = [best.l1, best.l2]
+      nameSize = Math.min(fitFontSize(ctx, best.l1, 52, 30, maxW), fitFontSize(ctx, best.l2, 52, 30, maxW))
     }
   }
+  const nameH = name ? (nameLines.length === 1 ? nameSize : nameSize * 2 + 14) : 0
+
+  // Vertical centering: every element contributes its real height so the
+  // block sits with even margins whatever the content (note #8-2).
+  const MARK_S = 76
+  const CODE_SIZE = 42
+  const META_SIZE = 26
+  const GAP_LOGO_NAME = name ? 30 : 0
+  const GAP_NAME_CODE = name && code ? 22 : 0
+  const CODE_H = code ? CODE_SIZE : 0
+  const GAP_CODE_LINE = code ? 10 : 0
+  const LINE_H = code ? 4 : 0
+  const GAP_LINE_META = meta ? 16 : 0
+  const META_H = meta ? META_SIZE : 0
+  const blockH = MARK_S + GAP_LOGO_NAME + nameH + GAP_NAME_CODE + CODE_H + GAP_CODE_LINE + LINE_H + GAP_LINE_META + META_H
+  let y = (H - blockH) / 2
+
+  drawLogoLockup(ctx, style, W / 2, y + MARK_S / 2)
+  y += MARK_S + GAP_LOGO_NAME
+
+  ctx.textAlign = 'center'
+  if (name) {
+    ctx.font = `900 ${nameSize}px ${FONT}`
+    ctx.fillStyle = style.nameColor
+    ctx.fillText(nameLines[0], W / 2, y)
+    if (nameLines.length === 2) ctx.fillText(nameLines[1], W / 2, y + nameSize + 14)
+    y += nameH
+  }
+  y += GAP_NAME_CODE
   if (code) {
     // F-code over a thin accent line (note #30) — no dark rectangle (#25-1)
-    ctx.font = `800 40px ${MONO}`
+    ctx.font = `800 ${CODE_SIZE}px ${MONO}`
     setLetterSpacing(ctx, '6px')
     ctx.fillStyle = style.codeColor
-    ctx.fillText(code, W / 2, 306)
+    ctx.fillText(code, W / 2, y)
     setLetterSpacing(ctx, '0px')
     const codeW = Math.min(ctx.measureText(code).width + 48, W - 200)
+    y += CODE_H + GAP_CODE_LINE
     ctx.fillStyle = style.accent
-    roundRectPath(ctx, W / 2 - codeW / 2, 368, codeW, 3.5, 2)
+    roundRectPath(ctx, W / 2 - codeW / 2, y, codeW, LINE_H, 2)
     ctx.fill()
+    y += LINE_H
   }
+  y += GAP_LINE_META
   if (meta) {
-    ctx.font = `300 24px ${FONT}`
+    ctx.font = `300 ${META_SIZE}px ${FONT}`
     ctx.fillStyle = style.sub
-    ctx.fillText(meta, W / 2, 404)
+    ctx.fillText(meta, W / 2, y)
   }
   return canvas
 }
@@ -331,11 +399,14 @@ export async function paintCardBack({ link, style: styleId } = {}) {
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
   const W = CARD_W_PX
+  const H = CARD_H_PX
   paintFace(ctx, style)
 
   const panel = 396
+  const taglineH = 26
+  const blockH = panel + 30 + taglineH
+  const py = (H - blockH) / 2
   const px = W / 2 - panel / 2
-  const py = 42
   roundRectPath(ctx, px, py, panel, panel, 32)
   ctx.fillStyle = QR_PANEL_BG
   ctx.fill()
@@ -345,7 +416,7 @@ export async function paintCardBack({ link, style: styleId } = {}) {
     } catch { /* leave the empty well on failure */ }
   }
   ctx.textAlign = 'center'
-  ctx.font = `700 26px ${FONT}`
+  ctx.font = `700 ${taglineH}px ${FONT}`
   ctx.fillStyle = style.accent
   ctx.fillText('النخبة · إدارة الحصص الذكية', W / 2, py + panel + 30)
   return canvas
@@ -359,27 +430,37 @@ export async function paintCardBack({ link, style: styleId } = {}) {
  */
 export async function paintBlankFront({ style: styleId } = {}) {
   await loadFonts()
-  const logoImg = await loadLogo()
   const style = CARD_STYLES[normalizeCardStyle(styleId)]
   const { canvas, ctx } = newCardCanvas()
   const W = CARD_W_PX
+  const H = CARD_H_PX
   paintFace(ctx, style)
-  drawLogoLockup(ctx, logoImg, style, W / 2, 118)
+
+  // Same vertical balance as the student front (note #8-2): lockup + three
+  // write-in rows (label above a dashed line), block centered top/bottom.
+  const ROW_STRIDE = 84 // label-top → next label-top (28 label zone + line + 56 gap)
+  const rowsH = 2 * ROW_STRIDE + 28 // last dashed line sits 28 under its label
+  const blockH = 76 + 34 + rowsH
+  const y0 = (H - blockH) / 2
+  drawLogoLockup(ctx, style, W / 2, y0 + 38)
 
   ctx.textAlign = 'center'
   ctx.strokeStyle = style.sub
+  ctx.fillStyle = style.sub
   ctx.lineWidth = 2.5
   ctx.setLineDash([12, 10])
-  const line = (y) => { ctx.beginPath(); ctx.moveTo(W / 2 - 300, y); ctx.lineTo(W / 2 + 300, y); ctx.stroke() }
-  line(248)
-  line(338)
-  line(424)
+  const labels = ['الاسم', 'كود الطالب', 'المجموعة / المرحلة']
+  const rowTop = (i) => y0 + 110 + i * ROW_STRIDE
+  labels.forEach((label, i) => {
+    ctx.font = `300 22px ${FONT}`
+    ctx.fillText(label, W / 2 - 334, rowTop(i))
+    const ly = rowTop(i) + 28
+    ctx.beginPath()
+    ctx.moveTo(W / 2 - 300, ly)
+    ctx.lineTo(W / 2 + 300, ly)
+    ctx.stroke()
+  })
   ctx.setLineDash([])
-  ctx.font = `300 22px ${FONT}`
-  ctx.fillStyle = style.sub
-  ctx.fillText('الاسم', W / 2 - 334, 218)
-  ctx.fillText('كود الطالب', W / 2 - 334, 308)
-  ctx.fillText('المجموعة / المرحلة', W / 2 - 334, 394)
   return canvas
 }
 
@@ -392,14 +473,17 @@ export async function paintBlankBack({ style: styleId } = {}) {
   paintFace(ctx, style)
   ctx.textAlign = 'center'
   ctx.strokeStyle = style.sub
+  ctx.fillStyle = style.sub
   ctx.lineWidth = 3
   ctx.setLineDash([14, 11])
-  roundRectPath(ctx, W / 2 - 190, H / 2 - 190, 380, 380, 32)
+  const tile = 380
+  const blockH = tile + 30 + 26
+  const py = (H - blockH) / 2
+  roundRectPath(ctx, W / 2 - tile / 2, py, tile, tile, 32)
   ctx.stroke()
   ctx.setLineDash([])
   ctx.font = `300 26px ${FONT}`
-  ctx.fillStyle = style.sub
-  ctx.fillText('QR الطالب', W / 2, H / 2 + 212)
+  ctx.fillText('QR الطالب', W / 2, py + tile + 30)
   return canvas
 }
 
