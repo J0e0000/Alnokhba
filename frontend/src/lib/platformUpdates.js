@@ -29,6 +29,7 @@ export const UPDATE_MARKER = '✨'
 export const PLATFORM_UPDATES = [
   {
     key: '2026-11-qr-cards',
+    released: '2026-11-27',
     icon: '💳',
     title: 'جديد: كروت الطلاب QR — كرت مطبوع بمقاس فيزا لكل طالب',
     body: 'كل طالب ليه كرت رسمي عليه QR البوابة وكود الطالب. اطبع PDF بـ 8 كروت في صفحة A4 مع خطوط قص، أو اطبع كروت جاهزة (فاضية) قبل ما تسجل الطلاب أصلاً. البطاقة العادية بتفتح صفحة الطالب، وكاميرا النخبة بتسجل حضوره.',
@@ -36,6 +37,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-session-extra-dates',
+    released: '2026-11-24',
     icon: '🗓',
     title: 'حصة واحدة بمعادين متعددة',
     body: 'سجّل الحصة مرة واحدة وضيف ليها معاد إضافي (مجموعة بمعادين في الأسبوع مثلًا). الحضور والتقارير بتحسب كل المعاديات تلقائيًا.',
@@ -43,6 +45,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-group-merge',
+    released: '2026-11-24',
     icon: '🔀',
     title: 'دمج مجموعتين بضغطة واحدة',
     body: 'ادمج مجموعتين من غير فقدان أي بيانات: الحصص والواجبات والامتحانات والدرجات والطلاب بتتنقل كلها، ومرحلة الطلاب بتتظبط تلقائيًا.',
@@ -50,6 +53,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-multi-group-students',
+    released: '2026-11-18',
     icon: '👥',
     title: 'الطالب في أكثر من مجموعة',
     body: 'الطالب مسجّل في مجموعتين أو أكتر في نفس الوقت، والبحث والفلاتر والتقارير بتحسبه في كل مجموعاته.',
@@ -57,6 +61,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-context-menu-copy',
+    released: '2026-11-24',
     icon: '☎️',
     title: 'قائمة إجراءات سريعة لكل طالب + نسخ الأرقام',
     body: 'زر يمين الماوس (أو ضغطة مطولة على الموبايل) على أي طالب يفتح قائمة بكل إجراءاته: السجل، التعديل، واتساب، رابط البوابة، تحديد، حذف. وتقدر تنسخ أرقام الطلاب المحددين مرة واحدة.',
@@ -64,6 +69,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-auto-archive',
+    released: '2026-11-12',
     icon: '📦',
     title: 'أرشفة تلقائية للطلاب الغائبين',
     body: 'الطالب الغايب عن آخر حصتين بيتأرشف تلقائيًا (بدون خصم)، وترجّعه بضغطة زر لقوائم الحضور والتقارير.',
@@ -71,6 +77,7 @@ export const PLATFORM_UPDATES = [
   },
   {
     key: '2026-11-leaderboard',
+    released: '2026-11-08',
     icon: '🏆',
     title: 'لائحة المتصدرين لطلابك',
     body: 'منصة تنافسية بالنقاط: منصة أول ٣ + ترتيب كامل وألقاب حسب رصيد النقاط، بتتحدث مع كل حصة.',
@@ -109,6 +116,7 @@ function rowFor(u, teacherId, id) {
     teacher_id: teacherId,
     event_type: 'other',
     is_read: false,
+    created_at: u.released,
     title: `${UPDATE_MARKER} ${u.icon} ${u.title}`,
     body: `${u.body}\n📍 ${u.hint}`,
   }
@@ -149,11 +157,12 @@ export async function ensureUpdateNotifications(teacherId) {
   }
   let readFromDb = null
   try {
+    // supabase-js v2 removed .onConflict()/.ignoreDuplicates() from the
+    // insert builder — upsert with resolution=ignore-duplicates is the
+    // supported INSERT … ON CONFLICT DO NOTHING.
     const { error } = await supabase
       .from('teacher_notification_events')
-      .insert(rows)
-      .onConflict('id')
-      .ignoreDuplicates()
+      .upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
     if (error) {
       lastSeedError = error.message
       console.error('[NOKHBA updates] seed insert failed:', error.message, '| code:', error.code || '?')

@@ -436,10 +436,10 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               ))}
             </div>
             <div className="px-4 pt-1.5 pb-1 flex items-center justify-between gap-2">
-              <span className="text-fg-muted text-[10px]">{filteredEvents.length} {isArabic ? 'تنبيه' : 'notifications'}</span>
+              <span className="text-fg-muted text-[10px]">{updates.length > 0 ? `${updates.length} ${isArabic ? 'تحديثات' : 'updates'} · ` : ''}{filteredEvents.length} {isArabic ? 'تنبيه' : 'notifications'}</span>
               {!showAll && hiddenUnread > 0 ? (
                 <button onClick={() => setShowAll(true)} className="text-brand-gold-hover text-[10px] font-bold">
-                  {isArabic ? `فيه ${hiddenUnread} رسالة أقدم — اعرضها` : `${hiddenUnread} older — show them`}
+                  {isArabic ? `فيه ${Math.min(hiddenUnread, 99)}${hiddenUnread > 99 ? '+' : ''} رسالة أقدم غير مقروءة — اعرضها` : `${Math.min(hiddenUnread, 99)}${hiddenUnread > 99 ? '+' : ''} older unread — show them`}
                 </button>
               ) : (
                 <span className="text-fg-subtle text-[10px]">{isArabic ? 'اسحب التنبيه جانبًا لإزالته ⇄' : 'Swipe a notification away to remove ⇄'}</span>

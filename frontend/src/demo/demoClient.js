@@ -533,6 +533,9 @@ class Query {
         } else if (row.id) {
           target = db[this._table].find((r) => r.id === row.id)
         }
+        // UPSERT … ON CONFLICT DO NOTHING — platform-update re-seeds must
+        // leave existing rows (and their is_read state) untouched.
+        if (target && mut.opts.ignoreDuplicates) continue
         if (target) {
           const prev = { ...target }
           Object.assign(target, row, { updated_at: iso() })

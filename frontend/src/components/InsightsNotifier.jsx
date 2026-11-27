@@ -46,6 +46,27 @@ export default function InsightsNotifier() {
       ranRef.current = true
       const teacherId = effectiveTeacherId
       try {
+        // SWEEP (review round 2, note c — cleanup): historic runs flooded this
+        // teacher with identical unread «فريق التحليل» rows. One-time per
+        // session: keep the newest 3 unread, mark all older unread copies
+        // read (chunked .in() updates, best-effort).
+        try {
+          const { data: unreadDupes } = await supabase
+            .from('teacher_notification_events')
+            .select('id, created_at')
+            .eq('teacher_id', teacherId)
+            .eq('title', 'فريق التحليل — تقرير الوضع')
+            .eq('is_read', false)
+            .order('created_at', { ascending: false })
+            .limit(400)
+          const stale = (unreadDupes || []).slice(3).map((r) => r.id)
+          for (let i = 0; i < stale.length; i += 100) {
+            await supabase
+              .from('teacher_notification_events')
+              .update({ is_read: true })
+              .in('id', stale.slice(i, i + 100))
+          }
+        } catch { /* sweep is best-effort */ }
         let remote = null
         try { remote = await fetchRemoteState(teacherId) } catch { remote = null }
         const local = readLocalSnapshot(teacherId)
