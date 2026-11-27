@@ -394,17 +394,24 @@ class Query {
   lt(col, val) { this._filters.push(['lt', col, val]); return this }
   lte(col, val) { this._filters.push(['lte', col, val]); return this }
   in(col, vals) { this._filters.push(['in', col, vals]); return this }
+  not(col, op, val) { this._filters.push(['not', col, op, val]); return this }
   order(col, opts = {}) { this._order = { col, asc: opts.ascending !== false }; return this }
   limit(n) { this._limitVal = n; return this }
   single() { this._single = true; return this }
   maybeSingle() { this._single = true; this._maybe = true; return this }
   insert(data, opts) { this._mut = { type: 'insert', data: Array.isArray(data) ? data : [data], opts: opts || {} }; return this }
+  onConflict(col) { this._ocCol = col; return this }
+  ignoreDuplicates() { this._igDup = true; return this }
   upsert(data, opts) { this._mut = { type: 'upsert', data: Array.isArray(data) ? data : [data], opts: opts || {} }; return this }
   update(data, opts) { this._mut = { type: 'update', data: Array.isArray(data) ? data[0] : data, opts: opts || {} }; return this }
   delete() { this._mut = { type: 'delete' }; return this }
 
   _applyFilters(rows) {
-    let out = rows.filter((r) => this._filters.every(([op, col, val]) => {
+    let out = rows.filter((r) => this._filters.every((f) => {
+      // Filters are ['op', col, val] — except 'not' which is ['not', col, subOp, val].
+      const op = f[0]
+      const col = f[1]
+      const val = op === 'not' ? f[3] : f[2]
       const rv = r[col]
       if (op === 'eq') return val === null ? (rv === null || rv === undefined) : String(rv) === String(val)
       if (op === 'neq') return String(rv) !== String(val)
@@ -413,6 +420,12 @@ class Query {
       if (op === 'lt') return rv < val
       if (op === 'lte') return rv <= val
       if (op === 'in') return (val || []).some((v) => String(rv) === String(v))
+      if (op === 'not') {
+        const sub = f[2]
+        if (sub === 'like' || sub === 'ilike') return !String(rv).includes(String(val).replace(/%/g, ''))
+        if (sub === 'eq') return String(rv) !== String(val)
+        return true
+      }
       return true
     }))
     if (this._order) {
@@ -477,11 +490,22 @@ class Query {
     }
     const mut = this._mut
     if (mut.type === 'insert') {
-      const inserted = mut.data.map((row) => {
-        const rec = { id: uid(), created_at: iso(), updated_at: iso(), ...row }
-        db[this._table].push(rec)
-        return rec
-      })
+      // INSERT … ON CONFLICT (id) DO NOTHING — deterministic platform-update
+      // seeds rely on this to stay duplicate-proof. Supports both the
+      // supabase-js chain style (.onConflict().ignoreDuplicates()) and opts.
+      const ocSpec = (mut.opts.onConflict || '') + ',' + (this._ocCol || '')
+      const conflictOnId = ocSpec.split(',').map((s) => s.trim()).includes('id')
+      const igDup = mut.opts.ignoreDuplicates || this._igDup
+      // Mirror real column defaults so client-side .eq('is_read', false)
+      // style filters behave like production Postgres.
+      const colDefaults = this._table === 'teacher_notification_events' ? { is_read: false } : {}
+      const inserted = mut.data
+        .filter((row) => !(conflictOnId && igDup && row.id && db[this._table].some((r) => r.id === row.id)))
+        .map((row) => {
+          const rec = { id: uid(), created_at: iso(), updated_at: iso(), ...colDefaults, ...row }
+          db[this._table].push(rec)
+          return rec
+        })
       saveDb(db)
       inserted.forEach((r) => emitEvent(this._table, 'INSERT', r))
       const out = inserted.map((r) => this._project(r))

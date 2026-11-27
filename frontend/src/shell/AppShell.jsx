@@ -240,7 +240,7 @@ export default function AppShell({ onOpenAdmin }) {
             >
               {lang === 'ar' ? 'EN' : 'ع'}
             </button>
-            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} />
+            <TeacherNotificationCenterLauncher onOpen={() => setNotifCenterOpen(true)} refreshKey={notifCenterOpen ? 'open' : 'closed'} />
             <NotificationBell broadcasts={ws.broadcasts} dismissedBroadcasts={dismissedBroadcasts} onDismiss={dismissBroadcast} />
             <button
               className="hidden lg:grid w-9 h-9 place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
@@ -440,15 +440,36 @@ export default function AppShell({ onOpenAdmin }) {
   )
 }
 
-function TeacherNotificationCenterLauncher({ onOpen }) {
+function TeacherNotificationCenterLauncher({ onOpen, refreshKey }) {
+  // ✨ Badge = unread platform-update notifications (per-teacher rows in
+  // teacher_notification_events). Seeding happens inside the center too —
+  // this keeps the badge honest WITHOUT opening the center, which is the
+  // whole point: "unread until opened, visible to every teacher".
+  const { effectiveTeacherId } = useAuth()
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    let alive = true
+    if (!effectiveTeacherId) { setUnread(0); return }
+    import('../lib/platformUpdates').then((m) =>
+      m.ensureUpdateNotifications(effectiveTeacherId).then((rows) => {
+        if (alive) setUnread(rows.filter((r) => !r.is_read).length)
+      }).catch(() => { if (alive) setUnread(0) }),
+    )
+    return () => { alive = false }
+  }, [effectiveTeacherId, refreshKey])
   return (
     <button
-      className="w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
+      className="relative w-9 h-9 grid place-items-center rounded-xl border border-subtle text-fg-muted hover:text-fg"
       onClick={onOpen}
       title="مركز الإشعارات"
       aria-label="مركز الإشعارات"
     >
       ◔
+      {unread > 0 && (
+        <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+          {unread > 9 ? '9+' : unread}
+        </span>
+      )}
     </button>
   )
 }

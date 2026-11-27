@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 import { registerTeacherPush, hasTeacherPushSubscription } from '../lib/pushNotifications'
+import { UPDATE_MARKER, ensureUpdateNotifications, fetchUpdateNotifications } from '../lib/platformUpdates'
 
 // Swipeable notification row (teacher request): drag a notification sideways
 // (either direction, ~80px threshold) to remove it from the list. The inner
@@ -70,6 +71,10 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   const { showToast } = useToast()
   const [events, setEvents] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
+  // ✨ تحديثات النخبة — platform-update rows (deterministic ids, seeded per
+  // teacher, unread until opened). Rendered in a PINNED section that is
+  // exempt from the session-time filter, so every teacher sees what's new.
+  const [updates, setUpdates] = useState([])
   const [expanded, setExpanded] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [pushPermission, setPushPermission] = useState(() => typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
@@ -102,8 +107,10 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
       // حد الجلسة: افتراضيًا الرسايل الواصلة بعد فتح الموقع فقط
       if (!showAll && since) qy = qy.gte('created_at', since)
       const { data } = await qy.order('created_at', { ascending: false }).limit(30)
-      setEvents(data || [])
-      setUnreadCount((data || []).filter((e) => !e.is_read).length)
+      // ✨ platform-update rows render in the pinned section only.
+      const stream = (data || []).filter((e) => !String(e.title || '').startsWith(UPDATE_MARKER))
+      setEvents(stream)
+      setUnreadCount(stream.filter((e) => !e.is_read).length)
       // عدّاد القديم غير المقروء — يظهر كسطر إرشادي فوق القايمة
       if (!showAll && since) {
         let cq = supabase
@@ -111,6 +118,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           .select('id', { count: 'exact', head: true })
           .eq('teacher_id', effectiveTeacherId)
           .eq('is_read', false)
+          .not('title', 'like', `${UPDATE_MARKER}%`)
         if (profile?.created_at) cq = cq.gte('created_at', profile.created_at)
         cq = cq.lt('created_at', since)
         const { count } = await cq
@@ -124,6 +132,16 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
   }, [effectiveTeacherId, profile?.created_at, since, showAll])
 
   useEffect(() => { loadEvents() }, [loadEvents])
+
+  // Seed + fetch the platform-update rows (idempotent — deterministic ids,
+  // insert ignored on conflict). Runs on mount and after the center closes
+  // is handled by the launcher badge refresh in AppShell.
+  const loadUpdates = useCallback(async () => {
+    if (!effectiveTeacherId) return
+    const rows = await ensureUpdateNotifications(effectiveTeacherId)
+    setUpdates(rows)
+  }, [effectiveTeacherId])
+  useEffect(() => { loadUpdates() }, [loadUpdates])
 
   useEffect(() => {
     let active = true
@@ -164,6 +182,12 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           table: 'teacher_notification_events',
           filter: `teacher_id=eq.${effectiveTeacherId}`,
         }, (payload) => {
+          // ✨ platform-update rows belong to the pinned section — never
+          // toast/notify for them (seeding must stay silent).
+          if (String(payload.new?.title || '').startsWith(UPDATE_MARKER)) {
+            loadUpdates()
+            return
+          }
           setEvents((prev) => [payload.new, ...prev].slice(0, 30))
           setUnreadCount((prev) => prev + 1)
           notifyIncoming(payload.new)
@@ -278,6 +302,21 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     setEvents((prev) => prev.map((e) => ({ ...e, is_read: true })))
     setUnreadCount(0)
     setHiddenUnread(0)
+    // ✨ platform-update rows count as read too.
+    try {
+      const unreadIds = updates.filter((u) => !u.is_read).map((u) => u.id)
+      if (unreadIds.length) {
+        await supabase.from('teacher_notification_events').update({ is_read: true }).in('id', unreadIds).eq('is_read', false)
+      }
+    } catch { /* best-effort */ }
+    setUpdates((prev) => prev.map((u) => ({ ...u, is_read: true })))
+  }
+
+  // Open one platform-update row: mark it read server-side (same hardened
+  // path as regular events) and flip it locally.
+  const markUpdateRow = async (row) => {
+    await markRead(row)
+    setUpdates((prev) => prev.map((u) => (u.id === row.id ? { ...u, is_read: true } : u)))
   }
 
   // Swipe-to-remove (teacher request): optimistic local removal first so the
@@ -318,6 +357,9 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
     return eventIcons[e.event_type] || eventIcons.other
   }
 
+  const unreadUpdates = updates.filter((u) => !u.is_read).length
+  const totalUnread = unreadCount + unreadUpdates
+
   const filteredEvents = categoryFilter === 'all'
     ? events
     : events.filter((e) => categoryOfEvent(e) === categoryFilter)
@@ -344,9 +386,9 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {unreadCount > 0 && (
+        {totalUnread > 0 && (
           <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {totalUnread > 9 ? '9+' : totalUnread}
           </span>
         )}
       </button>
@@ -357,7 +399,12 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
           {/* Mobile: fixed bottom action-sheet (نفس نمط nk-menu-sheet) — full
               width inside the viewport, escapes any parent overflow clip.
               ≥640px: original anchored popover, unchanged. */}
-          <div className="nk-notif-panel fixed inset-x-2 bottom-2 z-50 sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-2 sm:left-0 sm:w-80 glass-card rounded-xl shadow-2xl border border-subtle max-h-[70vh] sm:max-h-[60vh] flex flex-col" dir={isArabic ? 'rtl' : 'ltr'}>
+          {/* The center only ever mounts inside the AppShell modal — so on
+              desktop the panel is IN-FLOW (sm:static) and grows the modal
+              card, instead of an absolute popover that the modal's
+              overflow-y-auto used to clip to a sliver. Mobile keeps the
+              fixed bottom action-sheet (escapes any ancestor clip). */}
+          <div className="nk-notif-panel fixed inset-x-2 bottom-2 z-50 sm:static sm:w-full sm:mt-3 glass-card rounded-xl shadow-2xl border border-subtle max-h-[70vh] flex flex-col" dir={isArabic ? 'rtl' : 'ltr'}>
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-subtle">
               <h3 className="text-sm font-bold text-fg">{isArabic ? '🔔 التنبيهات' : '🔔 Notifications'}</h3>
               <div className="flex flex-wrap items-center gap-2">
@@ -365,7 +412,7 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
                 <button onClick={() => setShowAll((v) => !v)} className="text-brand-gold-hover text-xs font-bold" title={isArabic ? 'الرسايل الواصلة بعد ما فتحت الموقع بس هي اللي بتظهر افتراضيًا' : 'Only messages that arrived after you opened the site show by default'}>
                   {showAll ? (isArabic ? 'الجديدة فقط' : 'New only') : (isArabic ? 'عرض الكل' : 'Show all')}
                 </button>
-                {unreadCount > 0 && <button onClick={markAllRead} className="text-brand-gold-hover text-xs font-bold">{isArabic ? 'قراءة الكل' : 'Read all'}</button>}
+                {totalUnread > 0 && <button onClick={markAllRead} className="text-brand-gold-hover text-xs font-bold">{isArabic ? 'قراءة الكل' : 'Read all'}</button>}
               </div>
             </div>
             <div className="flex gap-1 px-4 pt-3 overflow-x-auto">
@@ -399,7 +446,35 @@ export default function TeacherNotificationCenter({ onSelectStudent, onOpenInsig
               </p>
             )}
             <div className="overflow-y-auto flex-1">
-              {filteredEvents.length === 0 ? (
+              {/* ✨ تحديثات النخبة — pinned: exempt from the session filter,
+                  per-teacher rows in the DB, unread until opened. */}
+              {updates.length > 0 && (
+                <div className="border-b border-subtle">
+                  <div className="flex items-center justify-between px-4 pt-2.5 pb-1 bg-brand-gold/10">
+                    <p className="text-[11px] font-bold text-brand-gold-hover m-0">✨ {isArabic ? 'تحديثات النخبة — إيه الجديد وإلاقيه فين' : 'Nokhba updates — what changed and where'}</p>
+                    {unreadUpdates > 0 && <span className="text-[10px] font-bold text-brand-gold-hover">{isArabic ? `${unreadUpdates} جديد` : `${unreadUpdates} new`}</span>}
+                  </div>
+                  {updates.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => { if (!u.is_read) markUpdateRow(u) }}
+                      className={`w-full text-right px-4 py-2.5 border-b border-subtle hover:bg-white/5 transition-colors ${!u.is_read ? 'bg-brand-gold/5' : ''}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!u.is_read && <span className="w-2 h-2 rounded-full bg-brand-gold shrink-0 mt-1.5" />}
+                        <span className="text-sm mt-0.5 shrink-0">{u.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-[.8rem] leading-snug ${!u.is_read ? 'text-fg font-bold' : 'text-fg-subtle'}`}>{String(u.title || '').split(UPDATE_MARKER).join('').trim()}</p>
+                          {u.body && <p className="text-fg-subtle text-xs mt-1 whitespace-pre-line leading-relaxed">{u.body}</p>}
+                          <p className="text-fg-muted text-[10px] mt-1">{new Date(u.created_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en-GB')}</p>
+                        </div>
+                        {!u.is_read && <span className="text-[10px] font-bold text-brand-gold-hover shrink-0 self-center">{isArabic ? 'جديد' : 'NEW'}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {updates.length === 0 && filteredEvents.length === 0 ? (
                 <div className="text-center py-8 px-4">
                   <p className="text-fg-muted text-sm mt-0 mb-0">{isArabic ? (showAll ? 'لا توجد تنبيهات' : 'مفيش رسايل جديدة لسه') : (showAll ? 'No notifications' : 'No new messages yet')}</p>
                   {!showAll && <p className="text-fg-muted text-xs mt-1 mb-0">{isArabic ? 'اللي بيوصل بعد ما تفتح الموقع بيظهر هنا على طول — والتاريخ كله في «عرض الكل».' : 'Messages arriving after you open the site appear here — full history lives in “Show all”.'}</p>}
